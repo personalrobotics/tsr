@@ -2,7 +2,7 @@ import numpy
 import warnings
 from prpy.tsr.tsrlibrary import TSRFactory
 from prpy.tsr.tsr import TSR, TSRChain
-from ..util import GetManipulatorIndex
+from prpy.util import GetManipulatorIndex
 
 def get_manip_idx(robot, manip=None):
     """
