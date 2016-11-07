@@ -1,6 +1,6 @@
 import numpy
 from numpy import pi
-from prpy.tsr import TSR
+from tsr import TSR
 from unittest import TestCase
 
 # Disabled this test because it currently fails.
