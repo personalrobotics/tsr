@@ -134,7 +134,7 @@ class TSRLibrary(object):
         @param yaml_file path to the input YAML file
         """
         import yaml
-        from prpy.tsr.tsr import TSR, TSRChain
+        from tsr.tsr import TSR, TSRChain
 
         with open(yaml_file, 'r') as f:
             yaml_data = yaml.load(f)

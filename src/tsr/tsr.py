@@ -29,7 +29,7 @@
 import openravepy
 import numpy
 import numpy.random
-import prpy.util
+import util
 from numpy import pi
 
 NANBW = numpy.ones(6)*float('nan')
@@ -62,7 +62,7 @@ class TSR(object):
         Bw_interval = Bw_cont[3:6, 1] - Bw_cont[3:6, 0]
         Bw_interval = numpy.minimum(Bw_interval, 2*pi)
 
-        from prpy.util import wrap_to_interval
+        from util import wrap_to_interval
         Bw_cont[3:6, 0] = wrap_to_interval(Bw_cont[3:6, 0])
         Bw_cont[3:6, 1] = Bw_cont[3:6, 0] + Bw_interval
 
@@ -181,7 +181,7 @@ class TSR(object):
         @return check a (3,) vector of True if within and False if outside
         """
         # Unwrap rpy to Bw_cont.
-        from prpy.util import wrap_to_interval
+        from util import wrap_to_interval
         rpy = wrap_to_interval(rpy, lower=Bw[:, 0])
 
         # Check bounds condition on RPY component.
@@ -349,7 +349,7 @@ class TSR(object):
 
         def objective(bw):
             bwtrans = self.to_transform(bw)
-            return prpy.util.GeodesicDistance(bwtrans, trans)
+            return util.GeodesicDistance(bwtrans, trans)
 
         bwinit = (self._Bw_cont[:, 0] + self._Bw_cont[:, 1])/2
         bwbounds = [(self._Bw_cont[i, 0], self._Bw_cont[i, 1])
@@ -380,7 +380,7 @@ class TSR(object):
                                 if numpy.isnan(x) else x
                                 for i, x in enumerate(xyzrpy)])
         # Unwrap rpy to [-pi, pi]
-        from prpy.util import wrap_to_interval
+        from util import wrap_to_interval
         Bw_sample[3:6] = wrap_to_interval(Bw_sample[3:6])
         return Bw_sample
 
@@ -624,7 +624,7 @@ class TSRChain(object):
         def objective(xyzrpy_list):
             xyzrpy_stack = xyzrpy_list.reshape(len(self.TSRs), 6)
             tsr_trans = self.to_transform(xyzrpy_stack)
-            return prpy.util.GeodesicDistance(tsr_trans, trans)
+            return util.GeodesicDistance(tsr_trans, trans)
 
         bwinit = []
         bwbounds = []
