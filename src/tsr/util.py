@@ -8,7 +8,6 @@ import numpy
 import scipy.misc
 import scipy.optimize
 import threading
-import openravepy
 import time
 import warnings
 
@@ -59,32 +58,3 @@ def GeodesicDistance(t1, t2, r=1.0):
     error = GeodesicError(t1, t2)
     error[3] = r * error[3]
     return numpy.linalg.norm(error)
-
-
-def GetManipulatorIndex(robot, manip=None):
-    """
-    Takes a robot and returns the active manipulator and its index.
-
-    @param robot The OpenRAVE robot
-    @param manip The robot manipulator
-    @return (manip, manip_idx) The manipulator and its index
-    """
-    from openravepy import DebugLevel, RaveGetDebugLevel, RaveSetDebugLevel
-
-    with robot.GetEnv():
-        if manip is None:
-            manip = robot.GetActiveManipulator()
-
-        with robot.CreateRobotStateSaver(
-                robot.SaveParameters.ActiveManipulator):
-            robot.SetActiveManipulator(manip)
-
-            # Ignore GetActiveManipulatorIndex's DeprecationWarning.
-            debug_level = RaveGetDebugLevel()
-            try:
-                RaveSetDebugLevel(DebugLevel.Error)
-                manip_idx = manip.GetRobot().GetActiveManipulatorIndex()
-            finally:
-                RaveSetDebugLevel(debug_level)
-
-    return (manip, manip_idx)
