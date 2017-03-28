@@ -69,7 +69,7 @@ class TSR(object):
 
         # Ask for manipulator index. If none provided, set to -1
         if manipindex is None:
-            raise Exception('Must provide manipulator index for TSR construction')
+            manipindex = -1
         self.manipindex = manipindex
 
         self.bodyandlink = bodyandlink
