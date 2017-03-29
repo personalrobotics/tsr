@@ -58,13 +58,14 @@ class TSRLibrary(object):
     generic_kinbody_key = "_*"  # Something that is unlikely to be an actual kinbody name
     generic_robot_key = "_*"
     
-    def __init__(self, robot, robot_name=None):
+    def __init__(self, robot, manipindex, robot_name=None):
         """
         Create a TSRLibrary for a robot.
         @param robot the robot to store TSRs for
         @param robot_name optional robot name, inferred from robot by default
         """
         self.robot = robot
+        self.manipindex = manipindex
 
         if robot_name is not None:
             self.robot_name = robot_name
@@ -160,7 +161,6 @@ class TSRLibrary(object):
 
                 @TSRFactory(robot_name, kinbody_name, action_name)
                 def func(robot, obj):
-                    manip_idx = robot.GetActiveManipulatorIndex()
 
                     all_tsrs = []
                     for tsr in chain['TSRs']:
@@ -171,7 +171,7 @@ class TSRLibrary(object):
                         yaml_tsr = TSR(T0_w = T0_w, 
                                        Tw_e = Tw_e, 
                                        Bw = Bw, 
-                                       manip = manip_idx)
+                                       manipindex = self.manipindex)
                         all_tsrs.append(yaml_tsr)
 
                     yaml_chain = TSRChain(sample_start=sample_start,

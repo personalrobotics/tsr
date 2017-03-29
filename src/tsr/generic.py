@@ -2,24 +2,14 @@ import numpy
 import warnings
 from tsr.tsrlibrary import TSRFactory
 from tsr.tsr import TSR, TSRChain
-from util import GetManipulatorIndex
 
-def get_manip_idx(robot, manip=None):
-    """
-    Helper function for getting the manipulator index to be used by the TSR.
 
-    Deprecated. Please use util.GetManipulatorIndex instead.
-    """
-    warnings.warn(
-      'tsr.get_manip_idx is deprecated. Please use'
-      ' util.GetManipulatorIndex instead.', DeprecationWarning)
-    return GetManipulatorIndex(robot, manip)[1]
-
-def cylinder_grasp(robot, obj, obj_radius, obj_height, 
+def cylinder_grasp(robot, obj, obj_radius, obj_height,
+                   manip_idx
                    lateral_offset = 0.0, 
                    vertical_tolerance = 0.02,
                    yaw_range = None,
-                   manip = None, **kwargs):
+                   manip_idx = None, **kwargs):
     """
     Generate a list of TSRChain objects. Sampling from any of these
     TSRChains will give an end-effector pose that achieves a grasp on a cylinder.
@@ -33,13 +23,12 @@ def cylinder_grasp(robot, obj, obj_radius, obj_height,
     @param obj The object to grasp
     @param obj_radius The radius of the object
     @param obj_height The height of the object
+    @param manip_idx The index of the manipulator to perform the grasp
     @param lateral_offset The lateral offset from the edge of the object
       to the end-effector
     @param vertical_tolerance The maximum vertical distance from the vertical center
       of the object that the grasp can be performed
     @param yaw_range Allowable range of yaw around object (default: [-pi, pi])
-    @param manip The manipulator to perform the grasp, if None
-       the active manipulator on the robot is used
     """
     if obj_radius <= 0.0:
         raise Exception('obj_radius must be > 0')
@@ -58,8 +47,6 @@ def cylinder_grasp(robot, obj, obj_radius, obj_height,
                         'than or equal to the second (current values [%f, %f])' 
                         % (yaw_range[0], yaw_range[1]))
 
-    manip, manip_idx = GetManipulatorIndex(robot, manip=manip)
-
     T0_w = obj.GetTransform()
     total_offset = lateral_offset + obj_radius
 
@@ -76,7 +63,7 @@ def cylinder_grasp(robot, obj, obj_radius, obj_height,
     else:
         Bw[5,:] = yaw_range
     
-    grasp_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_1, Bw = Bw, manip = manip_idx)
+    grasp_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_1, Bw = Bw, manipindex = manip_idx)
     grasp_chain1 = TSRChain(sample_start=False, sample_goal = True, 
                             constrain=False, TSR = grasp_tsr1)
 
@@ -87,7 +74,7 @@ def cylinder_grasp(robot, obj, obj_radius, obj_height,
                           [0., 0., 0., 1.]])
 
 
-    grasp_tsr2 = TSR(T0_w = T0_w, Tw_e = Tw_e_2, Bw = Bw, manip = manip_idx)
+    grasp_tsr2 = TSR(T0_w = T0_w, Tw_e = Tw_e_2, Bw = Bw, manipindex = manip_idx)
     grasp_chain2 = TSRChain(sample_start=False, sample_goal = True, 
                             constrain=False, TSR = grasp_tsr2)
 
@@ -95,9 +82,10 @@ def cylinder_grasp(robot, obj, obj_radius, obj_height,
 
 
 def box_grasp(robot, box, length, width, height,
+              manip_idx,
               lateral_offset = 0.0,
               lateral_tolerance = 0.02,
-              manip = None, **kwargs):
+              **kwargs):
     """
     Generate a list of TSRChain objects. Sampling from any of these
     TSRChains will give an end-effector pose that achieves a grasp on a box.
@@ -114,12 +102,11 @@ def box_grasp(robot, box, length, width, height,
     @param length The length of the box - along its x-axis
     @param width The width of the box - along its y-axis
     @param height The height of the box - along its z-axis
+    @param manip_idx The index of the manipulator to perform the grasp
     @param lateral_offset - The offset from the edge of the box to the end-effector
     @param lateral_tolerance - The maximum distance along the edge from
       the center of the edge that the end-effector can be placed and still achieve
       a good grasp
-    @param manip The manipulator to perform the grasp, if None the active 
-      manipulator on the robot is used
     """
     if length <= 0.0:
         raise Exception('length must be > 0')
@@ -133,7 +120,6 @@ def box_grasp(robot, box, length, width, height,
     if lateral_tolerance < 0.0:
         raise Exception('lateral_tolerance must be >= 0.0')
 
-    manip, manip_idx = GetManipulatorIndex(robot, manip=manip)
 
     T0_w = box.GetTransform()
 
@@ -147,7 +133,7 @@ def box_grasp(robot, box, length, width, height,
     Bw_top1 = numpy.zeros((6,2))
     Bw_top1[1,:] = [-lateral_tolerance, lateral_tolerance]
     top_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_top1, Bw = Bw_top1, 
-                     manip = manip_idx)
+                     manipindex = manip_idx)
     grasp_chain_top = TSRChain(sample_start=False, sample_goal=True,
                             constrain=False, TSR=top_tsr1)
     chain_list += [ grasp_chain_top ]
@@ -160,7 +146,7 @@ def box_grasp(robot, box, length, width, height,
     Bw_bottom1 = numpy.zeros((6,2))
     Bw_bottom1[1,:] = [-lateral_tolerance, lateral_tolerance]
     bottom_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_bottom1, Bw = Bw_bottom1, 
-                     manip = manip_idx)
+                     manipindex = manip_idx)
     grasp_chain_bottom = TSRChain(sample_start=False, sample_goal=True,
                                   constrain=False, TSR=bottom_tsr1)
     chain_list += [ grasp_chain_bottom ]
@@ -173,7 +159,7 @@ def box_grasp(robot, box, length, width, height,
     Bw_front1 = numpy.zeros((6,2))
     Bw_front1[1,:] = [-lateral_tolerance, lateral_tolerance]
     front_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_front1, Bw = Bw_front1,
-                     manip=manip_idx)
+                     manipindex=manip_idx)
     grasp_chain_front = TSRChain(sample_start=False, sample_goal=True,
                                  constrain=False, TSR=front_tsr1)
     chain_list += [ grasp_chain_front ]
@@ -186,7 +172,7 @@ def box_grasp(robot, box, length, width, height,
     Bw_back1 = numpy.zeros((6,2))
     Bw_back1[1,:] = [-lateral_tolerance, lateral_tolerance]
     back_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_back1, Bw = Bw_back1,
-                    manip=manip_idx)
+                    manipindex=manip_idx)
     grasp_chain_back = TSRChain(sample_start=False, sample_goal=True,
                                 constrain=False, TSR=back_tsr1)
     chain_list += [ grasp_chain_back ]
@@ -199,7 +185,7 @@ def box_grasp(robot, box, length, width, height,
     Bw_side1 = numpy.zeros((6,2))
     Bw_side1[0,:] = [-lateral_tolerance, lateral_tolerance]
     side_tsr1 = TSR(T0_w = T0_w, Tw_e = Tw_e_side1, Bw = Bw_side1,
-                    manip=manip_idx)
+                    manipindex=manip_idx)
     grasp_chain_side1 = TSRChain(sample_start=False, sample_goal=True,
                                 constrain=False, TSR=side_tsr1)
     chain_list += [ grasp_chain_side1 ]
@@ -212,7 +198,7 @@ def box_grasp(robot, box, length, width, height,
     Bw_side2 = numpy.zeros((6,2))
     Bw_side2[0,:] = [-lateral_tolerance, lateral_tolerance]
     side_tsr2 = TSR(T0_w = T0_w, Tw_e = Tw_e_side2, Bw = Bw_side2,
-                    manip=manip_idx)
+                    manipindex=manip_idx)
     grasp_chain_side2 = TSRChain(sample_start=False, sample_goal=True,
                                  constrain=False, TSR=side_tsr2)
     chain_list += [ grasp_chain_side2 ]
@@ -228,7 +214,7 @@ def box_grasp(robot, box, length, width, height,
         tsr = c.TSRs[0]
         Tw_e = tsr.Tw_e
         Tw_e_new = numpy.dot(Tw_e, R)
-        tsr_new = TSR(T0_w = tsr.T0_w, Tw_e=Tw_e_new, Bw=tsr.Bw, manip=tsr.manipindex)
+        tsr_new = TSR(T0_w = tsr.T0_w, Tw_e=Tw_e_new, Bw=tsr.Bw, manipindex=tsr.manipindex)
         tsr_chain_new = TSRChain(sample_start=False, sample_goal=True, constrain=False,
                                      TSR=tsr_new)
         rotated_chain_list += [ tsr_chain_new ]
@@ -236,7 +222,9 @@ def box_grasp(robot, box, length, width, height,
     return chain_list + rotated_chain_list
     
 
-def place_object(robot, obj, pose_tsr_chain, manip=None, 
+
+# TODO : COMPLETELY OPENRAVE DEPENDENT
+def place_object(robot, obj, pose_tsr_chain, manip_idx, 
                      **kwargs):
     """
     Generates end-effector poses for placing an object.
@@ -245,13 +233,11 @@ def place_object(robot, obj, pose_tsr_chain, manip=None,
     @param robot The robot grasping the object
     @param bowl The grasped object
     @param pose_tsr_chain The tsr chain for sampling placement poses for the object
-    @param manip The manipulator grasping the object, if None the active
-       manipulator of the robot is used
+    @param manip_idx The index of the manipulator to perform the grasp
     """
 
-    manip, manip_idx = GetManipulatorIndex(robot, manip=manip)
-    if manip is None:
-        manip = robot.GetManipulators()[manip_idx]
+    # Can this work without importing anything?
+    manip = robot.GetManipulators()[manip_idx]
 
     if not manip.IsGrabbing(obj):
         raise Exception('manip %s is not grabbing %s' % (manip.GetName(), obj.GetName()))
@@ -264,18 +250,19 @@ def place_object(robot, obj, pose_tsr_chain, manip=None,
         if tsr.manipindex != manip_idx:
             raise Exception('pose_tsr_chain defined for a different manipulator.')
 
-    grasp_tsr = TSR(Tw_e = ee_in_obj, Bw = Bw, manip = manip_idx)
+    grasp_tsr = TSR(Tw_e = ee_in_obj, Bw = Bw, manipindex = manip_idx)
     all_tsrs = list(pose_tsr_chain.TSRs) + [grasp_tsr]
     place_chain = TSRChain(sample_start = False, sample_goal = True, constrain = False,
                            TSRs = all_tsrs)
 
     return  [ place_chain ]
 
-def transport_upright(robot, obj, 
+def transport_upright(robot, obj,
+                      manip_idx,
                       roll_epsilon=0.2, 
                       pitch_epsilon=0.2, 
                       yaw_epsilon=0.2,
-                      manip=None, **kwargs):
+                      **kwargs):
     """
     Generates a trajectory-wide constraint for transporting the object with little roll, pitch or yaw
     Assumes the object has already been grasped and is in the proper
@@ -283,11 +270,10 @@ def transport_upright(robot, obj,
 
     @param robot The robot grasping the object
     @param obj The grasped object
+    @param manip_idx The index of the manipulator to perform the grasp
     @param roll_epsilon The amount to let the object roll during transport (object frame)
     @param pitch_epsilon The amount to let the object pitch during transport (object frame)
     @param yaw_epsilon The amount to let the object yaw during transport (object frame)
-    @param manip the manipulator grasping the object, if None the active manipulator 
-       of the robot is used
     """
     if roll_epsilon < 0.0:
         raise Exception('roll_espilon must be >= 0')
@@ -298,9 +284,8 @@ def transport_upright(robot, obj,
     if yaw_epsilon < 0.0:
         raise Exception('yaw_epsilon must be >= 0')
 
-    manip, manip_idx = GetManipulatorIndex(robot, manip=manip)
-    if manip is None:
-        manip = robot.GetManipulators()[manip_idx]
+    
+    manip = robot.GetManipulators()[manip_idx]
 
     ee_in_obj = numpy.dot(numpy.linalg.inv(obj.GetTransform()), 
                           manip.GetEndEffectorTransform())
@@ -313,7 +298,7 @@ def transport_upright(robot, obj,
     transport_tsr = TSR(T0_w = obj.GetTransform(),
                         Tw_e = ee_in_obj,
                         Bw = Bw,
-                        manip = manip_idx)
+                        manipindex = manip_idx)
 
     transport_chain = TSRChain(sample_start = False, sample_goal=False, 
                                constrain=True, TSR = transport_tsr)

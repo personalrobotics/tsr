@@ -26,7 +26,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import openravepy
 import numpy
 import numpy.random
 import util
@@ -39,7 +38,7 @@ EPSILON = 0.001
 class TSR(object):
     """ A Task-Space-Region (TSR) represents a motion constraint. """
     def __init__(self, T0_w=None, Tw_e=None, Bw=None,
-                 manip=None, bodyandlink='NULL'):
+                 manipindex=None, bodyandlink='NULL'):
         if T0_w is None:
             T0_w = numpy.eye(4)
         if Tw_e is None:
@@ -68,12 +67,11 @@ class TSR(object):
 
         self._Bw_cont = Bw_cont
 
-        if manip is None:
-            self.manipindex = -1
-        elif type(manip) == openravepy.openravepy_int.Robot:
-            self.manipindex = manip.GetActiveManipulatorIndex()
-        else:
-            self.manipindex = manip
+        # Ask for manipulator index. If none provided, set to -1
+        if manipindex is None:
+            manipindex = -1
+        self.manipindex = manipindex
+
         self.bodyandlink = bodyandlink
 
     @staticmethod
