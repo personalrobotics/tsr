@@ -1,6 +1,9 @@
 dist: trusty
 sudo: required
 language: generic
+env:
+  global:
+  - TIMEOUT=30
 cache:
 - apt
 before_install:
