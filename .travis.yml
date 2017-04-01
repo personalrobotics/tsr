@@ -21,4 +21,3 @@ script:
 - travis_wait ./scripts/internal-test.sh ${PACKAGE_NAMES}
 after_script:
 - ./scripts/view-all-results.sh test_results
-
