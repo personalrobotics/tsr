@@ -76,7 +76,7 @@ class TSRLibrary(object):
 
     def clone(self, cloned_robot):
         import copy
-        cloned_library = TSRLibrary(cloned_robot,self.manipindex)
+        cloned_library = TSRLibrary(cloned_robot, self.manipindex)
         cloned_library.all_factories = copy.deepcopy(self.all_factories)
         return cloned_library
 
