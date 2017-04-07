@@ -29,6 +29,7 @@
 
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
 import collections, functools, logging, numpy, os.path
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ class TSRLibrary(object):
 
     def clone(self, cloned_robot):
         import copy
-        cloned_library = TSRLibrary(cloned_robot)
+        cloned_library = TSRLibrary(cloned_robot, self.manipindex)
         cloned_library.all_factories = copy.deepcopy(self.all_factories)
         return cloned_library
 
@@ -135,7 +136,7 @@ class TSRLibrary(object):
         @param yaml_file path to the input YAML file
         """
         import yaml
-        from tsr.tsr import TSR, TSRChain
+        from tsr import TSR, TSRChain
 
         with open(yaml_file, 'r') as f:
             yaml_data = yaml.load(f)
