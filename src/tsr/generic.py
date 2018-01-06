@@ -1,11 +1,10 @@
 import numpy
 import warnings
-from tsr.tsrlibrary import TSRFactory
-from tsr.tsr import TSR, TSRChain
+from tsrlibrary import TSRFactory
+from tsr import TSR, TSRChain
 
 
 def cylinder_grasp(robot, obj, obj_radius, obj_height,
-                   manip_idx
                    lateral_offset = 0.0, 
                    vertical_tolerance = 0.02,
                    yaw_range = None,
