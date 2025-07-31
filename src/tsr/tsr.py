@@ -28,8 +28,9 @@
 
 import numpy
 import numpy.random
-import util
+from . import util
 from numpy import pi
+from functools import reduce
 
 NANBW = numpy.ones(6)*float('nan')
 EPSILON = 0.001
@@ -61,7 +62,8 @@ class TSR(object):
         Bw_interval = Bw_cont[3:6, 1] - Bw_cont[3:6, 0]
         Bw_interval = numpy.minimum(Bw_interval, 2*pi)
 
-        from util import wrap_to_interval
+        from . import util
+        wrap_to_interval = util.wrap_to_interval
         Bw_cont[3:6, 0] = wrap_to_interval(Bw_cont[3:6, 0])
         Bw_cont[3:6, 1] = Bw_cont[3:6, 0] + Bw_interval
 
@@ -162,9 +164,11 @@ class TSR(object):
         @return check a (3,) vector of True if within and False if outside
         """
         # Check bounds condition on XYZ component.
-        xyzcheck = [((x + EPSILON) >= Bw[i, 0]) and
-                    ((x - EPSILON) <= Bw[i, 1])
-                    for i, x in enumerate(xyz)]
+        xyzcheck = []
+        for i, x in enumerate(xyz):
+            x_val = x.item() if hasattr(x, 'item') else float(x)  # Convert to scalar
+            xyzcheck.append(((x_val + EPSILON) >= Bw[i, 0]) and
+                           ((x_val - EPSILON) <= Bw[i, 1]))
         return xyzcheck
 
     @staticmethod
@@ -179,8 +183,9 @@ class TSR(object):
         @return check a (3,) vector of True if within and False if outside
         """
         # Unwrap rpy to Bw_cont.
-        from util import wrap_to_interval
-        rpy = wrap_to_interval(rpy, lower=Bw[:, 0])
+        from . import util
+        wrap_to_interval = util.wrap_to_interval
+        rpy = wrap_to_interval(rpy, lower=Bw[:3, 0])
 
         # Check bounds condition on RPY component.
         rpycheck = [False] * 3
@@ -325,13 +330,13 @@ class TSR(object):
         """
         # Extract XYZ and rot components of input and TSR.
         Bw_xyz, Bw_rpy = self._Bw_cont[0:3, :], self._Bw_cont[3:6, :]
-        xyz, rot = trans[0:3, :], trans[0:3, 0:3]
+        xyz, rot = trans[0:3, 3], trans[0:3, 0:3]  # Extract translation vector
         # Check bounds condition on XYZ component.
         xyzcheck = TSR.xyz_within_bounds(xyz, Bw_xyz)
         # Check bounds condition on rot component.
         rotcheck, rpy = TSR.rot_within_rpy_bounds(rot, Bw_rpy)
 
-        return numpy.hstack((xyzcheck, rotcheck))
+        return all(numpy.hstack((xyzcheck, rotcheck)))
 
     def distance(self, trans):
         """
@@ -340,7 +345,7 @@ class TSR(object):
         @return dist Geodesic distance to TSR
         @return bwopt Closest Bw value to trans
         """
-        if all(self.contains(trans)):
+        if self.contains(trans):
             return 0., self.to_xyzrpy(trans)
 
         import scipy.optimize
@@ -378,7 +383,8 @@ class TSR(object):
                                 if numpy.isnan(x) else x
                                 for i, x in enumerate(xyzrpy)])
         # Unwrap rpy to [-pi, pi]
-        from util import wrap_to_interval
+        from . import util
+        wrap_to_interval = util.wrap_to_interval
         Bw_sample[3:6] = wrap_to_interval(Bw_sample[3:6])
         return Bw_sample
 

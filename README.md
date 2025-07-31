@@ -1,7 +1,53 @@
-# Task Space Regions [![Build Status](https://travis-ci.org/personalrobotics/tsr.svg?branch=master)](https://travis-ci.org/personalrobotics/tsr)
+# Task Space Regions
 
 This directory contains the Python interfaces necessary to specify Task Space Regions (TSRs). For a detailed description of TSRs and their uses, please refer to the 2010 IJRR paper entitled "Task Space Regions: A Framework for Pose-Constrained
 Manipulation Planning" by Dmitry Berenson, Siddhartha Srinivasa, and James Kuffner.  A copy of this publication can be downloaded [here](https://www.ri.cmu.edu/pub_files/2011/10/dmitry_ijrr10-1.pdf).
+
+## Installation
+
+This project uses [uv](https://github.com/astral-sh/uv) for dependency management. To install:
+
+```bash
+# Install uv if you haven't already
+pip install uv
+
+# Clone and install the package
+git clone https://github.com/personalrobotics/tsr.git
+cd tsr
+uv sync
+```
+
+For development with testing dependencies:
+```bash
+uv sync --extra test
+```
+
+## Usage
+
+The core TSR library is robot-agnostic and can be used with any robotics framework:
+
+```python
+from tsr import TSR, TSRChain
+import numpy as np
+
+# Create a TSR
+T0_w = np.eye(4)  # World to TSR frame transform
+Tw_e = np.eye(4)  # TSR frame to end-effector transform
+Bw = np.zeros((6, 2))  # Bounds on TSR coordinates
+Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
+Bw[5, :] = [-np.pi, np.pi]  # Allow any yaw rotation
+
+tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
+
+# Sample a pose from the TSR
+pose = tsr.sample()
+
+# Check if a pose is within the TSR
+is_contained = tsr.contains(pose)
+
+# Create a TSR Chain
+chain = TSRChain(sample_goal=True, TSR=tsr)
+```
 
 ## TSR Overview
 A TSR is typically used to defined a constraint on the pose of the end-effector of a manipulator. For example, consider a manipulator tasked with grabbing a glass. The end-effector (hand) must be near the glass, and oriented in a way that allows the fingers to grab around the glass when closed. This set of workspace constraints on valid poses of the end-effector can be expressed as a TSR.
