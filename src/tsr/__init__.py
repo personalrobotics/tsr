@@ -64,20 +64,14 @@ from .wrappers import (
     TSRWrapperFactory
 )
 
-# Import legacy classes for backward compatibility
-try:
-    import rodrigues, tsr, tsrlibrary
-    from tsr import TSR as LegacyTSR, TSRChain as LegacyTSRChain
-    _LEGACY_AVAILABLE = True
-except ImportError:
-    _LEGACY_AVAILABLE = False
-
 # Import utility modules
 try:
-    from . import kin, rodrigues, util
+    import tsrlibrary
     _UTILS_AVAILABLE = True
 except ImportError:
     _UTILS_AVAILABLE = False
+
+
 
 # Export all symbols
 __all__ = [
@@ -94,13 +88,11 @@ __all__ = [
     'TSRWrapperFactory'
 ]
 
-# Add legacy classes if available
-if _LEGACY_AVAILABLE:
-    __all__.extend(['LegacyTSR', 'LegacyTSRChain'])
+# Legacy classes are no longer available since we removed the legacy implementation
 
 # Add utility modules if available
 if _UTILS_AVAILABLE:
-    __all__.extend(['kin', 'rodrigues', 'util', 'tsrlibrary'])
+    __all__.extend(['tsrlibrary'])
 
 # Convenience functions for creating wrappers
 def create_openrave_wrapper(robot, manip_idx: int):

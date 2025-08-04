@@ -6,6 +6,7 @@ from numpy import pi
 
 EPSILON = 0.001
 
+
 def wrap_to_interval(angles: np.ndarray, lower: np.ndarray = None) -> np.ndarray:
     """
     Wrap a vector of angles to a continuous interval starting at `lower`.
@@ -35,12 +36,12 @@ def geodesic_error(t1: np.ndarray, t2: np.ndarray) -> np.ndarray:
     """
     trel = np.dot(np.linalg.inv(t1), t2)
     trans = np.dot(t1[0:3, 0:3], trel[0:3, 3])
-    
+
     # Extract rotation error (simplified - just use the rotation matrix)
     # For a more accurate geodesic distance, we'd need to extract the rotation angle
     # For now, use a simple approximation
     angle_error = np.linalg.norm(trel[0:3, 0:3] - np.eye(3))
-    
+
     return np.hstack((trans, angle_error))
 
 

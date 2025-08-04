@@ -5,19 +5,20 @@
 MuJoCo wrapper for TSR library.
 
 This module provides adapters and functions for using TSRs with MuJoCo robots.
-(Placeholder for future implementation)
 """
 
-# TODO: Implement MuJoCo wrapper
-# This will include:
-# - MuJoCoRobotAdapter
-# - MuJoCoObjectAdapter  
-# - MuJoCoEnvironmentAdapter
-# - MuJoCo-specific TSR functions
+from .robot import MuJoCoRobotAdapter
+from .tsr import (
+    cylinder_grasp,
+    box_grasp,
+    place_object,
+    transport_upright
+)
 
-class MuJoCoRobotAdapter:
-    """Placeholder for MuJoCo robot adapter."""
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError("MuJoCo wrapper not yet implemented")
-
-__all__ = ['MuJoCoRobotAdapter'] 
+__all__ = [
+    'MuJoCoRobotAdapter',
+    'cylinder_grasp',
+    'box_grasp', 
+    'place_object',
+    'transport_upright'
+] 

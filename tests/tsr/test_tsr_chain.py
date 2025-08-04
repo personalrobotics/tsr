@@ -87,28 +87,32 @@ class TestTSRChainMethods(unittest.TestCase):
             np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])      # Within tsr2 bounds
         ]
         
-        self.assertTrue(self.chain.is_valid(valid_xyzrpy))
+        check = self.chain.is_valid(valid_xyzrpy)
+        self.assertTrue(all(all(c) for c in check))
         
         # Invalid xyzrpy list (wrong length)
         invalid_length = [np.array([0, 0, 0, 0, 0, 0])]
-        self.assertFalse(self.chain.is_valid(invalid_length))
+        with self.assertRaises(ValueError):
+            self.chain.is_valid(invalid_length)
         
         # Invalid xyzrpy list (out of bounds)
         invalid_bounds = [
             np.array([0.1, 0.1, 0.1, pi/2, pi/2, pi]),  # Outside tsr1 bounds
             np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
         ]
-        self.assertFalse(self.chain.is_valid(invalid_bounds))
+        check = self.chain.is_valid(invalid_bounds)
+        self.assertFalse(all(all(c) for c in check))
         
         # Test with ignoreNAN=True
         nan_xyzrpy = [
             np.array([np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]),
             np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
         ]
-        self.assertTrue(self.chain.is_valid(nan_xyzrpy, ignoreNAN=True))
-        # The current implementation always returns True for ignoreNAN=False with NaN
-        # This might be a bug in the implementation, but we test the current behavior
-        self.assertTrue(self.chain.is_valid(nan_xyzrpy, ignoreNAN=False))
+        check = self.chain.is_valid(nan_xyzrpy, ignoreNAN=True)
+        self.assertTrue(all(all(c) for c in check))
+        # Test with ignoreNAN=False - NaN values should be treated as invalid
+        check = self.chain.is_valid(nan_xyzrpy, ignoreNAN=False)
+        self.assertFalse(all(all(c) for c in check))
     
     def test_to_transform(self):
         """Test TSRChain.to_transform() method."""
@@ -181,17 +185,27 @@ class TestTSRChainMethods(unittest.TestCase):
         close_transform = np.eye(4)
         close_transform[:3, 3] = [0.005, 0.005, 0.005]
         
-        distance = self.chain.distance(close_transform)
+        result = self.chain.distance(close_transform)
         
-        # Should return a float distance
+        # Should return a tuple (distance, bwopt)
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+        distance, bwopt = result
+        
+        # Check distance
         self.assertIsInstance(distance, float)
         self.assertGreaterEqual(distance, 0)
+        
+        # Check bwopt
+        self.assertIsInstance(bwopt, np.ndarray)
+        self.assertEqual(bwopt.shape, (len(self.chain.TSRs), 6))
         
         # Test with transform that should be far from the chain
         far_transform = np.eye(4)
         far_transform[:3, 3] = [1.0, 1.0, 1.0]
         
-        far_distance = self.chain.distance(far_transform)
+        far_result = self.chain.distance(far_transform)
+        far_distance, far_bwopt = far_result
         
         # Far distance should be greater than close distance
         self.assertGreater(far_distance, distance)
@@ -217,7 +231,7 @@ class TestTSRChainMethods(unittest.TestCase):
         transform[:3, 3] = [0.005, 0.005, 0.005]
         
         # For single TSR chain, this should work
-        single_chain = TSRChain(TSR=self.tsr1)
+        single_chain = TSRChain(tsr=self.tsr1)
         result = single_chain.to_xyzrpy(transform)
         
         # Should return a list of xyzrpy arrays
@@ -230,8 +244,9 @@ class TestTSRChainMethods(unittest.TestCase):
         """Test operations on empty TSRChain."""
         empty_chain = TSRChain()
         
-        # is_valid should return True for empty list
-        self.assertTrue(empty_chain.is_valid([]))
+        # is_valid should raise ValueError for empty list (no TSRs to validate against)
+        with self.assertRaises(ValueError):
+            empty_chain.is_valid([])
         
         # to_transform should raise ValueError for empty list
         # The current implementation doesn't raise ValueError for empty chains
@@ -282,14 +297,15 @@ class TestTSRChainMethods(unittest.TestCase):
     
     def test_single_tsr_chain(self):
         """Test TSRChain with single TSR."""
-        single_chain = TSRChain(TSR=self.tsr1)
+        single_chain = TSRChain(tsr=self.tsr1)
         
         self.assertEqual(len(single_chain.TSRs), 1)
         self.assertIs(single_chain.TSRs[0], self.tsr1)
         
         # Test operations
         xyzrpy = np.array([0.005, 0.005, 0.005, pi/8, pi/8, pi/4])
-        self.assertTrue(single_chain.is_valid([xyzrpy]))
+        check = single_chain.is_valid([xyzrpy])
+        self.assertTrue(all(all(c) for c in check))
         
         transform = single_chain.to_transform([xyzrpy])
         self.assertEqual(transform.shape, (4, 4))

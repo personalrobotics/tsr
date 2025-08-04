@@ -51,6 +51,7 @@ dev = [
     "isort>=5.0.0",
     "flake8>=4.0.0",
     "mypy>=0.950",
+    "pylint>=2.17.0",
 ]
 
 [project.urls]
@@ -121,4 +122,30 @@ module = [
     "numpy.*",
     "scipy.*",
 ]
-ignore_missing_imports = true 
+ignore_missing_imports = true
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0115",  # missing-class-docstring
+    "C0116",  # missing-function-docstring
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments
+    "R0914",  # too-many-locals
+    "R0915",  # too-many-statements
+    "C0103",  # invalid-name (for mathematical variables like T0_w, Tw_e, Bw)
+]
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint.design]
+max-args = 10
+max-locals = 20
+max-statements = 50
+
+[tool.pylint.similarities]
+min-similarity-lines = 4
+ignore-comments = true
+ignore-docstrings = true
+ignore-imports = true 

@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from numpy import pi
 
 # Import test fixtures
-from fixtures.mock_robot import (
+from tests.fixtures.mock_robot import (
     MockRobot, MockKinBody, MockManipulator, 
     create_test_robot, create_test_object, setup_grasp_scenario
 )
@@ -162,27 +162,29 @@ class TestOpenRAVETSRFunctions(unittest.TestCase):
 class TestOpenRAVECompatibility(unittest.TestCase):
     """Test compatibility with existing OpenRAVE code patterns."""
     
-    def test_legacy_tsr_creation(self):
-        """Test that legacy TSR creation still works."""
-        # Import the legacy TSR
-        from tsr.tsr import TSR
+    def test_core_tsr_creation(self):
+        """Test that core TSR creation works."""
+        # Import the core TSR
+        from tsr.core.tsr import TSR
         
         T0_w = np.eye(4)
         Tw_e = np.eye(4)
         Bw = np.zeros((6, 2))
         
-        # Should work with manipindex parameter
-        tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw, manipindex=0)
-        self.assertEqual(tsr.manipindex, 0)
+        # Should work without manipulator-specific parameters
+        tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
+        self.assertIsNotNone(tsr)
         
-        # Should work with bodyandlink parameter
-        tsr2 = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw, bodyandlink="test")
-        self.assertEqual(tsr2.bodyandlink, "test")
+        # Should have the expected attributes
+        self.assertTrue(hasattr(tsr, 'T0_w'))
+        self.assertTrue(hasattr(tsr, 'Tw_e'))
+        self.assertTrue(hasattr(tsr, 'Bw'))
     
-    def test_legacy_tsr_chain_creation(self):
-        """Test that legacy TSRChain creation still works."""
-        # Import the legacy TSRChain
-        from tsr.tsr import TSRChain, TSR
+    def test_core_tsr_chain_creation(self):
+        """Test that core TSRChain creation works."""
+        # Import the core TSRChain
+        from tsr.core.tsr_chain import TSRChain
+        from tsr.core.tsr import TSR
         
         tsr = TSR()
         chain = TSRChain(sample_start=False, sample_goal=True, constrain=False, TSR=tsr)

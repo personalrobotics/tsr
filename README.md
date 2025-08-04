@@ -27,7 +27,8 @@ uv sync --extra test
 The core TSR library is robot-agnostic and can be used with any robotics framework:
 
 ```python
-from tsr import TSR, TSRChain
+from tsr.core.tsr import TSR
+from tsr.core.tsr_chain import TSRChain
 import numpy as np
 
 # Create a TSR

@@ -10,6 +10,13 @@ of any specific robot or simulator.
 
 from .tsr import TSR
 from .tsr_chain import TSRChain
-from .utils import wrap_to_interval, EPSILON, geodesic_distance, geodesic_error
+from .utils import EPSILON, geodesic_distance, geodesic_error, wrap_to_interval
 
-__all__ = ['TSR', 'TSRChain', 'wrap_to_interval', 'EPSILON', 'geodesic_distance', 'geodesic_error'] 
+__all__ = [
+    "TSR",
+    "TSRChain",
+    "wrap_to_interval",
+    "EPSILON",
+    "geodesic_distance",
+    "geodesic_error",
+]

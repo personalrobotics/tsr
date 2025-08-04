@@ -1,7 +1,8 @@
 import numpy
 import warnings
 from tsrlibrary import TSRFactory
-from tsr import TSR, TSRChain
+from tsr.core.tsr import TSR
+from tsr.core.tsr_chain import TSRChain
 
 
 def cylinder_grasp(robot, obj, obj_radius, obj_height,

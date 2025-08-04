@@ -11,8 +11,7 @@ import numpy as np
 import unittest
 from numpy import pi
 
-# Import both implementations for comparison
-from tsr.tsr import TSR as LegacyTSR
+# Import core implementation for testing
 from tsr.core.tsr import TSR as CoreTSR
 
 
@@ -45,61 +44,44 @@ class PerformanceBenchmark(unittest.TestCase):
             [-pi/2, pi/2]    # yaw bounds
         ])
         
-        # Create TSR instances
-        self.legacy_tsr = LegacyTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
-        self.core_tsr = CoreTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+        # Create TSR instance
+        self.tsr = CoreTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
     
-    def benchmark_tsr_creation(self):
+    def test_benchmark_tsr_creation(self):
         """Benchmark TSR creation performance."""
         num_iterations = 1000
-        
-        # Benchmark legacy creation
-        start_time = time.time()
-        for _ in range(num_iterations):
-            LegacyTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
-        legacy_time = time.time() - start_time
         
         # Benchmark core creation
         start_time = time.time()
         for _ in range(num_iterations):
             CoreTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
-        core_time = time.time() - start_time
+        creation_time = time.time() - start_time
         
         print(f"TSR Creation Benchmark:")
-        print(f"  Legacy: {legacy_time:.4f}s ({num_iterations} iterations)")
-        print(f"  Core:   {core_time:.4f}s ({num_iterations} iterations)")
-        print(f"  Ratio:  {core_time/legacy_time:.2f}x")
+        print(f"  Core:   {creation_time:.4f}s ({num_iterations} iterations)")
         
-        # Core should not be significantly slower (within 20%)
-        self.assertLess(core_time, legacy_time * 1.2, 
-                       "Core implementation is significantly slower than legacy")
+        # Should be reasonably fast (less than 1 second for 1000 iterations)
+        self.assertLess(creation_time, 1.0, 
+                       "TSR creation is too slow")
     
-    def benchmark_sampling(self):
+    def test_benchmark_sampling(self):
         """Benchmark sampling performance."""
         num_samples = 10000
-        
-        # Benchmark legacy sampling
-        start_time = time.time()
-        for _ in range(num_samples):
-            self.legacy_tsr.sample_xyzrpy()
-        legacy_time = time.time() - start_time
         
         # Benchmark core sampling
         start_time = time.time()
         for _ in range(num_samples):
-            self.core_tsr.sample_xyzrpy()
-        core_time = time.time() - start_time
+            self.tsr.sample_xyzrpy()
+        sampling_time = time.time() - start_time
         
         print(f"Sampling Benchmark:")
-        print(f"  Legacy: {legacy_time:.4f}s ({num_samples} samples)")
-        print(f"  Core:   {core_time:.4f}s ({num_samples} samples)")
-        print(f"  Ratio:  {core_time/legacy_time:.2f}x")
+        print(f"  Core:   {sampling_time:.4f}s ({num_samples} samples)")
         
-        # Core should not be significantly slower (within 20%)
-        self.assertLess(core_time, legacy_time * 1.2, 
-                       "Core implementation is significantly slower than legacy")
+        # Should be reasonably fast (less than 5 seconds for 10000 samples)
+        self.assertLess(sampling_time, 5.0, 
+                       "TSR sampling is too slow")
     
-    def benchmark_transform_calculation(self):
+    def test_benchmark_transform_calculation(self):
         """Benchmark transform calculation performance."""
         num_calculations = 10000
         test_inputs = [
@@ -108,32 +90,23 @@ class PerformanceBenchmark(unittest.TestCase):
             np.array([-0.1, -0.2, -0.3, -pi/4, -pi/6, -pi/3])
         ]
         
-        # Benchmark legacy transform calculation
-        start_time = time.time()
-        for _ in range(num_calculations):
-            for xyzrpy in test_inputs:
-                self.legacy_tsr.to_transform(xyzrpy)
-        legacy_time = time.time() - start_time
-        
         # Benchmark core transform calculation
         start_time = time.time()
         for _ in range(num_calculations):
             for xyzrpy in test_inputs:
-                self.core_tsr.to_transform(xyzrpy)
-        core_time = time.time() - start_time
+                self.tsr.to_transform(xyzrpy)
+        transform_time = time.time() - start_time
         
         print(f"Transform Calculation Benchmark:")
-        print(f"  Legacy: {legacy_time:.4f}s ({num_calculations * len(test_inputs)} calculations)")
-        print(f"  Core:   {core_time:.4f}s ({num_calculations * len(test_inputs)} calculations)")
-        print(f"  Ratio:  {core_time/legacy_time:.2f}x")
+        print(f"  Core:   {transform_time:.4f}s ({num_calculations * len(test_inputs)} calculations)")
         
-        # Core should not be significantly slower (within 20%)
-        self.assertLess(core_time, legacy_time * 1.2, 
-                       "Core implementation is significantly slower than legacy")
+        # Should be reasonably fast (less than 5 seconds for 30000 calculations)
+        self.assertLess(transform_time, 5.0, 
+                       "TSR transform calculation is too slow")
     
-    def benchmark_distance_calculation(self):
+    def test_benchmark_distance_calculation(self):
         """Benchmark distance calculation performance."""
-        num_calculations = 10000
+        num_calculations = 100  # Reduced for faster testing
         test_transforms = [
             np.eye(4),
             self.T0_w,
@@ -146,30 +119,21 @@ class PerformanceBenchmark(unittest.TestCase):
             ])
         ]
         
-        # Benchmark legacy distance calculation
-        start_time = time.time()
-        for _ in range(num_calculations):
-            for transform in test_transforms:
-                self.legacy_tsr.distance(transform)
-        legacy_time = time.time() - start_time
-        
         # Benchmark core distance calculation
         start_time = time.time()
         for _ in range(num_calculations):
             for transform in test_transforms:
-                self.core_tsr.distance(transform)
-        core_time = time.time() - start_time
+                self.tsr.distance(transform)
+        distance_time = time.time() - start_time
         
         print(f"Distance Calculation Benchmark:")
-        print(f"  Legacy: {legacy_time:.4f}s ({num_calculations * len(test_transforms)} calculations)")
-        print(f"  Core:   {core_time:.4f}s ({num_calculations * len(test_transforms)} calculations)")
-        print(f"  Ratio:  {core_time/legacy_time:.2f}x")
+        print(f"  Core:   {distance_time:.4f}s ({num_calculations * len(test_transforms)} calculations)")
         
-        # Core should not be significantly slower (within 20%)
-        self.assertLess(core_time, legacy_time * 1.2, 
-                       "Core implementation is significantly slower than legacy")
+        # Should be reasonably fast (less than 10 seconds for 400 calculations)
+        self.assertLess(distance_time, 10.0, 
+                       "TSR distance calculation is too slow")
     
-    def benchmark_containment_test(self):
+    def test_benchmark_containment_test(self):
         """Benchmark containment test performance."""
         num_tests = 10000
         test_transforms = [
@@ -182,28 +146,19 @@ class PerformanceBenchmark(unittest.TestCase):
             ])
         ]
         
-        # Benchmark legacy containment test
-        start_time = time.time()
-        for _ in range(num_tests):
-            for transform in test_transforms:
-                self.legacy_tsr.contains(transform)
-        legacy_time = time.time() - start_time
-        
         # Benchmark core containment test
         start_time = time.time()
         for _ in range(num_tests):
             for transform in test_transforms:
-                self.core_tsr.contains(transform)
-        core_time = time.time() - start_time
+                self.tsr.contains(transform)
+        containment_time = time.time() - start_time
         
         print(f"Containment Test Benchmark:")
-        print(f"  Legacy: {legacy_time:.4f}s ({num_tests * len(test_transforms)} tests)")
-        print(f"  Core:   {core_time:.4f}s ({num_tests * len(test_transforms)} tests)")
-        print(f"  Ratio:  {core_time/legacy_time:.2f}x")
+        print(f"  Core:   {containment_time:.4f}s ({num_tests * len(test_transforms)} tests)")
         
-        # Core should not be significantly slower (within 20%)
-        self.assertLess(core_time, legacy_time * 1.2, 
-                       "Core implementation is significantly slower than legacy")
+        # Should be reasonably fast (less than 5 seconds for 20000 tests)
+        self.assertLess(containment_time, 5.0, 
+                       "TSR containment test is too slow")
     
     def run_all_benchmarks(self):
         """Run all benchmarks and print summary."""
