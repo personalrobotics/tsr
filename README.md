@@ -150,6 +150,8 @@ print(place_on)    # "place/on"
 
 The relational library enables **task-based TSR generation** and querying:
 
+Conceptually, the relational library treats a TSR as describing a spatial relationship between two entities: the **subject** and the **reference**. The subject is the entity whose pose is constrained (often a gripper or manipulated object), and the reference is the entity relative to which the TSR is defined (often a grasped object, a placement surface, or another tool). This formulation makes TSRs manipulator-agnostic and reusable: for example, `subject=GENERIC_GRIPPER` and `reference=MUG` with a `GRASP/side` task describes all side grasps for a mug, while `subject=MUG` and `reference=TABLE` with a `PLACE/on` task describes stable placements of a mug on a table. Querying the library with different subject–reference–task combinations allows you to retrieve the appropriate TSR templates for your current scene and entities.
+
 ```python
 from tsr.tsr_library_rel import TSRLibraryRelational
 
