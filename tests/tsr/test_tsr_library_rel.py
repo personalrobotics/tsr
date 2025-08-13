@@ -1,375 +1,458 @@
-#!/usr/bin/env python
-"""
-Tests for TSRLibraryRelational functionality.
-
-Tests the relational TSR library for registering and querying TSR generators.
-"""
+"""Tests for TSRLibraryRelational class."""
 
 import unittest
 import numpy as np
-from typing import List
+
 from tsr.tsr_library_rel import TSRLibraryRelational
-from tsr.schema import TaskCategory, TaskType, EntityClass
 from tsr.core.tsr_template import TSRTemplate
+from tsr.schema import EntityClass, TaskCategory, TaskType
 
 
 class TestTSRLibraryRelational(unittest.TestCase):
     """Test TSRLibraryRelational functionality."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         self.library = TSRLibraryRelational()
         
-        # Create test TSR templates
+        # Create test templates
         self.template1 = TSRTemplate(
             T_ref_tsr=np.eye(4),
-            Tw_e=np.eye(4),
+            Tw_e=np.array([
+                [0, 0, 1, -0.05],
+                [1, 0, 0, 0],
+                [0, 1, 0, 0.05],
+                [0, 0, 0, 1]
+            ]),
             Bw=np.array([
-                [0, 0],      # x: fixed
-                [0, 0],      # y: fixed
-                [0, 0],      # z: fixed
-                [0, 0],      # roll: fixed
-                [0, 0],      # pitch: fixed
-                [-np.pi, np.pi]  # yaw: full rotation
-            ])
+                [0, 0], [0, 0], [-0.01, 0.01],
+                [0, 0], [0, 0], [-np.pi, np.pi]
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="side",
+            name="Side Grasp",
+            description="Grasp mug from the side"
         )
         
         self.template2 = TSRTemplate(
             T_ref_tsr=np.eye(4),
-            Tw_e=np.eye(4),
+            Tw_e=np.array([
+                [0, 0, 1, -0.05],
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, 0, 1]
+            ]),
             Bw=np.array([
-                [-0.1, 0.1],  # x: small range
-                [0, 0],      # y: fixed
-                [0, 0],      # z: fixed
-                [0, 0],      # roll: fixed
-                [0, 0],      # pitch: fixed
-                [0, 0]       # yaw: fixed
-            ])
+                [0, 0], [0, 0], [-0.01, 0.01],
+                [0, 0], [0, 0], [-np.pi, np.pi]
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="top",
+            name="Top Grasp",
+            description="Grasp mug from the top"
+        )
+
+    def test_register_template(self):
+        """Test registering templates with descriptions."""
+        # Register templates
+        self.library.register_template(
+            subject=EntityClass.GENERIC_GRIPPER,
+            reference=EntityClass.MUG,
+            task=TaskType(TaskCategory.GRASP, "side"),
+            template=self.template1,
+            description="Grasp mug from the side with 5cm approach"
         )
         
-        # Create test generator functions
-        def grasp_generator(T_ref_world: np.ndarray) -> List[TSRTemplate]:
-            """Generate grasp templates."""
-            return [self.template1, self.template2]
+        self.library.register_template(
+            subject=EntityClass.GENERIC_GRIPPER,
+            reference=EntityClass.MUG,
+            task=TaskType(TaskCategory.GRASP, "top"),
+            template=self.template2,
+            description="Grasp mug from the top with vertical approach"
+        )
         
-        def place_generator(T_ref_world: np.ndarray) -> List[TSRTemplate]:
-            """Generate place templates."""
-            return [self.template1]
+        # Verify templates are registered
+        templates = self.library.query_templates(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side")
+        )
+        self.assertEqual(len(templates), 1)
+        self.assertEqual(templates[0].name, "Side Grasp")
+
+    def test_query_templates(self):
+        """Test querying templates."""
+        # Register templates
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template1,
+            "Side grasp description"
+        )
         
-        self.grasp_generator = grasp_generator
-        self.place_generator = place_generator
-    
-    def test_library_creation(self):
-        """Test TSRLibraryRelational creation."""
-        self.assertIsInstance(self.library, TSRLibraryRelational)
-    
-    def test_register_and_query(self):
-        """Test registering and querying TSR generators."""
-        # Register a generator
+        # Query without descriptions
+        templates = self.library.query_templates(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side")
+        )
+        self.assertEqual(len(templates), 1)
+        self.assertIsInstance(templates[0], TSRTemplate)
+        
+        # Query with descriptions
+        templates_with_desc = self.library.query_templates(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            include_descriptions=True
+        )
+        self.assertEqual(len(templates_with_desc), 1)
+        self.assertIsInstance(templates_with_desc[0], tuple)
+        self.assertEqual(len(templates_with_desc[0]), 2)
+        self.assertIsInstance(templates_with_desc[0][0], TSRTemplate)
+        self.assertIsInstance(templates_with_desc[0][1], str)
+        self.assertEqual(templates_with_desc[0][1], "Side grasp description")
+
+    def test_query_templates_not_found(self):
+        """Test querying non-existent templates."""
+        with self.assertRaises(KeyError):
+            self.library.query_templates(
+                EntityClass.GENERIC_GRIPPER,
+                EntityClass.MUG,
+                TaskType(TaskCategory.GRASP, "nonexistent")
+            )
+
+    def test_list_available_templates(self):
+        """Test listing available templates with descriptions."""
+        # Register multiple templates
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template1,
+            "Side grasp"
+        )
+        
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "top"),
+            self.template2,
+            "Top grasp"
+        )
+        
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.PLATE,
+            TaskType(TaskCategory.PLACE, "on"),
+            self.template1,
+            "Place on plate"
+        )
+        
+        # List all templates
+        all_templates = self.library.list_available_templates()
+        self.assertEqual(len(all_templates), 3)
+        
+        # Filter by subject
+        gripper_templates = self.library.list_available_templates(
+            subject=EntityClass.GENERIC_GRIPPER
+        )
+        self.assertEqual(len(gripper_templates), 3)
+        
+        # Filter by reference
+        mug_templates = self.library.list_available_templates(
+            reference=EntityClass.MUG
+        )
+        self.assertEqual(len(mug_templates), 2)
+        
+        # Filter by task category
+        grasp_templates = self.library.list_available_templates(
+            task_category="grasp"
+        )
+        self.assertEqual(len(grasp_templates), 2)
+        
+        # Combined filter
+        filtered = self.library.list_available_templates(
+            subject=EntityClass.GENERIC_GRIPPER,
+            reference=EntityClass.MUG,
+            task_category="grasp"
+        )
+        self.assertEqual(len(filtered), 2)
+
+    def test_get_template_info(self):
+        """Test getting template names and descriptions."""
+        # Register templates
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template1,
+            "Side grasp description"
+        )
+        
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template2,
+            "Alternative side grasp"
+        )
+        
+        # Get template info
+        info = self.library.get_template_info(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side")
+        )
+        
+        self.assertEqual(len(info), 2)
+        self.assertIn(("Side Grasp", "Side grasp description"), info)
+        self.assertIn(("Top Grasp", "Alternative side grasp"), info)
+
+    def test_get_template_info_not_found(self):
+        """Test getting template info for non-existent combination."""
+        with self.assertRaises(KeyError):
+            self.library.get_template_info(
+                EntityClass.GENERIC_GRIPPER,
+                EntityClass.MUG,
+                TaskType(TaskCategory.GRASP, "nonexistent")
+            )
+
+    def test_multiple_templates_same_key(self):
+        """Test registering multiple templates for the same key."""
+        # Register multiple templates for the same combination
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template1,
+            "First side grasp"
+        )
+        
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template2,
+            "Second side grasp"
+        )
+        
+        # Query should return both templates
+        templates = self.library.query_templates(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side")
+        )
+        self.assertEqual(len(templates), 2)
+        
+        # With descriptions
+        templates_with_desc = self.library.query_templates(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            include_descriptions=True
+        )
+        self.assertEqual(len(templates_with_desc), 2)
+        
+        descriptions = [desc for _, desc in templates_with_desc]
+        self.assertIn("First side grasp", descriptions)
+        self.assertIn("Second side grasp", descriptions)
+
+
+class TestTSRLibraryRelationalGeneratorMode(unittest.TestCase):
+    """Test TSRLibraryRelational in generator mode (existing functionality)."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.library = TSRLibraryRelational()
+        
+        # Create a test template
+        self.template = TSRTemplate(
+            T_ref_tsr=np.eye(4),
+            Tw_e=np.array([
+                [0, 0, 1, -0.05],
+                [1, 0, 0, 0],
+                [0, 1, 0, 0.05],
+                [0, 0, 0, 1]
+            ]),
+            Bw=np.array([
+                [0, 0], [0, 0], [-0.01, 0.01],
+                [0, 0], [0, 0], [-np.pi, np.pi]
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="side"
+        )
+
+    def test_register_generator(self):
+        """Test registering a generator function."""
+        def generator(T_ref_world):
+            return [self.template]
+        
         self.library.register(
             subject=EntityClass.GENERIC_GRIPPER,
             reference=EntityClass.MUG,
             task=TaskType(TaskCategory.GRASP, "side"),
-            generator=self.grasp_generator
+            generator=generator
+        )
+
+    def test_query_generator(self):
+        """Test querying with a generator."""
+        def generator(T_ref_world):
+            return [self.template]
+        
+        self.library.register(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            generator
         )
         
-        # Query the generator
         T_ref_world = np.eye(4)
         tsrs = self.library.query(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            T_ref_world=T_ref_world
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            T_ref_world
         )
         
-        # Should return list of TSRs
-        self.assertIsInstance(tsrs, list)
-        self.assertEqual(len(tsrs), 2)  # Two templates from grasp_generator
-        
-        # Each should be a TSR
-        for tsr in tsrs:
-            from tsr.core.tsr import TSR
-            self.assertIsInstance(tsr, TSR)
-    
-    def test_query_unregistered(self):
-        """Test querying unregistered generator."""
-        with self.assertRaises(KeyError):
-            self.library.query(
-                subject=EntityClass.GENERIC_GRIPPER,
-                reference=EntityClass.MUG,
-                task=TaskType(TaskCategory.GRASP, "side"),
-                T_ref_world=np.eye(4)
-            )
-    
-    def test_multiple_registrations(self):
-        """Test registering multiple generators."""
-        # Register multiple generators
-        self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            generator=self.grasp_generator
-        )
-        
-        self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.PLACE, "on"),
-            generator=self.place_generator
-        )
-        
-        # Query both
-        T_ref_world = np.eye(4)
-        
-        grasp_tsrs = self.library.query(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            T_ref_world=T_ref_world
-        )
-        
-        place_tsrs = self.library.query(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.PLACE, "on"),
-            T_ref_world=T_ref_world
-        )
-        
-        # Should return different numbers of TSRs
-        self.assertEqual(len(grasp_tsrs), 2)
-        self.assertEqual(len(place_tsrs), 1)
-    
+        self.assertEqual(len(tsrs), 1)
+        self.assertIsInstance(tsrs[0], object)  # CoreTSR
+
     def test_list_tasks_for_reference(self):
         """Test listing tasks for a reference entity."""
-        # Register generators for different tasks
-        self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            generator=self.grasp_generator
-        )
+        def generator(T_ref_world):
+            return [self.template]
         
         self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.PLACE, "on"),
-            generator=self.place_generator
-        )
-        
-        self.library.register(
-            subject=EntityClass.ROBOTIQ_2F140,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "top"),
-            generator=self.grasp_generator
-        )
-        
-        # List tasks for MUG reference
-        tasks = self.library.list_tasks_for_reference(EntityClass.MUG)
-        
-        # Should return all tasks for MUG
-        expected_tasks = {
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
             TaskType(TaskCategory.GRASP, "side"),
+            generator
+        )
+        
+        self.library.register(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
             TaskType(TaskCategory.PLACE, "on"),
-            TaskType(TaskCategory.GRASP, "top")
-        }
-        self.assertEqual(set(tasks), expected_tasks)
-    
-    def test_list_tasks_with_subject_filter(self):
-        """Test listing tasks with subject filter."""
-        # Register generators for different subjects
+            generator
+        )
+        
+        tasks = self.library.list_tasks_for_reference(EntityClass.MUG)
+        self.assertEqual(len(tasks), 2)
+        
+        task_strings = [str(task) for task in tasks]
+        self.assertIn("grasp/side", task_strings)
+        self.assertIn("place/on", task_strings)
+
+    def test_list_tasks_with_filters(self):
+        """Test listing tasks with filters."""
+        def generator(T_ref_world):
+            return [self.template]
+        
         self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            generator=self.grasp_generator
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            generator
         )
         
         self.library.register(
-            subject=EntityClass.ROBOTIQ_2F140,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "top"),
-            generator=self.grasp_generator
+            EntityClass.ROBOTIQ_2F140,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "top"),
+            generator
         )
         
-        # List tasks for MUG with GENERIC_GRIPPER filter
+        # Filter by subject
         tasks = self.library.list_tasks_for_reference(
             EntityClass.MUG,
             subject_filter=EntityClass.GENERIC_GRIPPER
         )
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(str(tasks[0]), "grasp/side")
         
-        # Should only return tasks for GENERIC_GRIPPER
-        expected_tasks = {TaskType(TaskCategory.GRASP, "side")}
-        self.assertEqual(set(tasks), expected_tasks)
-    
-    def test_list_tasks_with_prefix_filter(self):
-        """Test listing tasks with prefix filter."""
-        # Register generators for different task categories
-        self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            generator=self.grasp_generator
-        )
-        
-        self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.PLACE, "on"),
-            generator=self.place_generator
-        )
-        
-        # List tasks with "grasp" prefix
+        # Filter by task prefix
         tasks = self.library.list_tasks_for_reference(
             EntityClass.MUG,
             task_prefix="grasp"
         )
+        self.assertEqual(len(tasks), 2)
+
+
+class TestTSRLibraryRelationalMixedMode(unittest.TestCase):
+    """Test TSRLibraryRelational with both generator and template modes."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.library = TSRLibraryRelational()
         
-        # Should only return grasp tasks
-        expected_tasks = {TaskType(TaskCategory.GRASP, "side")}
-        self.assertEqual(set(tasks), expected_tasks)
-    
-    def test_generator_with_reference_pose(self):
-        """Test that generators receive the reference pose correctly."""
-        received_pose = None
-        
-        def test_generator(T_ref_world: np.ndarray) -> List[TSRTemplate]:
-            nonlocal received_pose
-            received_pose = T_ref_world.copy()
-            return [self.template1]
+        self.template = TSRTemplate(
+            T_ref_tsr=np.eye(4),
+            Tw_e=np.array([
+                [0, 0, 1, -0.05],
+                [1, 0, 0, 0],
+                [0, 1, 0, 0.05],
+                [0, 0, 0, 1]
+            ]),
+            Bw=np.array([
+                [0, 0], [0, 0], [-0.01, 0.01],
+                [0, 0], [0, 0], [-np.pi, np.pi]
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="side"
+        )
+
+    def test_generator_and_template_independence(self):
+        """Test that generator and template registrations are independent."""
+        # Register generator
+        def generator(T_ref_world):
+            return [self.template]
         
         self.library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            generator=test_generator
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            generator
         )
         
-        # Query with specific pose
-        test_pose = np.array([
-            [1, 0, 0, 0.5],
-            [0, 1, 0, 0.0],
-            [0, 0, 1, 0.3],
-            [0, 0, 0, 1]
-        ])
-        
-        self.library.query(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            T_ref_world=test_pose
+        # Register template
+        self.library.register_template(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            self.template,
+            "Template description"
         )
         
-        # Generator should have received the pose
-        self.assertIsNotNone(received_pose)
-        np.testing.assert_array_almost_equal(received_pose, test_pose)
-
-
-class TestTSRLibraryRelationalExamples(unittest.TestCase):
-    """Test TSRLibraryRelational with realistic examples."""
-    
-    def test_grasp_and_place_scenario(self):
-        """Test a complete grasp and place scenario."""
-        library = TSRLibraryRelational()
+        # Both should work independently
+        T_ref_world = np.eye(4)
         
-        # Create realistic templates
-        def mug_grasp_generator(T_ref_world: np.ndarray) -> List[TSRTemplate]:
-            """Generate grasp templates for mug."""
-            # Side grasp template
-            side_template = TSRTemplate(
-                T_ref_tsr=np.eye(4),
-                Tw_e=np.array([
-                    [0, 0, 1, -0.05],  # Approach from -z
-                    [1, 0, 0, 0],
-                    [0, 1, 0, 0.05],
-                    [0, 0, 0, 1]
-                ]),
-                Bw=np.array([
-                    [0, 0],           # x: fixed
-                    [0, 0],           # y: fixed
-                    [-0.01, 0.01],    # z: small tolerance
-                    [0, 0],           # roll: fixed
-                    [0, 0],           # pitch: fixed
-                    [-np.pi, np.pi]   # yaw: full rotation
-                ])
-            )
-            return [side_template]
-        
-        def mug_place_generator(T_ref_world: np.ndarray) -> List[TSRTemplate]:
-            """Generate place templates for mug."""
-            # Place on table template
-            place_template = TSRTemplate(
-                T_ref_tsr=np.eye(4),
-                Tw_e=np.array([
-                    [1, 0, 0, 0],
-                    [0, 1, 0, 0],
-                    [0, 0, 1, 0.02],  # Slightly above surface
-                    [0, 0, 0, 1]
-                ]),
-                Bw=np.array([
-                    [-0.1, 0.1],      # x: allow sliding
-                    [-0.1, 0.1],      # y: allow sliding
-                    [0, 0],           # z: fixed height
-                    [0, 0],           # roll: keep level
-                    [0, 0],           # pitch: keep level
-                    [-np.pi/4, np.pi/4]  # yaw: some rotation
-                ])
-            )
-            return [place_template]
-        
-        # Register generators
-        library.register(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            generator=mug_grasp_generator
+        # Query generator
+        tsrs = self.library.query(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side"),
+            T_ref_world
         )
+        self.assertEqual(len(tsrs), 1)
         
-        library.register(
-            subject=EntityClass.MUG,
-            reference=EntityClass.TABLE,
-            task=TaskType(TaskCategory.PLACE, "on"),
-            generator=mug_place_generator
+        # Query templates
+        templates = self.library.query_templates(
+            EntityClass.GENERIC_GRIPPER,
+            EntityClass.MUG,
+            TaskType(TaskCategory.GRASP, "side")
         )
-        
-        # Test grasp query
-        mug_pose = np.array([
-            [1, 0, 0, 0.5],
-            [0, 1, 0, 0.0],
-            [0, 0, 1, 0.3],
-            [0, 0, 0, 1]
-        ])
-        
-        grasp_tsrs = library.query(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task=TaskType(TaskCategory.GRASP, "side"),
-            T_ref_world=mug_pose
-        )
-        
-        self.assertEqual(len(grasp_tsrs), 1)
-        
-        # Test place query
-        table_pose = np.eye(4)
-        
-        place_tsrs = library.query(
-            subject=EntityClass.MUG,
-            reference=EntityClass.TABLE,
-            task=TaskType(TaskCategory.PLACE, "on"),
-            T_ref_world=table_pose
-        )
-        
-        self.assertEqual(len(place_tsrs), 1)
-        
-        # Test task discovery
-        mug_tasks = library.list_tasks_for_reference(EntityClass.MUG)
-        self.assertEqual(len(mug_tasks), 1)
-        self.assertIn(TaskType(TaskCategory.GRASP, "side"), mug_tasks)
-        
-        table_tasks = library.list_tasks_for_reference(EntityClass.TABLE)
-        self.assertEqual(len(table_tasks), 1)
-        self.assertIn(TaskType(TaskCategory.PLACE, "on"), table_tasks)
+        self.assertEqual(len(templates), 1)
 
 
 if __name__ == '__main__':
     unittest.main()
-

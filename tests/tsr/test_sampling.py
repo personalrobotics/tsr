@@ -18,6 +18,7 @@ from tsr.sampling import (
 )
 from tsr.core.tsr import TSR
 from tsr.core.tsr_template import TSRTemplate
+from tsr.schema import EntityClass, TaskCategory
 
 
 class TestSamplingUtilities(unittest.TestCase):
@@ -164,7 +165,11 @@ class TestTemplateSampling(unittest.TestCase):
                 [0, 0],      # roll: fixed
                 [0, 0],      # pitch: fixed
                 [-pi, pi]    # yaw: full rotation
-            ])
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="side"
         )
         
         self.template2 = TSRTemplate(
@@ -177,7 +182,11 @@ class TestTemplateSampling(unittest.TestCase):
                 [0, 0],      # roll: fixed
                 [0, 0],      # pitch: fixed
                 [0, 0]       # yaw: fixed
-            ])
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="top"
         )
         
         self.templates = [self.template1, self.template2]

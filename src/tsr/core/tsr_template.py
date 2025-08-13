@@ -5,11 +5,12 @@ import numpy as np
 
 # Use existing core TSR implementation without changes.
 from .tsr import TSR as CoreTSR  # type: ignore[attr-defined]
+from ..schema import EntityClass, TaskCategory
 
 
 @dataclass(frozen=True)
 class TSRTemplate:
-    """Neutral TSR template (pure geometry, scene-agnostic).
+    """Neutral TSR template with semantic context (pure geometry, scene-agnostic).
 
     A TSRTemplate defines a TSR in a reference-relative coordinate frame,
     allowing it to be instantiated at any reference pose in the world.
@@ -26,6 +27,12 @@ class TSRTemplate:
             Each row [i,:] defines the min/max bounds for dimension i.
             Translation bounds (rows 0-2) are in meters.
             Rotation bounds (rows 3-5) are in radians using RPY convention.
+        subject_entity: The entity whose pose is constrained (e.g., gripper).
+        reference_entity: The entity relative to which TSR is defined (e.g., object).
+        task_category: The category of task being performed (e.g., GRASP, PLACE).
+        variant: The specific variant of the task (e.g., "side", "top").
+        name: Optional human-readable name for the template.
+        description: Optional detailed description of the template.
 
     Examples:
         >>> # Create a template for grasping a cylinder from the side
@@ -44,7 +51,13 @@ class TSRTemplate:
         ...         [0, 0],           # roll: fixed
         ...         [0, 0],           # pitch: fixed
         ...         [-np.pi, np.pi]   # yaw: full rotation
-        ...     ])
+        ...     ]),
+        ...     subject_entity=EntityClass.GENERIC_GRIPPER,
+        ...     reference_entity=EntityClass.MUG,
+        ...     task_category=TaskCategory.GRASP,
+        ...     variant="side",
+        ...     name="Cylinder Side Grasp",
+        ...     description="Grasp a cylindrical object from the side with 5cm approach distance"
         ... )
         >>> 
         >>> # Instantiate at a specific cylinder pose
@@ -61,6 +74,12 @@ class TSRTemplate:
     T_ref_tsr: np.ndarray
     Tw_e: np.ndarray
     Bw: np.ndarray
+    subject_entity: EntityClass
+    reference_entity: EntityClass
+    task_category: TaskCategory
+    variant: str
+    name: str = ""
+    description: str = ""
 
     def instantiate(self, T_ref_world: np.ndarray) -> CoreTSR:
         """Bind this template to a concrete reference pose in world.
@@ -96,7 +115,13 @@ class TSRTemplate:
             ...         [0, 0],            # roll: keep level
             ...         [0, 0],            # pitch: keep level
             ...         [-np.pi/4, np.pi/4]  # yaw: allow some rotation
-            ...     ])
+            ...     ]),
+            ...     subject_entity=EntityClass.MUG,
+            ...     reference_entity=EntityClass.TABLE,
+            ...     task_category=TaskCategory.PLACE,
+            ...     variant="on",
+            ...     name="Table Placement",
+            ...     description="Place object on table surface with 2cm clearance"
             ... )
             >>> 
             >>> # Instantiate at table pose
@@ -106,3 +131,64 @@ class TSRTemplate:
         """
         T0_w = T_ref_world @ self.T_ref_tsr
         return CoreTSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+
+    def to_dict(self):
+        """Convert this TSRTemplate to a python dict for serialization."""
+        return {
+            'name': self.name,
+            'description': self.description,
+            'subject_entity': self.subject_entity.value,
+            'reference_entity': self.reference_entity.value,
+            'task_category': self.task_category.value,
+            'variant': self.variant,
+            'T_ref_tsr': self.T_ref_tsr.tolist(),
+            'Tw_e': self.Tw_e.tolist(),
+            'Bw': self.Bw.tolist(),
+        }
+
+    @staticmethod
+    def from_dict(x):
+        """Construct a TSRTemplate from a python dict."""
+        return TSRTemplate(
+            name=x.get('name', ''),
+            description=x.get('description', ''),
+            subject_entity=EntityClass(x['subject_entity']),
+            reference_entity=EntityClass(x['reference_entity']),
+            task_category=TaskCategory(x['task_category']),
+            variant=x['variant'],
+            T_ref_tsr=np.array(x['T_ref_tsr']),
+            Tw_e=np.array(x['Tw_e']),
+            Bw=np.array(x['Bw']),
+        )
+
+    def to_json(self):
+        """Convert this TSRTemplate to a JSON string."""
+        import json
+        return json.dumps(self.to_dict())
+
+    @staticmethod
+    def from_json(x, *args, **kw_args):
+        """
+        Construct a TSRTemplate from a JSON string.
+
+        This method internally forwards all arguments to `json.loads`.
+        """
+        import json
+        x_dict = json.loads(x, *args, **kw_args)
+        return TSRTemplate.from_dict(x_dict)
+
+    def to_yaml(self):
+        """Convert this TSRTemplate to a YAML string."""
+        import yaml
+        return yaml.dump(self.to_dict())
+
+    @staticmethod
+    def from_yaml(x, *args, **kw_args):
+        """
+        Construct a TSRTemplate from a YAML string.
+
+        This method internally forwards all arguments to `yaml.safe_load`.
+        """
+        import yaml
+        x_dict = yaml.safe_load(x, *args, **kw_args)
+        return TSRTemplate.from_dict(x_dict)

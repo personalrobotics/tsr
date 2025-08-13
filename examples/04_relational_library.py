@@ -40,7 +40,11 @@ def main():
             Bw=np.array([
                 [0, 0], [0, 0], [-0.01, 0.01],  # Translation bounds
                 [0, 0], [0, 0], [-pi, pi]       # Rotation bounds
-            ])
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="side"
         )
         
         # Top grasp template
@@ -55,7 +59,11 @@ def main():
             Bw=np.array([
                 [-0.01, 0.01], [-0.01, 0.01], [0, 0],  # Translation bounds
                 [0, 0], [0, 0], [-pi, pi]              # Rotation bounds
-            ])
+            ]),
+            subject_entity=EntityClass.GENERIC_GRIPPER,
+            reference_entity=EntityClass.MUG,
+            task_category=TaskCategory.GRASP,
+            variant="top"
         )
         
         return [side_template, top_template]
@@ -73,7 +81,11 @@ def main():
             Bw=np.array([
                 [-0.1, 0.1], [-0.1, 0.1], [0, 0],      # Translation bounds
                 [0, 0], [0, 0], [-pi/4, pi/4]          # Rotation bounds
-            ])
+            ]),
+            subject_entity=EntityClass.MUG,
+            reference_entity=EntityClass.TABLE,
+            task_category=TaskCategory.PLACE,
+            variant="on"
         )
         return [place_template]
     

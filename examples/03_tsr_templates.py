@@ -13,6 +13,7 @@ import numpy as np
 from numpy import pi
 
 from tsr import TSRTemplate
+from tsr.schema import EntityClass, TaskCategory
 
 
 def main():
@@ -35,7 +36,13 @@ def main():
             [0, 0],           # roll: fixed
             [0, 0],           # pitch: fixed
             [-pi, pi]         # yaw: full rotation
-        ])
+        ]),
+        subject_entity=EntityClass.GENERIC_GRIPPER,
+        reference_entity=EntityClass.MUG,
+        task_category=TaskCategory.GRASP,
+        variant="side",
+        name="Cylinder Side Grasp",
+        description="Grasp a cylindrical object from the side with 5cm approach distance"
     )
     
     # Create a template for placing objects on surfaces
@@ -54,7 +61,13 @@ def main():
             [0, 0],            # roll: keep level
             [0, 0],            # pitch: keep level
             [-pi/4, pi/4]      # yaw: allow some rotation
-        ])
+        ]),
+        subject_entity=EntityClass.MUG,
+        reference_entity=EntityClass.TABLE,
+        task_category=TaskCategory.PLACE,
+        variant="on",
+        name="Table Placement",
+        description="Place object on table surface with 2cm clearance"
     )
     
     # Instantiate templates at specific poses

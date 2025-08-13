@@ -17,6 +17,7 @@ from tsr import (
     sample_from_tsrs, weights_from_tsrs, choose_tsr,
     sample_from_templates, instantiate_templates
 )
+from tsr.schema import EntityClass, TaskCategory
 
 
 def main():
@@ -74,7 +75,11 @@ def main():
         Bw=np.array([
             [0, 0], [0, 0], [-0.01, 0.01],  # Translation bounds
             [0, 0], [0, 0], [-pi, pi]       # Rotation bounds
-        ])
+        ]),
+        subject_entity=EntityClass.GENERIC_GRIPPER,
+        reference_entity=EntityClass.MUG,
+        task_category=TaskCategory.GRASP,
+        variant="side"
     )
     
     top_template = TSRTemplate(
@@ -88,7 +93,11 @@ def main():
         Bw=np.array([
             [-0.01, 0.01], [-0.01, 0.01], [0, 0],  # Translation bounds
             [0, 0], [0, 0], [-pi, pi]              # Rotation bounds
-        ])
+        ]),
+        subject_entity=EntityClass.GENERIC_GRIPPER,
+        reference_entity=EntityClass.MUG,
+        task_category=TaskCategory.GRASP,
+        variant="top"
     )
     
     # Object pose
