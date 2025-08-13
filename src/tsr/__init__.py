@@ -31,47 +31,44 @@
 """
 TSR Library - Task Space Regions for Robotics
 
-This library provides robot-agnostic Task Space Region (TSR) functionality
-with simulator-specific wrappers for OpenRAVE and MuJoCo.
+This library provides robot-agnostic Task Space Region (TSR) functionality.
+It includes a core geometric TSR, a neutral TSRTemplate for scene-free storage,
+and a relational library for registering/querying TSRs between entities.
 
-Core Classes:
-    TSR: Robot-agnostic Task Space Region
-    TSRChain: Chain of TSRs for complex constraints
-
-Wrappers:
-    OpenRAVE: OpenRAVE-specific adapters and functions
-    MuJoCo: MuJoCo-specific adapters and functions (future)
+Core (robot-agnostic):
+    TSR: Core Task Space Region (geometry + sampling)
+    TSRTemplate: Neutral, scene-agnostic TSR template (REFERENCE→TSR, TSR→SUBJECT, Bw)
+    TSRLibraryRelational: Registry keyed by (subject_entity, reference_entity, task)
+    TaskCategory, TaskType, EntityClass: Controlled vocabulary
+    Sampling helpers: weights_from_tsrs, choose_tsr_index, choose_tsr, sample_from_tsrs
 
 Usage:
     # Core usage (robot-agnostic)
-    from tsr.core import TSR, TSRChain
-    
-    # OpenRAVE usage
-    from tsr.wrappers.openrave import OpenRAVERobotAdapter, place_object
-    
-    # Legacy usage (still supported)
-    from tsr import TSR as LegacyTSR
+    from tsr.core.tsr import TSR
+    from tsr.core.tsr_template import TSRTemplate
+    from tsr.tsr_library_rel import TSRLibraryRelational
+    from tsr.schema import TaskCategory, TaskType, EntityClass
+    from tsr.sampling import sample_from_tsrs
 """
 
 # Import core classes
 from .core import TSR, TSRChain, wrap_to_interval, EPSILON
 
-# Import wrapper interfaces
-from .wrappers import (
-    RobotInterface, 
-    ObjectInterface, 
-    EnvironmentInterface, 
-    TSRWrapperFactory
-)
-
-# Import utility modules
 try:
-    import tsrlibrary
-    _UTILS_AVAILABLE = True
-except ImportError:
-    _UTILS_AVAILABLE = False
-
-
+    from .schema import TaskCategory, TaskType, EntityClass
+    from .core.tsr_template import TSRTemplate
+    from .tsr_library_rel import TSRLibraryRelational
+    from .sampling import (
+        weights_from_tsrs,
+        choose_tsr_index,
+        choose_tsr,
+        sample_from_tsrs,
+        instantiate_templates,
+        sample_from_templates,
+    )
+    _RELATIONAL_AVAILABLE = True
+except Exception:
+    _RELATIONAL_AVAILABLE = False
 
 # Export all symbols
 __all__ = [
@@ -80,59 +77,34 @@ __all__ = [
     'TSRChain', 
     'wrap_to_interval',
     'EPSILON',
-    
-    # Wrapper interfaces
-    'RobotInterface',
-    'ObjectInterface',
-    'EnvironmentInterface', 
-    'TSRWrapperFactory'
+
+    # Relational / schema / sampling (optional)
+    'TSRTemplate',
+    'TSRLibraryRelational',
+    'TaskCategory',
+    'TaskType',
+    'EntityClass',
+    'weights_from_tsrs',
+    'choose_tsr_index',
+    'choose_tsr',
+    'sample_from_tsrs',
+    'instantiate_templates',
+    'sample_from_templates',
 ]
 
-# Legacy classes are no longer available since we removed the legacy implementation
-
-# Add utility modules if available
-if _UTILS_AVAILABLE:
-    __all__.extend(['tsrlibrary'])
-
-# Convenience functions for creating wrappers
-def create_openrave_wrapper(robot, manip_idx: int):
-    """Create an OpenRAVE wrapper for the given robot."""
-    try:
-        from .wrappers.openrave import OpenRAVERobotAdapter
-        return OpenRAVERobotAdapter(robot)
-    except ImportError:
-        raise ImportError("OpenRAVE wrapper not available. Install OpenRAVE to use this function.")
-
-def create_mujoco_wrapper(robot, manip_idx: int):
-    """Create a MuJoCo wrapper for the given robot."""
-    try:
-        from .wrappers.mujoco import MuJoCoRobotAdapter
-        return MuJoCoRobotAdapter(robot, manip_idx)
-    except ImportError:
-        raise ImportError("MuJoCo wrapper not available. Install MuJoCo to use this function.")
-
-def create_tsr_library(robot, manip_idx: int, simulator_type: str = "openrave"):
-    """
-    Create a TSR library for the specified simulator.
-    
-    Args:
-        robot: Robot object (simulator-specific)
-        manip_idx: Index of the manipulator
-        simulator_type: Type of simulator ('openrave' or 'mujoco')
-        
-    Returns:
-        TSR library instance
-    """
-    if simulator_type == "openrave":
-        return create_openrave_wrapper(robot, manip_idx)
-    elif simulator_type == "mujoco":
-        return create_mujoco_wrapper(robot, manip_idx)
-    else:
-        raise ValueError(f"Unknown simulator type: {simulator_type}. Use 'openrave' or 'mujoco'")
-
-# Add convenience functions to exports
-__all__.extend([
-    'create_openrave_wrapper',
-    'create_mujoco_wrapper', 
-    'create_tsr_library'
-])
+if not _RELATIONAL_AVAILABLE:
+    for _name in (
+        'TSRTemplate',
+        'TSRLibraryRelational',
+        'TaskCategory',
+        'TaskType',
+        'EntityClass',
+        'weights_from_tsrs',
+        'choose_tsr_index',
+        'choose_tsr',
+        'sample_from_tsrs',
+        'instantiate_templates',
+        'sample_from_templates',
+    ):
+        if _name in __all__:
+            __all__.remove(_name)

@@ -84,10 +84,11 @@ class PerformanceBenchmark(unittest.TestCase):
     def test_benchmark_transform_calculation(self):
         """Benchmark transform calculation performance."""
         num_calculations = 10000
+        # Use valid xyzrpy values that are within the TSR bounds
         test_inputs = [
-            np.zeros(6),
-            np.array([0.1, 0.2, 0.3, pi/4, pi/6, pi/3]),
-            np.array([-0.1, -0.2, -0.3, -pi/4, -pi/6, -pi/3])
+            np.zeros(6),  # Center of bounds
+            np.array([0.005, 0.005, 0.005, np.pi/8, np.pi/8, np.pi/4]),  # Within bounds
+            np.array([-0.005, -0.005, -0.005, -np.pi/8, -np.pi/8, -np.pi/4])  # Within bounds
         ]
         
         # Benchmark core transform calculation

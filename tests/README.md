@@ -1,188 +1,143 @@
-# TSR Library Testing Strategy
+# TSR Library Tests
 
-This directory contains comprehensive tests to ensure the TSR library refactoring maintains functionality and performance.
+This directory contains comprehensive tests for the TSR library, ensuring the core functionality works correctly and the refactoring maintains compatibility.
 
 ## Test Structure
 
 ```
 tests/
-├── README.md                    # This file
-├── run_tests.py                 # Main test runner
-├── tsr/
-│   ├── test_tsr.py             # Original TSR tests
-│   ├── test_equivalence.py     # Equivalence tests (old vs new)
-│   └── test_wrappers/
-│       └── test_openrave_wrapper.py  # OpenRAVE wrapper tests
-├── fixtures/
-│   └── mock_robot.py           # Mock robot for testing
-└── benchmarks/
-    └── test_performance.py     # Performance benchmarks
+├── __init__.py
+├── run_tests.py              # Main test runner
+├── README.md                 # This file
+├── benchmarks/
+│   ├── __init__.py
+│   └── test_performance.py   # Performance benchmarks
+└── tsr/
+    ├── __init__.py
+    ├── test_tsr.py           # Core TSR tests
+    ├── test_tsr_chain.py     # TSR chain tests
+    ├── test_serialization.py # Serialization tests
+    └── test_utils.py         # Utility function tests
 ```
 
 ## Test Categories
 
-### 1. Equivalence Tests (`test_equivalence.py`)
-**Purpose**: Ensure the new TSR implementation produces exactly the same results as the old one.
-
-**What it tests**:
-- TSR creation and properties
-- Sampling behavior (with same random seeds)
-- Transform calculations
-- Distance and containment tests
-- Edge cases and validation
-
-**Key principle**: Same inputs → Same outputs
-
-### 2. Unit Tests
-**Purpose**: Test individual components in isolation.
-
-**What it tests**:
+### 1. Unit Tests (`test_tsr/`)
 - Core TSR functionality
+- TSR chain operations
+- Serialization/deserialization
 - Utility functions
-- Wrapper implementations
-- Error handling
 
-### 3. Wrapper Tests (`test_wrappers/`)
-**Purpose**: Test simulator-specific wrapper implementations.
+### 2. Core Functionality Tests
+- TSR creation and validation
+- Sampling operations
+- Distance calculations
+- TSR chain composition
 
-**What it tests**:
-- OpenRAVE adapter functionality
-- Robot interface compatibility
-- Object type detection
-- Legacy compatibility
-
-### 4. Performance Benchmarks (`benchmarks/`)
-**Purpose**: Ensure no performance regression.
-
-**What it tests**:
-- TSR creation speed
-- Sampling performance
-- Transform calculation speed
-- Distance calculation speed
-- Containment test speed
-
-**Acceptance criteria**: New implementation should not be more than 20% slower than old.
-
-### 5. Regression Tests
-**Purpose**: Ensure existing functionality still works.
-
-**What it tests**:
-- Original test cases
-- Known use cases
-- Backward compatibility
-
-## Mock Robot Interface
-
-The `fixtures/mock_robot.py` provides a mock implementation that mimics OpenRAVE behavior without requiring the actual simulator. This allows testing of:
-
-- Robot manipulator management
-- Object transforms
-- Grasp scenarios
-- End-effector positioning
+### 3. New Architecture Tests
+- TSRTemplate functionality
+- TSRLibraryRelational operations
+- Schema validation
+- Advanced sampling utilities
 
 ## Running Tests
 
-### Run All Tests
+### All Tests
 ```bash
-cd tests
-python run_tests.py
+python -m pytest tests/
 ```
 
-### Run Specific Test Categories
+### Specific Test Categories
 ```bash
-# Unit tests only
-python run_tests.py --unit
+# Core TSR tests
+python -m pytest tests/tsr/test_tsr.py
 
-# Equivalence tests only
-python run_tests.py --equivalence
+# TSR chain tests
+python -m pytest tests/tsr/test_tsr_chain.py
 
-# Wrapper tests only
-python run_tests.py --wrapper
+# Serialization tests
+python -m pytest tests/tsr/test_serialization.py
 
-# Performance benchmarks only
-python run_tests.py --performance
-
-# Regression tests only
-python run_tests.py --regression
+# Performance benchmarks
+python -m pytest tests/benchmarks/test_performance.py
 ```
 
-### Run Individual Test Files
+### Using the Test Runner
 ```bash
-# Run equivalence tests
-python -m unittest tests.tsr.test_equivalence
+# Run all tests with the custom runner
+python tests/run_tests.py
 
-# Run performance benchmarks
-python -m unittest tests.benchmarks.test_performance
-
-# Run wrapper tests
-python -m unittest tests.tsr.test_wrappers.test_openrave_wrapper
+# Run specific test categories
+python -m pytest tests/tsr/test_tsr.py::TsrTest::test_tsr_creation
 ```
 
-## Test Output
+## Test Coverage
 
-The test runner provides detailed output including:
+The test suite covers:
 
-1. **Test Results**: Pass/fail status for each test
-2. **Performance Metrics**: Timing comparisons between old and new implementations
-3. **Summary Report**: Overall test status and execution time
-4. **Error Details**: Specific failure information for debugging
+### Core TSR Functionality
+- TSR creation with various parameters
+- Sampling from TSRs
+- Distance calculations
+- Constraint checking
+- Geometric operations
 
-## Continuous Integration
+### TSR Chains
+- Chain creation and composition
+- Multiple TSR handling
+- Start/goal/constraint flags
+- Chain sampling
 
-These tests should be run:
+### New Architecture Components
+- TSRTemplate creation and instantiation
+- TSRLibraryRelational registration and querying
+- Schema validation (TaskCategory, TaskType, EntityClass)
+- Advanced sampling utilities
 
-1. **Before each commit**: Ensure no regressions
-2. **After refactoring**: Validate equivalence
-3. **Before releases**: Comprehensive validation
-4. **In CI/CD pipeline**: Automated testing
+### Serialization
+- JSON serialization/deserialization
+- YAML serialization/deserialization
+- Dictionary conversion
+- Error handling
+
+### Performance
+- Sampling performance benchmarks
+- Large TSR set handling
+- Memory usage optimization
 
 ## Adding New Tests
 
-### For New Features
-1. Add unit tests in `tests/tsr/`
-2. Add equivalence tests if applicable
-3. Add performance benchmarks if performance-critical
-4. Update this documentation
+### For New Core Features
+1. Create test file in `tests/tsr/`
+2. Follow naming convention: `test_<feature>.py`
+3. Add comprehensive test cases
+4. Update this README
 
-### For New Wrappers (e.g., MuJoCo)
-1. Create `tests/tsr/test_wrappers/test_mujoco_wrapper.py`
-2. Add mock MuJoCo robot in `tests/fixtures/`
-3. Update test runner to include new wrapper tests
-4. Add MuJoCo-specific test cases
+### For New Architecture Components
+1. Create appropriate test file
+2. Test both success and failure cases
+3. Include edge cases and error conditions
+4. Add performance tests if applicable
 
-## Debugging Test Failures
+### Test Guidelines
+- Use descriptive test names
+- Test both valid and invalid inputs
+- Include edge cases
+- Test error conditions
+- Keep tests independent and isolated
+- Use pure geometric operations (no simulator dependencies)
 
-### Equivalence Test Failures
-1. Check if the failure is due to numerical precision differences
-2. Verify that the same random seeds are being used
-3. Ensure both implementations handle edge cases identically
-4. Check for differences in floating-point arithmetic
+## Continuous Integration
 
-### Performance Test Failures
-1. Run benchmarks multiple times to account for system variance
-2. Check if the performance regression is acceptable
-3. Profile the code to identify bottlenecks
-4. Consider if the performance trade-off is worth the benefits
-
-### Wrapper Test Failures
-1. Verify that the mock robot interface matches the real simulator
-2. Check that the wrapper correctly implements the abstract interface
-3. Ensure backward compatibility is maintained
-4. Test with actual simulator if available
-
-## Best Practices
-
-1. **Reproducible Tests**: Use fixed random seeds for deterministic results
-2. **Comprehensive Coverage**: Test edge cases and error conditions
-3. **Performance Monitoring**: Track performance over time
-4. **Documentation**: Keep tests well-documented and maintainable
-5. **Isolation**: Tests should not depend on each other
-6. **Mocking**: Use mocks to avoid simulator dependencies
+The test suite is designed to run in CI environments:
+- No external simulator dependencies
+- Fast execution
+- Comprehensive coverage
+- Clear error reporting
 
 ## Future Enhancements
 
-1. **MuJoCo Wrapper Tests**: Add when MuJoCo wrapper is implemented
-2. **Integration Tests**: Test with actual simulators
-3. **Memory Benchmarks**: Track memory usage
-4. **Coverage Reports**: Ensure comprehensive code coverage
-5. **Automated Testing**: Set up CI/CD pipeline 
+1. **Integration Tests**: Add tests for integration with specific robotics frameworks
+2. **Property-Based Testing**: Add property-based tests using hypothesis
+3. **Performance Regression Tests**: Automated performance regression detection
+4. **Documentation Tests**: Ensure code examples in docs are tested 

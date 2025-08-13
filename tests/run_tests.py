@@ -51,26 +51,15 @@ def run_equivalence_tests():
 
 
 def run_wrapper_tests():
-    """Run wrapper-specific tests."""
+    """Run wrapper tests (removed - no longer applicable)."""
     print("\n" + "=" * 60)
-    print("Running Wrapper Tests")
+    print("Wrapper Tests - Removed (simulator-agnostic library)")
     print("=" * 60)
     
-    # Import and run wrapper tests
-    from .tsr.test_wrappers.test_openrave_wrapper import (
-        TestOpenRAVEWrapper, TestOpenRAVETSRFunctions, TestOpenRAVECompatibility
-    )
+    print("Wrapper tests have been removed as part of the simulator-agnostic refactoring.")
+    print("The library now focuses on core TSR functionality without simulator dependencies.")
     
-    test_classes = [TestOpenRAVEWrapper, TestOpenRAVETSRFunctions, TestOpenRAVECompatibility]
-    
-    all_successful = True
-    for test_class in test_classes:
-        suite = unittest.TestLoader().loadTestsFromTestCase(test_class)
-        runner = unittest.TextTestRunner(verbosity=2)
-        result = runner.run(suite)
-        all_successful = all_successful and result.wasSuccessful()
-    
-    return all_successful
+    return True
 
 
 def run_performance_benchmarks():
