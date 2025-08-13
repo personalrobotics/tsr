@@ -7,11 +7,12 @@ For a detailed description of TSRs and their uses, please refer to the 2010 IJRR
 ## 🚀 Features
 
 - **Core TSR Library**: Geometric pose constraint representation
-- **TSR Templates**: Scene-agnostic TSR definitions
-- **Relational Library**: Task-based TSR generation and querying
+- **TSR Templates**: Scene-agnostic TSR definitions with **semantic context**
+- **Relational Library**: Task-based TSR generation and querying with **template descriptions**
 - **Advanced Sampling**: Weighted sampling from multiple TSRs
 - **Schema System**: Controlled vocabulary for tasks and entities
-- **Serialization**: JSON, YAML, and dictionary formats
+- **YAML Serialization**: Human-readable template storage with semantic context
+- **Template Libraries**: Easy sharing and version control of template collections
 - **Performance Optimized**: Fast sampling and distance calculations
 
 ## 📦 Installation
@@ -99,7 +100,7 @@ is_valid = (dist_to_tsr == 0.0)
 TSR templates are **scene-agnostic** TSR definitions that can be instantiated at any reference pose:
 
 ```python
-# Create a template for grasping cylindrical objects
+# Create a template for grasping cylindrical objects with semantic context
 template = TSRTemplate(
     T_ref_tsr=np.eye(4),  # Reference frame to TSR frame
     Tw_e=np.array([
@@ -115,7 +116,13 @@ template = TSRTemplate(
         [0, 0],           # roll: fixed
         [0, 0],           # pitch: fixed
         [-np.pi, np.pi]   # yaw: full rotation
-    ])
+    ]),
+    subject_entity=EntityClass.GENERIC_GRIPPER,
+    reference_entity=EntityClass.MUG,
+    task_category=TaskCategory.GRASP,
+    variant="side",
+    name="Cylinder Side Grasp",
+    description="Grasp a cylindrical object from the side with 10cm approach distance"
 )
 
 # Instantiate at a specific object pose
@@ -161,7 +168,11 @@ def mug_grasp_generator(T_ref_world):
     side_template = TSRTemplate(
         T_ref_tsr=np.eye(4),
         Tw_e=np.array([[0, 0, 1, -0.05], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]]),
-        Bw=np.array([[0, 0], [0, 0], [-0.01, 0.01], [0, 0], [0, 0], [-np.pi, np.pi]])
+        Bw=np.array([[0, 0], [0, 0], [-0.01, 0.01], [0, 0], [0, 0], [-np.pi, np.pi]]),
+        subject_entity=EntityClass.GENERIC_GRIPPER,
+        reference_entity=EntityClass.MUG,
+        task_category=TaskCategory.GRASP,
+        variant="side"
     )
     return [side_template]
 
@@ -170,7 +181,11 @@ def mug_place_generator(T_ref_world):
     place_template = TSRTemplate(
         T_ref_tsr=np.eye(4),
         Tw_e=np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.02], [0, 0, 0, 1]]),
-        Bw=np.array([[-0.1, 0.1], [-0.1, 0.1], [0, 0], [0, 0], [0, 0], [-np.pi/4, np.pi/4]])
+        Bw=np.array([[-0.1, 0.1], [-0.1, 0.1], [0, 0], [0, 0], [0, 0], [-np.pi/4, np.pi/4]]),
+        subject_entity=EntityClass.MUG,
+        reference_entity=EntityClass.TABLE,
+        task_category=TaskCategory.PLACE,
+        variant="on"
     )
     return [place_template]
 
@@ -210,6 +225,50 @@ place_tsrs = library.query(
 # Discover available tasks
 mug_tasks = library.list_tasks_for_reference(EntityClass.MUG)
 table_tasks = library.list_tasks_for_reference(EntityClass.TABLE)
+
+### Enhanced Template-Based Library
+
+The library also supports **direct template registration** with descriptions for easier management:
+
+```python
+# Register templates directly with descriptions
+library.register_template(
+    subject=EntityClass.GENERIC_GRIPPER,
+    reference=EntityClass.MUG,
+    task=TaskType(TaskCategory.GRASP, "side"),
+    template=side_template,
+    description="Side grasp with 5cm approach distance"
+)
+
+library.register_template(
+    subject=EntityClass.GENERIC_GRIPPER,
+    reference=EntityClass.MUG,
+    task=TaskType(TaskCategory.GRASP, "top"),
+    template=top_template,
+    description="Top grasp with vertical approach"
+)
+
+# Query templates with descriptions
+templates_with_desc = library.query_templates(
+    EntityClass.GENERIC_GRIPPER,
+    EntityClass.MUG,
+    TaskType(TaskCategory.GRASP, "side"),
+    include_descriptions=True
+)
+
+# Browse available templates
+available = library.list_available_templates(
+    subject=EntityClass.GENERIC_GRIPPER,
+    task_category="grasp"
+)
+
+# Get template information
+info = library.get_template_info(
+    EntityClass.GENERIC_GRIPPER,
+    EntityClass.MUG,
+    TaskType(TaskCategory.GRASP, "side")
+)
+```
 ```
 
 ### 4. Advanced Sampling
@@ -258,7 +317,7 @@ chain = TSRChain(
 
 ## 📊 Serialization
 
-TSRs and TSR chains can be serialized to multiple formats:
+TSRs, TSR chains, and **TSR templates** can be serialized to multiple formats:
 
 ```python
 # Dictionary format
@@ -272,6 +331,103 @@ tsr_from_json = TSR.from_json(tsr_json)
 # YAML format
 tsr_yaml = tsr.to_yaml()
 tsr_from_yaml = TSR.from_yaml(tsr_yaml)
+
+# TSR Template serialization with semantic context
+template_yaml = template.to_yaml()
+template_from_yaml = TSRTemplate.from_yaml(template_yaml)
+```
+
+### YAML Template Example
+
+Templates serialize to **human-readable YAML** with full semantic context:
+
+```yaml
+name: Cylinder Side Grasp
+description: Grasp a cylindrical object from the side with 10cm approach distance
+subject_entity: generic_gripper
+reference_entity: mug
+task_category: grasp
+variant: side
+T_ref_tsr:
+  - [1.0, 0.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
+Tw_e:
+  - [0.0, 0.0, 1.0, -0.1]    # Approach from -z, 10cm offset
+  - [1.0, 0.0, 0.0, 0.0]     # x-axis perpendicular to cylinder
+  - [0.0, 1.0, 0.0, 0.05]    # y-axis along cylinder axis
+  - [0.0, 0.0, 0.0, 1.0]
+Bw:
+  - [0.0, 0.0]               # x: fixed position
+  - [0.0, 0.0]               # y: fixed position
+  - [-0.01, 0.01]            # z: small tolerance
+  - [0.0, 0.0]               # roll: fixed
+  - [0.0, 0.0]               # pitch: fixed
+  - [-3.14159, 3.14159]      # yaw: full rotation
+```
+
+### Template Library Serialization
+
+Save and load entire template libraries:
+
+```python
+# Save template library to YAML
+templates = [template1, template2, template3]
+template_library = [t.to_dict() for t in templates]
+
+import yaml
+with open('grasp_templates.yaml', 'w') as f:
+    yaml.dump(template_library, f, default_flow_style=False)
+
+# Load template library from YAML
+with open('grasp_templates.yaml', 'r') as f:
+    loaded_library = yaml.safe_load(f)
+    loaded_templates = [TSRTemplate.from_dict(t) for t in loaded_library]
+```
+
+## 📖 Examples
+
+The library includes comprehensive examples demonstrating all features:
+
+```bash
+# Run all examples
+uv run python examples/run_all_examples.py
+
+# Run individual examples
+uv run python examples/01_basic_tsr.py          # Basic TSR creation and sampling
+uv run python examples/02_tsr_chains.py         # TSR chain composition
+uv run python examples/03_tsr_templates.py      # Template creation and instantiation
+uv run python examples/04_relational_library.py # Library registration and querying
+uv run python examples/05_sampling.py           # Advanced sampling techniques
+uv run python examples/06_serialization.py      # YAML serialization with semantic context
+```
+
+### Example Output: YAML Serialization
+
+The serialization example demonstrates the new YAML features:
+
+```yaml
+# Template library with semantic context
+- name: Mug Side Grasp
+  description: Grasp mug from the side
+  subject_entity: generic_gripper
+  reference_entity: mug
+  task_category: grasp
+  variant: side
+  T_ref_tsr: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+  Tw_e: [[0, 0, 1, -0.05], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]]
+  Bw: [[0, 0], [0, 0], [-0.01, 0.01], [0, 0], [0, 0], [-3.14159, 3.14159]]
+
+- name: Table Placement
+  description: Place mug on table surface
+  subject_entity: mug
+  reference_entity: table
+  task_category: place
+  variant: on
+  T_ref_tsr: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+  Tw_e: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.02], [0, 0, 0, 1]]
+  Bw: [[-0.1, 0.1], [0, 0], [0, 0], [0, 0], [0, 0], [-0.785398, 0.785398]]
 ```
 
 ## 🧪 Testing
@@ -286,6 +442,20 @@ uv run python -m pytest tests/ -v
 uv run python -m pytest tests/tsr/ -v  # Core functionality
 uv run python -m pytest tests/benchmarks/ -v  # Performance tests
 ```
+
+## 🎯 Key Benefits
+
+### Semantic Context & YAML Serialization
+- **Self-Documenting Templates**: Human-readable YAML with clear semantic meaning
+- **Template Libraries**: Easy sharing and version control of template collections
+- **Rich Integration**: Semantic context enables better task-based generation
+- **Backward Compatibility**: Existing code continues to work seamlessly
+
+### Enhanced Library Management
+- **Template Descriptions**: Document and browse available templates
+- **Flexible Registration**: Both generator-based and template-based approaches
+- **Rich Querying**: Filter and search templates by semantic criteria
+- **Template Browsing**: Discover available templates with descriptions
 
 ## 📈 Performance
 
