@@ -51,6 +51,7 @@ Each template YAML file contains:
 - **Semantic context**: subject, reference, task category, variant
 - **Geometric parameters**: T_ref_tsr, Tw_e, Bw matrices
 - **Metadata**: name, description
+- **Optional preshape**: gripper configuration as DOF values
 
 Example:
 ```yaml
@@ -63,12 +64,31 @@ variant: side
 T_ref_tsr: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
 Tw_e: [[0, 0, 1, -0.05], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]]
 Bw: [[0, 0], [0, 0], [-0.01, 0.01], [0, 0], [0, 0], [-3.14159, 3.14159]]
+preshape: [0.08]  # Optional: 8cm aperture for parallel jaw gripper
 ```
+
+## Preshape Configuration
+
+Templates can include optional `preshape` fields to specify gripper configurations:
+
+### Parallel Jaw Grippers
+```yaml
+preshape: [0.08]  # Single value: aperture in meters
+```
+
+### Multi-Finger Hands
+```yaml
+preshape: [0.0, 0.5, 0.5, 0.0, 0.5, 0.5]  # Multiple values: joint angles
+```
+
+### No Preshape
+Omit the `preshape` field or set to `null` for templates that don't require specific gripper configuration.
 
 ## Contributing
 
 When adding new templates:
 1. Use descriptive filenames
 2. Include comprehensive descriptions
-3. Test the template with the library
-4. Update this README if adding new categories
+3. Add preshape configuration when gripper state is important
+4. Test the template with the library
+5. Update this README if adding new categories

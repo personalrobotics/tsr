@@ -8,6 +8,7 @@ For a detailed description of TSRs and their uses, please refer to the 2010 IJRR
 
 - **Core TSR Library**: Geometric pose constraint representation
 - **TSR Templates**: Scene-agnostic TSR definitions with **semantic context**
+- **Gripper Preshape**: Optional gripper configuration (DOF values) for templates
 - **Relational Library**: Task-based TSR generation and querying with **template descriptions**
 - **Advanced Sampling**: Weighted sampling from multiple TSRs
 - **Schema System**: Controlled vocabulary for tasks and entities
@@ -183,7 +184,8 @@ side_grasp = generate_cylinder_grasp_template(
     variant="side",
     cylinder_radius=0.04,
     cylinder_height=0.12,
-    approach_distance=0.05
+    approach_distance=0.05,
+    preshape=np.array([0.08])  # 8cm aperture for parallel jaw gripper
 )
 
 # Generate box grasp templates
@@ -194,7 +196,8 @@ top_grasp = generate_box_grasp_template(
     box_length=0.15,
     box_width=0.10,
     box_height=0.08,
-    approach_distance=0.03
+    approach_distance=0.03,
+    preshape=np.array([0.0, 0.5, 0.5, 0.0, 0.5, 0.5])  # 6-DOF hand configuration
 )
 
 # Generate placement templates
@@ -211,7 +214,36 @@ mug_grasp = generate_mug_grasp_template()  # Default mug parameters
 box_place = generate_box_place_template()  # Default box placement
 ```
 
-### 3. PyPI Template Access
+### 3. Gripper Preshape Configuration
+
+TSR templates support **optional gripper preshape configuration** to specify the desired gripper state (DOF values) that should be achieved before or during TSR execution:
+
+```python
+# Parallel jaw gripper with specific aperture
+parallel_grasp = generate_mug_grasp_template(
+    variant="side",
+    preshape=np.array([0.08])  # 8cm aperture
+)
+
+# Multi-finger hand with joint angle configuration
+multi_finger_grasp = generate_box_grasp_template(
+    variant="side_x",
+    preshape=np.array([0.0, 0.5, 0.5, 0.0, 0.5, 0.5])  # 6-DOF hand
+)
+
+# Template without preshape (default behavior)
+place_template = TSRTemplate(...)  # preshape will be None
+```
+
+**Preshape Features:**
+- **Gripper-Aware TSRs**: Specify required gripper configurations
+- **Flexible DOF Support**: Works with any gripper type (parallel jaw, multi-finger, etc.)
+- **Optional Field**: Backward compatible - preshape is `None` by default
+- **Serialization Support**: Preshape values are preserved in YAML/JSON
+- **Library Integration**: Preshape information available in relational library queries
+```
+
+### 4. PyPI Template Access
 
 When installed from PyPI, the package includes **pre-built templates** that can be accessed directly:
 
@@ -239,7 +271,7 @@ grasp_templates = load_package_templates_by_category("grasps")
 - **Offline Access**: Works without internet after installation
 - **Version Control**: Templates are version-controlled with the package
 
-### 4. Schema System
+### 5. Schema System
 
 The schema provides a **controlled vocabulary** for defining tasks and entities:
 
@@ -262,7 +294,7 @@ print(grasp_side)  # "grasp/side"
 print(place_on)    # "place/on"
 ```
 
-### 5. Relational Library
+### 6. Relational Library
 
 The relational library enables **task-based TSR generation** and querying:
 
@@ -336,7 +368,7 @@ mug_tasks = library.list_tasks_for_reference(EntityClass.MUG)
 table_tasks = library.list_tasks_for_reference(EntityClass.TABLE)
 ```
 
-### 6. Enhanced Template-Based Library
+### 7. Enhanced Template-Based Library
 
 The library also supports **direct template registration** with descriptions for easier management:
 
@@ -381,7 +413,7 @@ info = library.get_template_info(
 ```
 
 
-### 7. Advanced Sampling
+### 8. Advanced Sampling
 
 The library provides **weighted sampling** utilities for working with multiple TSRs:
 
@@ -514,6 +546,7 @@ uv run python examples/06_serialization.py      # YAML serialization with semant
 uv run python examples/07_template_file_management.py  # Template file organization
 uv run python examples/08_template_generators.py       # Template generators for primitive objects
 uv run python examples/09_pypi_template_access.py      # PyPI template access demonstration
+uv run python examples/10_preshape_example.py          # Gripper preshape configuration examples
 
 ### Example Output: YAML Serialization
 
