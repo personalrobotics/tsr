@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Callable, Tuple, Union
+from typing import Dict, List, Optional, Callable, Tuple, Union, TYPE_CHECKING
 import numpy as np
+
+if TYPE_CHECKING:
+    from tsr.core.tsr_template import TSRTemplate
+    from tsr.schema import TaskType, EntityClass
 
 try:
     from tsr.core.tsr_template import TSRTemplate  # type: ignore[attr-defined]
@@ -15,10 +19,10 @@ except Exception:  # pragma: no cover
 Generator = Callable[[np.ndarray], List[TSRTemplate]]
 
 # Type alias for relational keys
-RelKey = tuple[EntityClass, EntityClass, TaskType]
+RelKey = tuple[EntityClass, EntityClass, TaskType]  # type: ignore[name-defined]
 
 # Type alias for template entries with descriptions
-TemplateEntry = dict[str, Union[TSRTemplate, str]]
+TemplateEntry = dict[str, Union[TSRTemplate, str]]  # type: ignore[name-defined]
 
 
 class TSRLibraryRelational:
@@ -47,9 +51,9 @@ class TSRLibraryRelational:
 
     def register(
         self, 
-        subject: EntityClass, 
-        reference: EntityClass, 
-        task: TaskType, 
+        subject: EntityClass,  # type: ignore[name-defined]
+        reference: EntityClass,  # type: ignore[name-defined]
+        task: TaskType,  # type: ignore[name-defined]
         generator: Generator
     ) -> None:
         """Register a TSR generator for a specific entity/task combination.
@@ -64,10 +68,10 @@ class TSRLibraryRelational:
 
     def register_template(
         self,
-        subject: EntityClass,
-        reference: EntityClass,
-        task: TaskType,
-        template: TSRTemplate,
+        subject: EntityClass,  # type: ignore[name-defined]
+        reference: EntityClass,  # type: ignore[name-defined]
+        task: TaskType,  # type: ignore[name-defined]
+        template: TSRTemplate,  # type: ignore[name-defined]
         description: str = ""
     ) -> None:
         """Register a TSR template with semantic context and description.
