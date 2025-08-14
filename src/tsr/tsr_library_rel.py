@@ -19,10 +19,10 @@ except Exception:  # pragma: no cover
 Generator = Callable[[np.ndarray], List[TSRTemplate]]
 
 # Type alias for relational keys
-RelKey = tuple[EntityClass, EntityClass, TaskType]  # type: ignore[name-defined]
+RelKey = Tuple[EntityClass, EntityClass, TaskType]  # type: ignore[name-defined]
 
 # Type alias for template entries with descriptions
-TemplateEntry = dict[str, Union[TSRTemplate, str]]  # type: ignore[name-defined]
+TemplateEntry = Dict[str, Union[TSRTemplate, str]]  # type: ignore[name-defined]
 
 
 class TSRLibraryRelational:

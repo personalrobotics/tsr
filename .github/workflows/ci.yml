@@ -58,7 +58,7 @@ jobs:
       run: |
         uv run pytest tests/ -v --tb=short
         # Ensure pytest is available
-        uv run python -c "import pytest; print(f'✅ Pytest version: {pytest.__version__}')"
+        uv run python -c "import pytest; print(f'Pytest version: {pytest.__version__}')"
     
     - name: Run performance benchmarks
       run: |
@@ -66,14 +66,14 @@ jobs:
     
     - name: Test package import
       run: |
-        uv run python -c "import tsr; print('✅ Package imports successfully')"
-        uv run python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('✅ Core features import successfully')"
+        uv run python -c "import tsr; print('Package imports successfully')"
+        uv run python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('Core features import successfully')"
     
     - name: Test examples directory
       run: |
         # Test that examples directory exists and contains expected files
         ls -la examples/
-        echo "✅ Examples directory structure verified"
+        echo "Examples directory structure verified"
 
   # Separate job for testing with pip (to ensure compatibility)
   test-pip:
@@ -101,8 +101,8 @@ jobs:
     
     - name: Test package import with pip
       run: |
-        python -c "import tsr; print('✅ Package imports successfully with pip')"
-        python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('✅ Core features import successfully with pip')"
+        python -c "import tsr; print('Package imports successfully with pip')"
+        python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('Core features import successfully with pip')"
 
   # Build and test package installation
   build:
@@ -132,5 +132,5 @@ jobs:
       run: |
         # Install the built package and test it
         uv run pip install dist/*.whl
-        uv run python -c "import tsr; print('✅ Built package imports successfully')"
-        uv run python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('✅ Built package core features work')"
+        uv run python -c "import tsr; print('Built package imports successfully')"
+        uv run python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('Built package core features work')"

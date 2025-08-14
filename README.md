@@ -36,6 +36,22 @@ uv sync --extra test
 
 ## 🎯 Quick Start
 
+### Installation
+
+**From PyPI (recommended):**
+```bash
+pip install tsr
+```
+
+**From source:**
+```bash
+git clone https://github.com/personalrobotics/tsr.git
+cd tsr
+uv sync
+```
+
+### Basic Usage
+
 ```python
 from tsr import TSR, TSRTemplate, TSRLibraryRelational, TaskType, TaskCategory, EntityClass
 import numpy as np
@@ -49,6 +65,22 @@ Bw[5, :] = [-np.pi, np.pi]  # Allow any yaw rotation
 
 tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 pose = tsr.sample()  # Sample a valid pose
+```
+
+### Using Package Templates
+
+```python
+from tsr import load_package_template, list_available_templates
+
+# Discover available templates
+templates = list_available_templates()
+print(templates)  # ['grasps/mug_side_grasp.yaml', 'places/mug_on_table.yaml']
+
+# Load and use a template
+mug_grasp = load_package_template("grasps", "mug_side_grasp.yaml")
+object_pose = get_object_pose()  # Your object pose
+tsr = mug_grasp.instantiate(object_pose)
+pose = tsr.sample()
 ```
 
 ## 📚 Core Concepts
@@ -179,7 +211,35 @@ mug_grasp = generate_mug_grasp_template()  # Default mug parameters
 box_place = generate_box_place_template()  # Default box placement
 ```
 
-### 3. Schema System
+### 3. PyPI Template Access
+
+When installed from PyPI, the package includes **pre-built templates** that can be accessed directly:
+
+```python
+from tsr import list_available_templates, load_package_template
+
+# Discover available templates in the package
+templates = list_available_templates()
+print(templates)  # ['grasps/mug_side_grasp.yaml', 'places/mug_on_table.yaml']
+
+# Load templates directly from the package
+mug_grasp = load_package_template("grasps", "mug_side_grasp.yaml")
+mug_place = load_package_template("places", "mug_on_table.yaml")
+
+# Load all templates from a category
+from tsr import load_package_templates_by_category
+grasp_templates = load_package_templates_by_category("grasps")
+```
+
+**Features:**
+- **Included Templates**: Templates are bundled with the PyPI package
+- **Easy Discovery**: List all available templates with `list_available_templates()`
+- **Simple Loading**: Load specific templates by category and name
+- **Category Organization**: Templates organized by task type (grasps, places, etc.)
+- **Offline Access**: Works without internet after installation
+- **Version Control**: Templates are version-controlled with the package
+
+### 4. Schema System
 
 The schema provides a **controlled vocabulary** for defining tasks and entities:
 
@@ -202,7 +262,7 @@ print(grasp_side)  # "grasp/side"
 print(place_on)    # "place/on"
 ```
 
-### 4. Relational Library
+### 5. Relational Library
 
 The relational library enables **task-based TSR generation** and querying:
 
@@ -276,7 +336,7 @@ mug_tasks = library.list_tasks_for_reference(EntityClass.MUG)
 table_tasks = library.list_tasks_for_reference(EntityClass.TABLE)
 ```
 
-### 5. Enhanced Template-Based Library
+### 6. Enhanced Template-Based Library
 
 The library also supports **direct template registration** with descriptions for easier management:
 
@@ -321,7 +381,7 @@ info = library.get_template_info(
 ```
 
 
-### 6. Advanced Sampling
+### 7. Advanced Sampling
 
 The library provides **weighted sampling** utilities for working with multiple TSRs:
 
@@ -451,7 +511,9 @@ uv run python examples/03_tsr_templates.py      # Template creation and instanti
 uv run python examples/04_relational_library.py # Library registration and querying
 uv run python examples/05_sampling.py           # Advanced sampling techniques
 uv run python examples/06_serialization.py      # YAML serialization with semantic context
-```
+uv run python examples/07_template_file_management.py  # Template file organization
+uv run python examples/08_template_generators.py       # Template generators for primitive objects
+uv run python examples/09_pypi_template_access.py      # PyPI template access demonstration
 
 ### Example Output: YAML Serialization
 
@@ -506,6 +568,13 @@ uv run python -m pytest tests/benchmarks/ -v  # Performance tests
 - **Flexible Registration**: Both generator-based and template-based approaches
 - **Rich Querying**: Filter and search templates by semantic criteria
 - **Template Browsing**: Discover available templates with descriptions
+
+### PyPI Template Access
+- **Included Templates**: Pre-built templates bundled with PyPI package
+- **Easy Discovery**: List available templates with simple function calls
+- **Simple Loading**: Load templates by category and name
+- **Offline Access**: Works without internet after installation
+- **Version Control**: Templates version-controlled with package releases
 
 ## 📈 Performance
 
