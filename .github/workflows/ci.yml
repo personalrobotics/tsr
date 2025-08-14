@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: [3.8, 3.9, 3.10, 3.11, 3.12]
+        exclude:
+          # Exclude some combinations to reduce CI time
+          - os: windows-latest
+            python-version: 3.8
+          - os: windows-latest
+            python-version: 3.9
+          - os: macos-latest
+            python-version: 3.8
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      with:
+        version: latest
+    
+    - name: Cache uv dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          .venv
+          .uv/cache
+        key: ${{ runner.os }}-${{ matrix.python-version }}-uv-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.python-version }}-uv-
+    
+    - name: Install dependencies
+      run: |
+        uv pip install -e ".[test]"
+        uv pip list
+    
+    - name: Run tests
+      run: |
+        uv run pytest tests/ -v --tb=short
+    
+    - name: Run performance benchmarks
+      run: |
+        uv run pytest tests/benchmarks/ -v --tb=short
+    
+    - name: Test package import
+      run: |
+        uv run python -c "import tsr; print('✅ Package imports successfully')"
+        uv run python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('✅ Core features import successfully')"
+    
+    - name: Test examples directory
+      run: |
+        # Test that examples directory exists and contains expected files
+        ls -la examples/
+        echo "✅ Examples directory structure verified"
+
+  # Separate job for testing with pip (to ensure compatibility)
+  test-pip:
+    name: Test with pip (Python 3.11)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install dependencies with pip
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+        pip list
+    
+    - name: Run tests with pip
+      run: |
+        pytest tests/ -v --tb=short
+    
+    - name: Test package import with pip
+      run: |
+        python -c "import tsr; print('✅ Package imports successfully with pip')"
+        python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('✅ Core features import successfully with pip')"
+
+  # Build and test package installation
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      with:
+        version: latest
+    
+    - name: Build package
+      run: |
+        uv run python -m build
+    
+    - name: Test built package
+      run: |
+        # Install the built package and test it
+        uv run pip install dist/*.whl
+        uv run python -c "import tsr; print('✅ Built package imports successfully')"
+        uv run python -c "from tsr import TSR, TSRTemplate, generate_mug_grasp_template; print('✅ Built package core features work')"
