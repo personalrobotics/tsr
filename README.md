@@ -130,7 +130,56 @@ object_pose = get_object_pose()
 tsr = template.instantiate(object_pose)
 ```
 
-### 2. Schema System
+### 2. Template Generators
+
+The library provides **template generators** for common primitive objects and tasks:
+
+```python
+from tsr import (
+    generate_cylinder_grasp_template,
+    generate_box_grasp_template,
+    generate_place_template,
+    generate_transport_template,
+    generate_mug_grasp_template,
+    generate_box_place_template
+)
+
+# Generate cylinder grasp templates
+side_grasp = generate_cylinder_grasp_template(
+    subject_entity=EntityClass.GENERIC_GRIPPER,
+    reference_entity=EntityClass.MUG,
+    variant="side",
+    cylinder_radius=0.04,
+    cylinder_height=0.12,
+    approach_distance=0.05
+)
+
+# Generate box grasp templates
+top_grasp = generate_box_grasp_template(
+    subject_entity=EntityClass.GENERIC_GRIPPER,
+    reference_entity=EntityClass.BOX,
+    variant="top",
+    box_length=0.15,
+    box_width=0.10,
+    box_height=0.08,
+    approach_distance=0.03
+)
+
+# Generate placement templates
+place_template = generate_place_template(
+    subject_entity=EntityClass.MUG,
+    reference_entity=EntityClass.TABLE,
+    variant="on",
+    surface_height=0.0,
+    placement_tolerance=0.1
+)
+
+# Use convenience functions
+mug_grasp = generate_mug_grasp_template()  # Default mug parameters
+box_place = generate_box_place_template()  # Default box placement
+```
+
+### 3. Schema System
 
 The schema provides a **controlled vocabulary** for defining tasks and entities:
 
@@ -153,7 +202,7 @@ print(grasp_side)  # "grasp/side"
 print(place_on)    # "place/on"
 ```
 
-### 3. Relational Library
+### 4. Relational Library
 
 The relational library enables **task-based TSR generation** and querying:
 
@@ -227,7 +276,7 @@ mug_tasks = library.list_tasks_for_reference(EntityClass.MUG)
 table_tasks = library.list_tasks_for_reference(EntityClass.TABLE)
 ```
 
-### 4. Enhanced Template-Based Library
+### 5. Enhanced Template-Based Library
 
 The library also supports **direct template registration** with descriptions for easier management:
 
@@ -272,7 +321,7 @@ info = library.get_template_info(
 ```
 
 
-### 5. Advanced Sampling
+### 6. Advanced Sampling
 
 The library provides **weighted sampling** utilities for working with multiple TSRs:
 

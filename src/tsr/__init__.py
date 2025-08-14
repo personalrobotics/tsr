@@ -73,6 +73,14 @@ try:
         save_template_collection,
         load_template_collection,
     )
+    from .generators import (
+        generate_cylinder_grasp_template,
+        generate_box_grasp_template,
+        generate_place_template,
+        generate_transport_template,
+        generate_mug_grasp_template,
+        generate_box_place_template,
+    )
     _RELATIONAL_AVAILABLE = True
 except Exception:
     _RELATIONAL_AVAILABLE = False
@@ -104,6 +112,14 @@ __all__ = [
     'load_template',
     'save_template_collection',
     'load_template_collection',
+    
+    # Template generators
+    'generate_cylinder_grasp_template',
+    'generate_box_grasp_template',
+    'generate_place_template',
+    'generate_transport_template',
+    'generate_mug_grasp_template',
+    'generate_box_place_template',
 ]
 
 if not _RELATIONAL_AVAILABLE:
@@ -124,6 +140,12 @@ if not _RELATIONAL_AVAILABLE:
         'load_template',
         'save_template_collection',
         'load_template_collection',
+        'generate_cylinder_grasp_template',
+        'generate_box_grasp_template',
+        'generate_place_template',
+        'generate_transport_template',
+        'generate_mug_grasp_template',
+        'generate_box_place_template',
     ):
         if _name in __all__:
             __all__.remove(_name)
