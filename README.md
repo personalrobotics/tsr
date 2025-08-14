@@ -225,8 +225,9 @@ place_tsrs = library.query(
 # Discover available tasks
 mug_tasks = library.list_tasks_for_reference(EntityClass.MUG)
 table_tasks = library.list_tasks_for_reference(EntityClass.TABLE)
+```
 
-### Enhanced Template-Based Library
+### 4. Enhanced Template-Based Library
 
 The library also supports **direct template registration** with descriptions for easier management:
 
@@ -269,9 +270,9 @@ info = library.get_template_info(
     TaskType(TaskCategory.GRASP, "side")
 )
 ```
-```
 
-### 4. Advanced Sampling
+
+### 5. Advanced Sampling
 
 The library provides **weighted sampling** utilities for working with multiple TSRs:
 

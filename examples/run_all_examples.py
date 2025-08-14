@@ -50,7 +50,8 @@ def main():
         "03_tsr_templates.py",
         "04_relational_library.py",
         "05_sampling.py",
-        "06_serialization.py"
+        "06_serialization.py",
+        "07_template_file_management.py"
     ]
     
     success_count = 0

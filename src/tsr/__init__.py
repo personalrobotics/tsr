@@ -66,6 +66,13 @@ try:
         instantiate_templates,
         sample_from_templates,
     )
+    from .template_io import (
+        TemplateIO,
+        save_template,
+        load_template,
+        save_template_collection,
+        load_template_collection,
+    )
     _RELATIONAL_AVAILABLE = True
 except Exception:
     _RELATIONAL_AVAILABLE = False
@@ -90,6 +97,13 @@ __all__ = [
     'sample_from_tsrs',
     'instantiate_templates',
     'sample_from_templates',
+    
+    # Template I/O utilities
+    'TemplateIO',
+    'save_template',
+    'load_template',
+    'save_template_collection',
+    'load_template_collection',
 ]
 
 if not _RELATIONAL_AVAILABLE:
@@ -105,6 +119,11 @@ if not _RELATIONAL_AVAILABLE:
         'sample_from_tsrs',
         'instantiate_templates',
         'sample_from_templates',
+        'TemplateIO',
+        'save_template',
+        'load_template',
+        'save_template_collection',
+        'load_template_collection',
     ):
         if _name in __all__:
             __all__.remove(_name)
