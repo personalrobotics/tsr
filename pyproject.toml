@@ -4,17 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tsr"
-version = "0.0.1"
+version = "1.0.0"
 description = "Python package for using Task Space Regions"
 readme = "README.md"
 license = {text = "BSD"}
 authors = [
-    {name = "Michael Koval", email = "mkoval@cs.cmu.edu"},
-    {name = "Jennifer King", email = "jeking@cs.cmu.edu"},
-    {name = "Clinton Liddick", email = "cliddick@andrew.cmu.edu"}
+    {name = "Siddhartha Srinivasa", email = "siddh@cs.washington.edu"}
 ]
 maintainers = [
-    {name = "Clinton Liddick", email = "cliddick@andrew.cmu.edu"}
+    {name = "Siddhartha Srinivasa", email = "siddh@cs.washington.edu"}
 ]
 requires-python = ">=3.8"
 classifiers = [
@@ -24,11 +22,6 @@ classifiers = [
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
@@ -44,108 +37,14 @@ test = [
     "pytest>=6.0.0",
     "pytest-cov>=2.10.0",
 ]
-dev = [
-    "pytest>=6.0.0",
-    "pytest-cov>=2.10.0",
-    "black>=22.0.0",
-    "isort>=5.0.0",
-    "flake8>=4.0.0",
-    "mypy>=0.950",
-    "pylint>=2.17.0",
-]
 
 [project.urls]
 Homepage = "https://github.com/personalrobotics/tsr"
 Repository = "https://github.com/personalrobotics/tsr.git"
-Documentation = "https://github.com/personalrobotics/tsr#readme"
-Issues = "https://github.com/personalrobotics/tsr/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsr"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose",
-]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-]
-
-[tool.black]
-line-length = 88
-target-version = ['py38']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["tsr"]
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
-
-[[tool.mypy.overrides]]
-module = [
-    "numpy.*",
-    "scipy.*",
-]
-ignore_missing_imports = true
-
-[tool.pylint.messages_control]
-disable = [
-    "C0114",  # missing-module-docstring
-    "C0115",  # missing-class-docstring
-    "C0116",  # missing-function-docstring
-    "R0903",  # too-few-public-methods
-    "R0913",  # too-many-arguments
-    "R0914",  # too-many-locals
-    "R0915",  # too-many-statements
-    "C0103",  # invalid-name (for mathematical variables like T0_w, Tw_e, Bw)
-]
-
-[tool.pylint.format]
-max-line-length = 88
-
-[tool.pylint.design]
-max-args = 10
-max-locals = 20
-max-statements = 50
-
-[tool.pylint.similarities]
-min-similarity-lines = 4
-ignore-comments = true
-ignore-docstrings = true
-ignore-imports = true 
+python_files = ["test_*.py"] 
