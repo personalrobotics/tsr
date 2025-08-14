@@ -52,7 +52,9 @@ def main():
         "05_sampling.py",
         "06_serialization.py",
         "07_template_file_management.py",
-        "08_template_generators.py"
+        "08_template_generators.py",
+        "09_pypi_template_access.py",
+        "10_preshape_example.py"
     ]
     
     success_count = 0

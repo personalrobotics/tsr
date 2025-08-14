@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 import numpy as np
 
 # Use existing core TSR implementation without changes.
@@ -33,6 +34,12 @@ class TSRTemplate:
         variant: The specific variant of the task (e.g., "side", "top").
         name: Optional human-readable name for the template.
         description: Optional detailed description of the template.
+        preshape: Optional gripper configuration as DOF values.
+                 This specifies the desired gripper joint angles or configuration
+                 that should be achieved before or during the TSR execution.
+                 For parallel jaw grippers, this might be a single value (aperture).
+                 For multi-finger hands, this would be a list of joint angles.
+                 None if no specific gripper configuration is required.
 
     Examples:
         >>> # Create a template for grasping a cylinder from the side
@@ -57,7 +64,8 @@ class TSRTemplate:
         ...     task_category=TaskCategory.GRASP,
         ...     variant="side",
         ...     name="Cylinder Side Grasp",
-        ...     description="Grasp a cylindrical object from the side with 5cm approach distance"
+        ...     description="Grasp a cylindrical object from the side with 5cm approach distance",
+        ...     preshape=np.array([0.08])  # 8cm aperture for parallel jaw gripper
         ... )
         >>> 
         >>> # Instantiate at a specific cylinder pose
@@ -80,6 +88,7 @@ class TSRTemplate:
     variant: str
     name: str = ""
     description: str = ""
+    preshape: Optional[np.ndarray] = None
 
     def instantiate(self, T_ref_world: np.ndarray) -> CoreTSR:
         """Bind this template to a concrete reference pose in world.
@@ -99,30 +108,56 @@ class TSRTemplate:
             and other TSR operations.
 
         Examples:
-            >>> # Create a template for placing objects on a table
-            >>> place_template = TSRTemplate(
-            ...     T_ref_tsr=np.eye(4),
-            ...     Tw_e=np.array([
-            ...         [1, 0, 0, 0],      # Object x-axis aligned with table
-            ...         [0, 1, 0, 0],      # Object y-axis aligned with table
-            ...         [0, 0, 1, 0.02],   # Object 2cm above table surface
-            ...         [0, 0, 0, 1]
-            ...     ]),
-            ...     Bw=np.array([
-            ...         [-0.1, 0.1],       # x: allow sliding on table
-            ...         [-0.1, 0.1],       # y: allow sliding on table
-            ...         [0, 0],            # z: fixed height
-            ...         [0, 0],            # roll: keep level
-            ...         [0, 0],            # pitch: keep level
-            ...         [-np.pi/4, np.pi/4]  # yaw: allow some rotation
-            ...     ]),
-            ...     subject_entity=EntityClass.MUG,
-            ...     reference_entity=EntityClass.TABLE,
-            ...     task_category=TaskCategory.PLACE,
-            ...     variant="on",
-            ...     name="Table Placement",
-            ...     description="Place object on table surface with 2cm clearance"
-            ... )
+                    >>> # Create a template for placing objects on a table
+        >>> place_template = TSRTemplate(
+        ...     T_ref_tsr=np.eye(4),
+        ...     Tw_e=np.array([
+        ...         [1, 0, 0, 0],      # Object x-axis aligned with table
+        ...         [0, 1, 0, 0],      # Object y-axis aligned with table
+        ...         [0, 0, 1, 0.02],   # Object 2cm above table surface
+        ...         [0, 0, 0, 1]
+        ...     ]),
+        ...     Bw=np.array([
+        ...         [-0.1, 0.1],       # x: allow sliding on table
+        ...         [-0.1, 0.1],       # y: allow sliding on table
+        ...         [0, 0],            # z: fixed height
+        ...         [0, 0],            # roll: keep level
+        ...         [0, 0],            # pitch: keep level
+        ...         [-np.pi/4, np.pi/4]  # yaw: allow some rotation
+        ...     ]),
+        ...     subject_entity=EntityClass.MUG,
+        ...     reference_entity=EntityClass.TABLE,
+        ...     task_category=TaskCategory.PLACE,
+        ...     variant="on",
+        ...     name="Table Placement",
+        ...     description="Place object on table surface with 2cm clearance"
+        ... )
+        >>> 
+        >>> # Example with multi-finger hand preshape
+        >>> multi_finger_template = TSRTemplate(
+        ...     T_ref_tsr=np.eye(4),
+        ...     Tw_e=np.array([
+        ...         [0, 0, 1, -0.03],  # Approach from -z, 3cm offset
+        ...         [1, 0, 0, 0],      # x-axis perpendicular to object
+        ...         [0, 1, 0, 0],      # y-axis along object
+        ...         [0, 0, 0, 1]
+        ...     ]),
+        ...     Bw=np.array([
+        ...         [0, 0],           # x: fixed position
+        ...         [0, 0],           # y: fixed position
+        ...         [-0.005, 0.005],  # z: small tolerance
+        ...         [0, 0],           # roll: fixed
+        ...         [0, 0],           # pitch: fixed
+        ...         [-np.pi/6, np.pi/6]  # yaw: limited rotation
+        ...     ]),
+        ...     subject_entity=EntityClass.GENERIC_GRIPPER,
+        ...     reference_entity=EntityClass.BOX,
+        ...     task_category=TaskCategory.GRASP,
+        ...     variant="precision",
+        ...     name="Precision Grasp",
+        ...     description="Precision grasp with multi-finger hand",
+        ...     preshape=np.array([0.0, 0.5, 0.5, 0.0, 0.5, 0.5])  # 6-DOF hand configuration
+        ... )
             >>> 
             >>> # Instantiate at table pose
             >>> table_pose = np.eye(4)  # Table at world origin
@@ -134,7 +169,7 @@ class TSRTemplate:
 
     def to_dict(self):
         """Convert this TSRTemplate to a python dict for serialization."""
-        return {
+        result = {
             'name': self.name,
             'description': self.description,
             'subject_entity': self.subject_entity.value,
@@ -145,10 +180,17 @@ class TSRTemplate:
             'Tw_e': self.Tw_e.tolist(),
             'Bw': self.Bw.tolist(),
         }
+        if self.preshape is not None:
+            result['preshape'] = self.preshape.tolist()
+        return result
 
     @staticmethod
     def from_dict(x):
         """Construct a TSRTemplate from a python dict."""
+        preshape = None
+        if 'preshape' in x and x['preshape'] is not None:
+            preshape = np.array(x['preshape'])
+        
         return TSRTemplate(
             name=x.get('name', ''),
             description=x.get('description', ''),
@@ -159,6 +201,7 @@ class TSRTemplate:
             T_ref_tsr=np.array(x['T_ref_tsr']),
             Tw_e=np.array(x['Tw_e']),
             Bw=np.array(x['Bw']),
+            preshape=preshape,
         )
 
     def to_json(self):

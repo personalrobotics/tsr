@@ -21,7 +21,8 @@ def generate_cylinder_grasp_template(
     vertical_tolerance: float = 0.02,
     yaw_range: Optional[Tuple[float, float]] = None,
     name: str = "",
-    description: str = ""
+    description: str = "",
+    preshape: Optional[np.ndarray] = None
 ) -> TSRTemplate:
     """Generate a TSR template for grasping a cylindrical object.
     
@@ -42,6 +43,7 @@ def generate_cylinder_grasp_template(
         yaw_range: Allowable yaw rotation range (min, max) in radians
         name: Optional name for the template
         description: Optional description of the template
+        preshape: Optional gripper configuration as DOF values (e.g., aperture for parallel jaw)
         
     Returns:
         TSRTemplate for the specified grasp variant
@@ -143,7 +145,8 @@ def generate_cylinder_grasp_template(
         task_category=TaskCategory.GRASP,
         variant=variant,
         name=name,
-        description=description
+        description=description,
+        preshape=preshape
     )
 
 
@@ -158,7 +161,8 @@ def generate_box_grasp_template(
     lateral_tolerance: float = 0.02,
     yaw_range: Optional[Tuple[float, float]] = None,
     name: str = "",
-    description: str = ""
+    description: str = "",
+    preshape: Optional[np.ndarray] = None
 ) -> TSRTemplate:
     """Generate a TSR template for grasping a box-shaped object.
     
@@ -182,6 +186,7 @@ def generate_box_grasp_template(
         yaw_range: Allowable yaw rotation range (min, max) in radians
         name: Optional name for the template
         description: Optional description of the template
+        preshape: Optional gripper configuration as DOF values (e.g., aperture for parallel jaw)
         
     Returns:
         TSRTemplate for the specified grasp variant
@@ -301,7 +306,8 @@ def generate_box_grasp_template(
         task_category=TaskCategory.GRASP,
         variant=variant,
         name=name,
-        description=description
+        description=description,
+        preshape=preshape
     )
 
 
