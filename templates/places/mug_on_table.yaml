@@ -1,0 +1,23 @@
+name: Mug Table Placement
+description: Place mug on table surface with 2cm clearance
+subject_entity: mug
+reference_entity: table
+task_category: place
+variant: on
+T_ref_tsr:
+  - [1.0, 0.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
+Tw_e:
+  - [1.0, 0.0, 0.0, 0.0]      # Mug x-axis aligned with table
+  - [0.0, 1.0, 0.0, 0.0]      # Mug y-axis aligned with table
+  - [0.0, 0.0, 1.0, 0.02]     # Mug 2cm above table surface
+  - [0.0, 0.0, 0.0, 1.0]
+Bw:
+  - [-0.1, 0.1]               # x: allow sliding on table
+  - [-0.1, 0.1]               # y: allow sliding on table
+  - [0.0, 0.0]                # z: fixed height
+  - [0.0, 0.0]                # roll: keep level
+  - [0.0, 0.0]                # pitch: keep level
+  - [-0.785398, 0.785398]     # yaw: allow some rotation (±45°)
