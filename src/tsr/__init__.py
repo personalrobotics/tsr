@@ -72,6 +72,10 @@ try:
         load_template,
         save_template_collection,
         load_template_collection,
+        get_package_templates,
+        list_available_templates,
+        load_package_template,
+        load_package_templates_by_category,
     )
     from .generators import (
         generate_cylinder_grasp_template,
@@ -112,6 +116,10 @@ __all__ = [
     'load_template',
     'save_template_collection',
     'load_template_collection',
+    'get_package_templates',
+    'list_available_templates',
+    'load_package_template',
+    'load_package_templates_by_category',
     
     # Template generators
     'generate_cylinder_grasp_template',
@@ -140,6 +148,10 @@ if not _RELATIONAL_AVAILABLE:
         'load_template',
         'save_template_collection',
         'load_template_collection',
+        'get_package_templates',
+        'list_available_templates',
+        'load_package_template',
+        'load_package_templates_by_category',
         'generate_cylinder_grasp_template',
         'generate_box_grasp_template',
         'generate_place_template',

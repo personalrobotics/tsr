@@ -1,0 +1,23 @@
+name: Mug Side Grasp
+description: Grasp mug from the side with 5cm approach distance
+subject_entity: generic_gripper
+reference_entity: mug
+task_category: grasp
+variant: side
+T_ref_tsr:
+  - [1.0, 0.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
+Tw_e:
+  - [0.0, 0.0, 1.0, -0.05]    # Approach from -z, 5cm offset
+  - [1.0, 0.0, 0.0, 0.0]      # x-axis perpendicular to mug
+  - [0.0, 1.0, 0.0, 0.05]     # y-axis along mug axis
+  - [0.0, 0.0, 0.0, 1.0]
+Bw:
+  - [0.0, 0.0]                # x: fixed position
+  - [0.0, 0.0]                # y: fixed position
+  - [-0.01, 0.01]             # z: small tolerance
+  - [0.0, 0.0]                # roll: fixed
+  - [0.0, 0.0]                # pitch: fixed
+  - [-3.14159, 3.14159]       # yaw: full rotation

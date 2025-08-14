@@ -50,12 +50,15 @@ jobs:
     
     - name: Install dependencies
       run: |
+        uv venv
         uv pip install -e ".[test]"
         uv pip list
     
     - name: Run tests
       run: |
         uv run pytest tests/ -v --tb=short
+        # Ensure pytest is available
+        uv run python -c "import pytest; print(f'✅ Pytest version: {pytest.__version__}')"
     
     - name: Run performance benchmarks
       run: |

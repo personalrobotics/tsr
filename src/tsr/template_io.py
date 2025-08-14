@@ -274,3 +274,41 @@ def save_template_collection(templates: List[TSRTemplate], filepath: Union[str, 
 def load_template_collection(filepath: Union[str, Path]) -> List[TSRTemplate]:
     """Load multiple TSR templates from a single YAML file."""
     return TemplateIO.load_template_collection(filepath)
+
+
+def get_package_templates() -> Path:
+    """Get the path to templates included in the package."""
+    try:
+        import tsr
+        return Path(tsr.__file__).parent / "templates"
+    except ImportError:
+        # Fallback for development
+        return Path(__file__).parent / "templates"
+
+
+def list_available_templates() -> List[str]:
+    """List all templates available in the package."""
+    template_dir = get_package_templates()
+    if not template_dir.exists():
+        return []
+    
+    templates = []
+    for yaml_file in template_dir.rglob("*.yaml"):
+        templates.append(str(yaml_file.relative_to(template_dir)))
+    return sorted(templates)
+
+
+def load_package_template(category: str, name: str) -> TSRTemplate:
+    """Load a specific template from the package."""
+    template_path = get_package_templates() / category / name
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template not found: {template_path}")
+    return load_template(template_path)
+
+
+def load_package_templates_by_category(category: str) -> List[TSRTemplate]:
+    """Load all templates from a specific category in the package."""
+    category_dir = get_package_templates() / category
+    if not category_dir.exists():
+        return []
+    return TemplateIO.load_templates_from_directory(category_dir)
