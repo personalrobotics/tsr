@@ -72,7 +72,11 @@ jobs:
     - name: Test examples directory
       run: |
         # Test that examples directory exists and contains expected files
-        ls -la examples/
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          dir examples/
+        else
+          ls -la examples/
+        fi
         echo "Examples directory structure verified"
 
   # Separate job for testing with pip (to ensure compatibility)
