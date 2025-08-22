@@ -3,9 +3,11 @@
 import numpy as np
 from meshcat import Visualizer
 import meshcat.geometry as g
+import os
 from scipy.spatial.transform import Rotation as R
 import sys
 from pathlib import Path
+from copy import deepcopy
 
 # Ensure src is on sys.path for tsr imports
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,15 +33,24 @@ vis["object"].set_object(g.Cylinder(cyl_height, cyl_radius), g.MeshPhongMaterial
 vis["object"].set_transform(cyl_pose)
 
 
-# Define a TSRTemplate for a side grasp on a cylinder
+# Define a TSRTemplate for a side grasp on a cylinder, with 90 deg roll in Tw_e
+roll90 = R.from_euler('x', 90, degrees=True).as_matrix()
+# Tw_e = np.array([
+#     [0, 0, 1, 0],
+#     [1, 0, 0, 0],
+#     [0, 1, 0, 0],
+#     [0, 0, 0, 1]
+# ])
+Tw_e = np.array([
+    [0, 0, 1, 0],
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 0, 1]
+])
+Tw_e[:3, :3] = Tw_e[:3, :3] @ roll90
 cylinder_grasp_template = TSRTemplate(
     T_ref_tsr=np.eye(4),
-    Tw_e=np.array([
-        [0, 0, 1, -(cyl_radius + 0.05)],  # Approach from -z, offset by radius+5cm
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 0, 1]
-    ]),
+    Tw_e=Tw_e,
     Bw=np.array([
         [0, 0],
         [0, 0],
@@ -65,11 +76,19 @@ tsr = cylinder_grasp_template.instantiate(cylinder_pose)
 # Sample a pose from the TSR
 T_sample = tsr.sample()
 
-# Place the sphere at the TSR sample pose
-sphere_radius = 0.025
-sphere_color = 0xff0000
-vis["tsr_sample"].set_object(g.Sphere(sphere_radius), g.MeshPhongMaterial(color=sphere_color, opacity=0.8))
-vis["tsr_sample"].set_transform(T_sample)
+
+
+
+# Load and place 2f140.stl at the TSR sample pose
+stl_path = os.path.join(REPO_ROOT, "visualization", "2f140.stl")
+gripper_geom = g.StlMeshGeometry.from_file(stl_path)
+gripper_material = g.MeshPhongMaterial(color=0x3333cc, opacity=0.9)
+vis["gripper"].set_object(gripper_geom, gripper_material)
+
+gripper_pose = deepcopy(T_sample)
+gripper_pose[:3, :3] *= 0.001  # scale rotation axes
+gripper_pose[:3, 3] *= 0.001   # scale translation
+vis["gripper"].set_transform(gripper_pose)
 
 print("Meshcat visualizer running. Open http://localhost:7000/static/ if not already open.")
 print("Press Ctrl-C to exit.")
