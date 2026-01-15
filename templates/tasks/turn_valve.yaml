@@ -1,0 +1,24 @@
+# Grasp a valve wheel for turning
+# Hand positioned on rim of valve wheel
+
+name: Valve Wheel Grasp
+description: Grasp valve wheel rim for turning
+task: actuate
+subject: gripper
+reference: valve_wheel
+
+position:
+  type: ring
+  axis: x               # valve rotates around x-axis
+  radius: 0.08          # valve wheel radius
+  height: 0             # at valve center
+  angle: [0, 360]       # any position on rim
+
+orientation:
+  approach: radial      # grip the rim
+  roll: [-20, 20]       # some wrist flexibility
+
+standoff: 0.03
+
+gripper:
+  aperture: 0.04        # rim thickness

@@ -1,0 +1,20 @@
+# Stack a plate on top of other plates
+# Must be centered and level
+
+name: Plate on Stack
+description: Place plate centered on existing stack
+task: place
+subject: plate
+reference: plate_stack
+
+position:
+  type: point
+  x: 0                  # must be centered
+  y: 0
+  z: 0.02               # one plate thickness above stack
+
+orientation:
+  approach: -z          # plate horizontal
+  yaw: free             # rotation doesn't matter for round plates
+
+standoff: 0

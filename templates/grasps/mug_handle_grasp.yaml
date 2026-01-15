@@ -1,0 +1,23 @@
+# Grasp a mug by its handle
+# Handle is assumed to extend in the positive x direction
+
+name: Mug Handle Grasp
+description: Grasp mug by the handle for carrying
+task: grasp
+subject: gripper
+reference: mug
+
+position:
+  type: point
+  x: 0.06               # handle center, offset from mug center
+  y: 0
+  z: 0.05               # mid-height of handle
+
+orientation:
+  approach: +y          # approach from the side of the handle
+  roll: [-10, 10]       # slight roll tolerance
+
+standoff: 0.03
+
+gripper:
+  aperture: 0.025       # handle thickness

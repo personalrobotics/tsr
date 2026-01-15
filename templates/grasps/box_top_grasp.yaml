@@ -1,0 +1,23 @@
+# Grasp a box from the top
+# Useful for picking from shelves or bins
+
+name: Box Top Grasp
+description: Top-down grasp on box, fingers along short edge
+task: grasp
+subject: gripper
+reference: box
+
+position:
+  type: plane
+  x: [-0.02, 0.02]      # center tolerance
+  y: [-0.02, 0.02]      # center tolerance
+  z: 0.05               # top of box
+
+orientation:
+  approach: -z          # straight down
+  yaw: [0, 90]          # align with either edge
+
+standoff: 0.04
+
+gripper:
+  aperture: 0.12        # box width

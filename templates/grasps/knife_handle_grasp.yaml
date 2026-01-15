@@ -1,0 +1,24 @@
+# Grasp a kitchen knife by its handle
+# For cutting tasks - blade extends in +x
+
+name: Knife Handle Grasp
+description: Grasp knife handle for cutting, blade forward
+task: grasp
+subject: gripper
+reference: knife
+
+position:
+  type: line
+  axis: x               # can slide along handle
+  range: [0.02, 0.08]   # handle region (avoiding blade)
+  y: 0
+  z: 0.015              # handle center height
+
+orientation:
+  approach: -z          # grasp from above
+  yaw: 0                # blade points forward
+
+standoff: 0.03
+
+gripper:
+  aperture: 0.03        # handle width

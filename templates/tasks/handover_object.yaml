@@ -1,0 +1,20 @@
+# Robot-to-human handover position
+# Object presented in a reachable sphere in front of person
+
+name: Handover to Human
+description: Present object within comfortable reach of human
+task: handover
+subject: object
+reference: human_torso
+
+position:
+  type: sphere
+  radius: 0.45          # comfortable reach distance
+  pitch: [-30, 30]      # not too high or low
+  yaw: [-45, 45]        # in front of person
+
+orientation:
+  approach: -x          # object faces toward human
+  yaw: [-30, 30]        # slight angle tolerance
+
+standoff: 0

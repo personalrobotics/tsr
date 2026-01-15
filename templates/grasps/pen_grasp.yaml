@@ -1,0 +1,24 @@
+# Grasp a pen or marker for writing
+# Gripper approaches along the pen's length
+
+name: Pen Writing Grasp
+description: Grasp pen for writing tasks, fingers perpendicular to pen axis
+task: grasp
+subject: gripper
+reference: pen
+
+position:
+  type: cylinder
+  axis: x               # pen lies along x-axis
+  radius: 0.006         # pen radius
+  height: [0.02, 0.08]  # grasp near tip end
+  angle: [0, 360]
+
+orientation:
+  approach: radial      # perpendicular to pen
+  roll: free            # can rotate around approach axis
+
+standoff: 0.02
+
+gripper:
+  aperture: 0.015

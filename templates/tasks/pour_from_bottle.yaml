@@ -1,0 +1,21 @@
+# Pouring pose for a bottle
+# Bottle tilted to pour into a target container
+
+name: Bottle Pouring Pose
+description: Tilt bottle to pour liquid into container
+task: pour
+subject: bottle
+reference: target_container
+
+position:
+  type: point
+  x: 0                  # centered over container
+  y: 0
+  z: 0.15               # height above container
+
+orientation:
+  approach: -z          # bottle base points down-ish
+  pitch: [30, 60]       # tilt for pouring (30-60 degrees)
+  yaw: free             # can pour from any direction
+
+standoff: 0

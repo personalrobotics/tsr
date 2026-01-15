@@ -1,0 +1,20 @@
+# Place a bottle in a wine rack slot
+# Bottle lies on its side in a specific slot
+
+name: Bottle in Wine Rack
+description: Place bottle horizontally in rack slot
+task: place
+subject: bottle
+reference: rack_slot
+
+position:
+  type: line
+  axis: x
+  range: [-0.02, 0.02]  # small tolerance along slot
+
+orientation:
+  approach: +x          # bottle axis along slot
+  roll: free            # bottle can rotate around its axis
+  pitch: [-5, 5]        # small tilt tolerance
+
+standoff: 0

@@ -1,0 +1,23 @@
+# Grasp a bottle around its body
+# Full 360° access since bottles are symmetric
+
+name: Bottle Body Grasp
+description: Grasp bottle around its cylindrical body
+task: grasp
+subject: gripper
+reference: bottle
+
+position:
+  type: cylinder
+  axis: z
+  radius: 0.035         # bottle radius
+  height: [0.05, 0.15]  # avoid neck and base
+  angle: [0, 360]       # full rotation - bottle is symmetric
+
+orientation:
+  approach: radial
+
+standoff: 0.04
+
+gripper:
+  aperture: 0.08

@@ -1,0 +1,24 @@
+# Grasp a bowl by pinching its rim
+# Useful for moving bowls without disturbing contents
+
+name: Bowl Rim Grasp
+description: Pinch grasp on bowl rim for stable carrying
+task: grasp
+subject: gripper
+reference: bowl
+
+position:
+  type: ring
+  axis: z
+  radius: 0.07          # bowl rim radius
+  height: 0.05          # rim height
+  angle: [0, 360]       # any position on rim
+
+orientation:
+  approach: radial      # pinch toward center
+  pitch: [10, 30]       # tilt fingers slightly downward into rim
+
+standoff: 0.02
+
+gripper:
+  aperture: 0.015       # rim thickness

@@ -1,0 +1,23 @@
+# Grasp spray bottle with finger on trigger
+# Specific pose for operating the trigger
+
+name: Spray Bottle Trigger Grasp
+description: Grasp spray bottle ready to squeeze trigger
+task: grasp
+subject: gripper
+reference: spray_bottle
+
+position:
+  type: point
+  x: -0.03              # trigger side of bottle
+  y: 0
+  z: 0.08               # handle height
+
+orientation:
+  approach: +x          # approach from trigger side
+  yaw: 0                # aligned with bottle
+
+standoff: 0.04
+
+gripper:
+  aperture: 0.06

@@ -1,0 +1,23 @@
+# Grasp a mug from the side, avoiding the handle region
+# The handle is assumed to be at 0° (positive x direction)
+
+name: Mug Side Grasp (Avoiding Handle)
+description: Grasp mug body from the side, keeping clear of handle
+task: grasp
+subject: gripper
+reference: mug
+
+position:
+  type: cylinder
+  axis: z
+  radius: 0.04          # mug radius
+  height: [0.03, 0.08]  # grasp zone on mug body
+  angle: [45, 315]      # avoid handle at 0°
+
+orientation:
+  approach: radial      # fingers close perpendicular to mug surface
+
+standoff: 0.05
+
+gripper:
+  aperture: 0.09        # slightly wider than mug diameter

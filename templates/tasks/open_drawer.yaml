@@ -1,0 +1,22 @@
+# Grasp a drawer handle for pulling open
+# Handle is horizontal bar on drawer front
+
+name: Drawer Handle Grasp
+description: Grasp drawer handle to pull open
+task: actuate
+subject: gripper
+reference: drawer_handle
+
+position:
+  type: line
+  axis: x               # handle runs horizontally
+  range: [-0.05, 0.05]  # can grasp anywhere along handle
+
+orientation:
+  approach: -y          # pull toward robot
+  pitch: [-10, 10]      # slight pitch tolerance
+
+standoff: 0.04
+
+gripper:
+  aperture: 0.03        # handle diameter

@@ -126,6 +126,198 @@ dist_to_tsr = grasp_tsr.distance(current_pose)
 is_valid = (dist_to_tsr == 0.0)
 ```
 
+## 🎨 TSR Geometric Primitives
+
+A powerful insight: TSRs can represent **9 fundamental geometric shapes** through their 6-DOF bounds `[x, y, z, roll, pitch, yaw]`. Each DOF can be fixed (single value) or a range, and rotation bounds can sweep position to create curved surfaces.
+
+**Units:** All distances are in **meters**, all angles are in **degrees**.
+
+### The 9 Primitives
+
+**Cartesian Primitives** (position bounds only):
+
+| Primitive | Description | DOF Pattern |
+|-----------|-------------|-------------|
+| **Point** | Single location | x, y, z all fixed |
+| **Line** | Along one axis | 1 axis varies, 2 fixed |
+| **Plane** | Flat 2D region | 2 axes vary, 1 fixed |
+| **Box** | 3D volume | All 3 axes vary |
+
+**Cylindrical Primitives** (rotation sweeps position):
+
+| Primitive | Description | DOF Pattern |
+|-----------|-------------|-------------|
+| **Ring** | Circle/arc around axis | radius fixed, angle varies, height fixed |
+| **Disk** | Filled circle/annulus | radius varies, angle varies, height fixed |
+| **Cylinder** | Cylinder surface | radius fixed, angle varies, height varies |
+| **Shell** | Thick-walled cylinder | radius varies, angle varies, height varies |
+
+**Spherical Primitives** (multiple rotations sweep position):
+
+| Primitive | Description | DOF Pattern |
+|-----------|-------------|-------------|
+| **Sphere** | Spherical surface | radius fixed, pitch varies, yaw varies |
+
+### How It Works
+
+The key insight is that **rotation bounds sweep the position**. For example, if you set `x=0.04` (fixed radius) and `yaw=[0°, 360°]`, the yaw rotation sweeps the point around the z-axis, creating a ring.
+
+```
+Raw DOF → Geometric Shape
+
+x: 0.04 (fixed)     ┐
+y: 0                │
+z: [0.02, 0.08]     │ → Cylinder surface around z-axis
+roll: 0             │
+pitch: 0            │
+yaw: [0°, 360°]     ┘
+```
+
+### Primitive Examples
+
+**Point** - Precise grasp location:
+```yaml
+position:
+  type: point
+  x: 0
+  y: 0
+  z: 0.12
+```
+
+**Plane** - Placement on surface with tolerance:
+```yaml
+position:
+  type: plane
+  x: [-0.1, 0.1]
+  y: [-0.1, 0.1]
+  z: 0
+```
+
+**Cylinder** - Side grasp avoiding handle:
+```yaml
+position:
+  type: cylinder
+  axis: z
+  radius: 0.04
+  height: [0.02, 0.08]
+  angle: [30, 330]      # degrees - excludes handle region
+```
+
+**Ring** - Grasp at fixed height, any angle:
+```yaml
+position:
+  type: ring
+  axis: z
+  radius: 0.04
+  angle: [0, 360]
+```
+
+**Disk** - Grasp with variable reach:
+```yaml
+position:
+  type: disk
+  axis: z
+  radius: [0.03, 0.05]  # inner to outer radius
+  angle: [0, 360]
+```
+
+**Shell** - Volumetric grasp region:
+```yaml
+position:
+  type: shell
+  axis: z
+  radius: [0.03, 0.05]
+  height: [0.02, 0.08]
+  angle: [0, 360]
+```
+
+### Mapping to Raw TSR Bounds
+
+Each primitive expands to the underlying `[x, y, z, roll, pitch, yaw]` bounds:
+
+| Primitive | x | y | z | roll | pitch | yaw |
+|-----------|---|---|---|------|-------|-----|
+| Point | val | val | val | 0 | 0 | 0 |
+| Line (z) | 0 | 0 | [a,b] | 0 | 0 | 0 |
+| Plane (xy) | [a,b] | [c,d] | val | 0 | 0 | 0 |
+| Box | [a,b] | [c,d] | [e,f] | 0 | 0 | 0 |
+| Ring (z) | r | 0 | val | 0 | 0 | [θ₁,θ₂] |
+| Disk (z) | [r₁,r₂] | 0 | val | 0 | 0 | [θ₁,θ₂] |
+| Cylinder (z) | r | 0 | [a,b] | 0 | 0 | [θ₁,θ₂] |
+| Shell (z) | [r₁,r₂] | 0 | [a,b] | 0 | 0 | [θ₁,θ₂] |
+| Sphere | r | 0 | 0 | 0 | [φ₁,φ₂] | [θ₁,θ₂] |
+
+This primitive system allows you to think geometrically while the library handles the underlying TSR math.
+
+### Complete Template Format
+
+The new human-friendly template format combines primitives with task semantics:
+
+```yaml
+name: Side grasp mug (avoiding handle)
+description: Grasp mug from side, excluding handle region
+task: grasp
+subject: gripper
+reference: mug
+
+position:
+  type: cylinder
+  axis: z
+  radius: 0.04
+  height: [0.02, 0.08]
+  angle: [30, 330]        # avoids handle at 0°
+
+orientation:
+  approach: radial        # gripper points toward cylinder axis
+
+standoff: 0.05            # 5cm approach distance
+
+gripper:
+  aperture: 0.06          # gripper opening
+```
+
+**Template fields:**
+- `name`, `description` - Human-readable identifiers
+- `task` - Task type: `grasp`, `place`, `constrain`
+- `subject` - What's being constrained (gripper, object)
+- `reference` - Reference frame entity
+- `position` - Geometric primitive (see above)
+- `orientation` - Approach direction and freedoms
+- `standoff` - Offset distance along approach
+- `gripper` - Optional gripper configuration
+
+**Orientation approaches:**
+- `radial` - Point toward reference axis (for cylinder/ring grasps)
+- `axial` - Point along reference axis
+- `+x`, `-x`, `+y`, `-y`, `+z`, `-z` - Fixed direction
+
+**Loading templates:**
+```python
+from tsr.core.tsr_primitive import load_template_file, load_template_yaml
+
+# From file
+template = load_template_file("templates/grasps/mug_side_grasp.yaml")
+
+# From string
+template = load_template_yaml(yaml_string)
+
+# Access parsed components
+print(template.Bw)      # 6x2 bounds array
+print(template.Tw_e)    # 4x4 end-effector transform
+```
+
+### Example Templates
+
+The library includes 21 ready-to-use templates covering common manipulation scenarios:
+
+**Grasps:** mug (side, handle, avoid-handle), bottle, bowl rim, box top, pen, screwdriver, spray bottle, jar lid, knife handle
+
+**Placements:** mug on table, bottle in rack, plate stack, book on shelf, cup on coaster
+
+**Tasks:** pour, turn valve, open drawer, wipe surface, handover
+
+See [`templates/README.md`](templates/README.md) for the complete reference with examples for each primitive.
+
 ## 🏗️ Architecture Components
 
 ### 1. TSR Templates

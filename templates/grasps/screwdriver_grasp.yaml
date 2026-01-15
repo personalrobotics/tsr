@@ -1,0 +1,24 @@
+# Grasp a screwdriver by its handle for tool use
+# Handle is the thicker cylindrical part
+
+name: Screwdriver Handle Grasp
+description: Power grasp on screwdriver handle for driving screws
+task: grasp
+subject: gripper
+reference: screwdriver
+
+position:
+  type: cylinder
+  axis: x               # tool axis along x
+  radius: 0.015         # handle radius
+  height: [0.02, 0.08]  # handle length
+  angle: [0, 360]
+
+orientation:
+  approach: radial
+  roll: free            # can rotate to any orientation
+
+standoff: 0.025
+
+gripper:
+  aperture: 0.04
