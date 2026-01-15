@@ -93,7 +93,7 @@ def main():
         Bw=np.array([[-0.1, 0.1], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]])
     )
     
-    chain = TSRChain([tsr1, tsr2])
+    chain = TSRChain(TSRs=[tsr1, tsr2])
     
     # Test dictionary serialization
     chain_dict = chain.to_dict()

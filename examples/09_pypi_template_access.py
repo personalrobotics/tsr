@@ -1,208 +1,151 @@
 #!/usr/bin/env python
 """
-PyPI Template Access Example: How to use templates when installed from PyPI.
+Template Access Example: How to use templates from the package.
 
-This example demonstrates how users can access TSR templates when the package
-is installed from PyPI using 'pip install tsr'.
+This example demonstrates how users can access TSR templates included
+in the package.
 """
 
 import numpy as np
+from pathlib import Path
 
-from tsr import (
-    list_available_templates,
-    load_package_template,
-    load_package_templates_by_category,
-    get_package_templates,
-    TSRLibraryRelational,
-    EntityClass,
-    TaskCategory,
-    TaskType
-)
+from tsr.core.tsr_primitive import load_template_file
+from tsr.core.tsr import TSR
+
+
+def get_templates_dir() -> Path:
+    """Get the path to the templates directory."""
+    # Templates are in the package root
+    import tsr
+    package_dir = Path(tsr.__file__).parent.parent.parent
+    return package_dir / "templates"
+
+
+def list_templates(category: str = None) -> list:
+    """List available templates, optionally filtered by category."""
+    templates_dir = get_templates_dir()
+    if category:
+        search_dir = templates_dir / category
+        if search_dir.exists():
+            return list(search_dir.glob("*.yaml"))
+        return []
+    else:
+        return list(templates_dir.glob("**/*.yaml"))
 
 
 def demonstrate_template_discovery():
     """Demonstrate discovering available templates."""
-    print("\n🔍 Template Discovery")
+    print("\n1. Template Discovery")
     print("=" * 50)
-    
-    # List all available templates in the package
-    available_templates = list_available_templates()
-    print(f"✅ Found {len(available_templates)} templates in package:")
-    for template in available_templates:
-        print(f"   - {template}")
-    
-    # Get the package templates directory
-    template_dir = get_package_templates()
-    print(f"\n📁 Package templates directory: {template_dir}")
-    print(f"   Directory exists: {template_dir.exists()}")
+
+    templates_dir = get_templates_dir()
+    print(f"Templates directory: {templates_dir}")
+
+    # List templates by category
+    for category in ["grasps", "places", "tasks"]:
+        templates = list_templates(category)
+        print(f"\n{category}/ ({len(templates)} templates):")
+        for t in templates:
+            print(f"   - {t.name}")
 
 
-def demonstrate_individual_template_loading():
-    """Demonstrate loading individual templates."""
-    print("\n📂 Individual Template Loading")
+def demonstrate_template_loading():
+    """Demonstrate loading templates."""
+    print("\n2. Template Loading")
     print("=" * 50)
-    
-    # Load specific templates by category and name
-    mug_grasp = load_package_template("grasps", "mug_side_grasp.yaml")
-    mug_place = load_package_template("places", "mug_on_table.yaml")
-    
-    print(f"✅ Loaded {mug_grasp.name}")
-    print(f"   Description: {mug_grasp.description}")
-    print(f"   Subject: {mug_grasp.subject_entity.value}")
-    print(f"   Reference: {mug_grasp.reference_entity.value}")
-    print(f"   Task: {mug_grasp.task_category.value}/{mug_grasp.variant}")
-    
-    print(f"\n✅ Loaded {mug_place.name}")
-    print(f"   Description: {mug_place.description}")
-    print(f"   Subject: {mug_place.subject_entity.value}")
-    print(f"   Reference: {mug_place.reference_entity.value}")
-    print(f"   Task: {mug_place.task_category.value}/{mug_place.variant}")
 
+    templates_dir = get_templates_dir()
 
-def demonstrate_category_loading():
-    """Demonstrate loading all templates from a category."""
-    print("\n📚 Category Template Loading")
-    print("=" * 50)
-    
-    # Load all templates from grasps category
-    grasp_templates = load_package_templates_by_category("grasps")
-    print(f"✅ Loaded {len(grasp_templates)} grasp templates:")
-    for template in grasp_templates:
-        print(f"   - {template.name}: {template.description}")
-    
-    # Load all templates from places category
-    place_templates = load_package_templates_by_category("places")
-    print(f"\n✅ Loaded {len(place_templates)} place templates:")
-    for template in place_templates:
-        print(f"   - {template.name}: {template.description}")
+    # Load a grasp template
+    grasp_template = load_template_file(str(templates_dir / "grasps/mug_side_grasp.yaml"))
+    print(f"Loaded: {grasp_template.name}")
+    print(f"  Description: {grasp_template.description}")
+    print(f"  Task: {grasp_template.task}")
+    print(f"  Subject: {grasp_template.subject}")
+    print(f"  Reference: {grasp_template.reference}")
 
-
-def demonstrate_library_integration():
-    """Demonstrate integrating package templates with the library."""
-    print("\n📚 Library Integration")
-    print("=" * 50)
-    
-    # Create library and load package templates
-    library = TSRLibraryRelational()
-    
-    # Load and register package templates
-    grasp_templates = load_package_templates_by_category("grasps")
-    place_templates = load_package_templates_by_category("places")
-    
-    # Register grasp templates
-    for template in grasp_templates:
-        library.register_template(
-            subject=template.subject_entity,
-            reference=template.reference_entity,
-            task=TaskType(template.task_category, template.variant),
-            template=template,
-            description=template.description
-        )
-    
-    # Register place templates
-    for template in place_templates:
-        library.register_template(
-            subject=template.subject_entity,
-            reference=template.reference_entity,
-            task=TaskType(template.task_category, template.variant),
-            template=template,
-            description=template.description
-        )
-    
-    # Query available templates
-    available = library.list_available_templates()
-    print(f"✅ Registered {len(available)} templates in library:")
-    for subject, reference, task, description in available:
-        print(f"   {subject.value} -> {reference.value} ({task}): {description}")
+    # Load a placement template
+    place_template = load_template_file(str(templates_dir / "places/mug_on_table.yaml"))
+    print(f"\nLoaded: {place_template.name}")
+    print(f"  Description: {place_template.description}")
+    print(f"  Reference frame: {place_template.reference_frame}")
 
 
 def demonstrate_template_usage():
-    """Demonstrate using loaded templates."""
-    print("\n🎮 Template Usage")
+    """Demonstrate using templates to create TSRs."""
+    print("\n3. Template Usage")
     print("=" * 50)
-    
-    # Load a template from the package
-    template = load_package_template("grasps", "mug_side_grasp.yaml")
-    
-    # Simulate object pose (mug at x=0.5, y=0.3, z=0.1)
+
+    templates_dir = get_templates_dir()
+
+    # Load template
+    template = load_template_file(str(templates_dir / "grasps/mug_side_grasp.yaml"))
+
+    # Create TSR at object pose
     mug_pose = np.array([
         [1, 0, 0, 0.5],   # Mug at x=0.5m
         [0, 1, 0, 0.3],   # y=0.3m
-        [0, 0, 1, 0.1],   # z=0.1m (on table)
+        [0, 0, 1, 0.1],   # z=0.1m
         [0, 0, 0, 1]
     ])
-    
-    # Instantiate template at mug pose
-    tsr = template.instantiate(mug_pose)
-    
-    # Sample valid poses
-    poses = [tsr.sample() for _ in range(3)]
-    
-    print(f"✅ Using {template.name} from package")
-    print(f"   Instantiated at mug pose: [{mug_pose[0,3]:.3f}, {mug_pose[1,3]:.3f}, {mug_pose[2,3]:.3f}]")
-    print(f"   Sampled poses:")
-    for i, pose in enumerate(poses):
-        print(f"     {i+1}: [{pose[0,3]:.3f}, {pose[1,3]:.3f}, {pose[2,3]:.3f}]")
+
+    tsr = TSR(T0_w=mug_pose, Tw_e=template.Tw_e, Bw=template.Bw)
+
+    # Sample poses
+    print(f"Using template: {template.name}")
+    print(f"Mug pose: [{mug_pose[0,3]:.2f}, {mug_pose[1,3]:.2f}, {mug_pose[2,3]:.2f}]")
+    print(f"Sampled grasp poses:")
+    for i in range(3):
+        pose = tsr.sample()
+        print(f"  {i+1}: [{pose[0,3]:.3f}, {pose[1,3]:.3f}, {pose[2,3]:.3f}]")
 
 
-def demonstrate_installation_workflow():
-    """Demonstrate the complete PyPI installation workflow."""
-    print("\n📦 PyPI Installation Workflow")
+def demonstrate_placement_with_reference_frame():
+    """Demonstrate using reference_frame for placements."""
+    print("\n4. Placement with Reference Frame")
     print("=" * 50)
-    
-    print("1. Install package from PyPI:")
-    print("   pip install tsr")
-    print()
-    
-    print("2. Import and discover templates:")
-    print("   from tsr import list_available_templates")
-    print("   templates = list_available_templates()")
-    print()
-    
-    print("3. Load specific templates:")
-    print("   from tsr import load_package_template")
-    print("   template = load_package_template('grasps', 'mug_side_grasp.yaml')")
-    print()
-    
-    print("4. Use templates in your code:")
-    print("   tsr = template.instantiate(object_pose)")
-    print("   pose = tsr.sample()")
-    print()
-    
-    print("✅ No git clone needed - everything works from PyPI!")
+
+    templates_dir = get_templates_dir()
+
+    # Load placement template
+    template = load_template_file(str(templates_dir / "places/mug_on_table.yaml"))
+    print(f"Template: {template.name}")
+    print(f"Reference frame: {template.reference_frame}")
+
+    # The template expects the mug's bottom frame
+    # If perception gives COM, transform accordingly
+    mug_com_pose = np.eye(4)
+    mug_com_pose[0:3, 3] = [0.5, 0.3, 0.1]  # COM position
+
+    # Transform from COM to bottom (assuming mug is 10cm tall)
+    T_com_to_bottom = np.eye(4)
+    T_com_to_bottom[2, 3] = -0.05  # Bottom is 5cm below COM
+
+    mug_bottom_pose = mug_com_pose @ T_com_to_bottom
+
+    print(f"Mug COM: [{mug_com_pose[0,3]:.2f}, {mug_com_pose[1,3]:.2f}, {mug_com_pose[2,3]:.2f}]")
+    print(f"Mug bottom: [{mug_bottom_pose[0,3]:.2f}, {mug_bottom_pose[1,3]:.2f}, {mug_bottom_pose[2,3]:.2f}]")
+
+    # Create TSR with bottom frame (as template expects)
+    tsr = TSR(T0_w=mug_bottom_pose, Tw_e=template.Tw_e, Bw=template.Bw)
+
+    # Sample valid placement pose
+    pose = tsr.sample()
+    print(f"Valid placement: [{pose[0,3]:.3f}, {pose[1,3]:.3f}, {pose[2,3]:.3f}]")
 
 
 def main():
-    """Demonstrate PyPI template access functionality."""
-    print("PyPI Template Access Example")
+    """Run template access examples."""
+    print("Template Access Example")
     print("=" * 60)
-    print("This example shows how users can access TSR templates")
-    print("when the package is installed from PyPI using 'pip install tsr'")
-    print()
-    
-    # Demonstrate all functionality
+
     demonstrate_template_discovery()
-    demonstrate_individual_template_loading()
-    demonstrate_category_loading()
-    demonstrate_library_integration()
+    demonstrate_template_loading()
     demonstrate_template_usage()
-    demonstrate_installation_workflow()
-    
-    print(f"\n🎯 Summary")
-    print("=" * 50)
-    print("✅ Templates are included in the PyPI package")
-    print("✅ Easy discovery with list_available_templates()")
-    print("✅ Simple loading with load_package_template()")
-    print("✅ Category-based loading with load_package_templates_by_category()")
-    print("✅ Full integration with TSRLibraryRelational")
-    print("✅ No additional downloads or git clones needed")
-    
-    print(f"\n💡 Key Benefits:")
-    print("   - One-line installation: pip install tsr")
-    print("   - Templates included in package")
-    print("   - Easy discovery and loading")
-    print("   - Works offline after installation")
-    print("   - Version-controlled templates")
+    demonstrate_placement_with_reference_frame()
+
+    print("\n" + "=" * 60)
+    print("Template access example completed!")
 
 
 if __name__ == "__main__":
