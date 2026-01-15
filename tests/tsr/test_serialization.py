@@ -263,7 +263,7 @@ class TestTSRSerialization(unittest.TestCase):
 
 class TestTSRChainSerialization(unittest.TestCase):
     """Test TSRChain serialization methods."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         # Create test TSRs
@@ -284,7 +284,7 @@ class TestTSRChainSerialization(unittest.TestCase):
                 [-pi/3, pi/3]
             ])
         )
-        
+
         self.tsr2 = TSR(
             T0_w=np.array([
                 [1, 0, 0, 0.2],
@@ -302,68 +302,38 @@ class TestTSRChainSerialization(unittest.TestCase):
                 [-pi/2, pi/2]
             ])
         )
-        
+
         # Create TSRChain
-        self.chain = TSRChain(
-            sample_start=True,
-            sample_goal=False,
-            constrain=True,
-            TSRs=[self.tsr1, self.tsr2]
-        )
-    
+        self.chain = TSRChain(TSRs=[self.tsr1, self.tsr2])
+
     def test_to_dict(self):
         """Test TSRChain.to_dict() method."""
         result = self.chain.to_dict()
-        
+
         # Check structure
         self.assertIsInstance(result, dict)
-        self.assertIn('sample_start', result)
-        self.assertIn('sample_goal', result)
-        self.assertIn('constrain', result)
         self.assertIn('tsrs', result)
-        
-        # Check data types
-        self.assertIsInstance(result['sample_start'], bool)
-        self.assertIsInstance(result['sample_goal'], bool)
-        self.assertIsInstance(result['constrain'], bool)
         self.assertIsInstance(result['tsrs'], list)
-        
-        # Check values
-        self.assertEqual(result['sample_start'], True)
-        self.assertEqual(result['sample_goal'], False)
-        self.assertEqual(result['constrain'], True)
         self.assertEqual(len(result['tsrs']), 2)
-        
+
         # Check TSRs
-        for i, tsr_data in enumerate(result['tsrs']):
+        for tsr_data in result['tsrs']:
             self.assertIsInstance(tsr_data, dict)
             self.assertIn('T0_w', tsr_data)
             self.assertIn('Tw_e', tsr_data)
             self.assertIn('Bw', tsr_data)
-    
+
     def test_from_dict(self):
         """Test TSRChain.from_dict() method."""
         # Create dictionary representation
-        data = {
-            'sample_start': True,
-            'sample_goal': False,
-            'constrain': True,
-            'tsrs': [self.tsr1.to_dict(), self.tsr2.to_dict()]
-        }
-        
+        data = {'tsrs': [self.tsr1.to_dict(), self.tsr2.to_dict()]}
+
         # Reconstruct TSRChain
         reconstructed = TSRChain.from_dict(data)
-        
-        # Check that all attributes match
-        self.assertEqual(reconstructed.sample_start, self.chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, self.chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, self.chain.constrain)
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
-        
+
         # Check TSRs
-        for i, (original, reconstructed_tsr) in enumerate(
-            zip(self.chain.TSRs, reconstructed.TSRs)
-        ):
+        for original, reconstructed_tsr in zip(self.chain.TSRs, reconstructed.TSRs):
             np.testing.assert_array_almost_equal(
                 reconstructed_tsr.T0_w, original.T0_w
             )
@@ -373,23 +343,15 @@ class TestTSRChainSerialization(unittest.TestCase):
             np.testing.assert_array_almost_equal(
                 reconstructed_tsr.Bw, original.Bw
             )
-    
+
     def test_dict_roundtrip(self):
         """Test that to_dict -> from_dict roundtrip preserves the TSRChain."""
-        # Convert to dict and back
         data = self.chain.to_dict()
         reconstructed = TSRChain.from_dict(data)
-        
-        # Check that all attributes match
-        self.assertEqual(reconstructed.sample_start, self.chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, self.chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, self.chain.constrain)
+
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
-        
-        # Check TSRs
-        for i, (original, reconstructed_tsr) in enumerate(
-            zip(self.chain.TSRs, reconstructed.TSRs)
-        ):
+
+        for original, reconstructed_tsr in zip(self.chain.TSRs, reconstructed.TSRs):
             np.testing.assert_array_almost_equal(
                 reconstructed_tsr.T0_w, original.T0_w
             )
@@ -399,138 +361,72 @@ class TestTSRChainSerialization(unittest.TestCase):
             np.testing.assert_array_almost_equal(
                 reconstructed_tsr.Bw, original.Bw
             )
-    
+
     def test_to_json(self):
         """Test TSRChain.to_json() method."""
         result = self.chain.to_json()
-        
-        # Check that it's valid JSON
+
         self.assertIsInstance(result, str)
         parsed = json.loads(result)
-        
-        # Check structure
-        self.assertIn('sample_start', parsed)
-        self.assertIn('sample_goal', parsed)
-        self.assertIn('constrain', parsed)
+
         self.assertIn('tsrs', parsed)
-        
-        # Check values
-        self.assertEqual(parsed['sample_start'], True)
-        self.assertEqual(parsed['sample_goal'], False)
-        self.assertEqual(parsed['constrain'], True)
         self.assertEqual(len(parsed['tsrs']), 2)
-    
+
     def test_from_json(self):
         """Test TSRChain.from_json() method."""
-        # Create JSON string
-        json_str = json.dumps({
-            'sample_start': True,
-            'sample_goal': False,
-            'constrain': True,
-            'tsrs': [self.tsr1.to_dict(), self.tsr2.to_dict()]
-        })
-        
-        # Reconstruct TSRChain
+        json_str = json.dumps({'tsrs': [self.tsr1.to_dict(), self.tsr2.to_dict()]})
+
         reconstructed = TSRChain.from_json(json_str)
-        
-        # Check that all attributes match
-        self.assertEqual(reconstructed.sample_start, self.chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, self.chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, self.chain.constrain)
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
-    
+
     def test_json_roundtrip(self):
         """Test that to_json -> from_json roundtrip preserves the TSRChain."""
-        # Convert to JSON and back
         json_str = self.chain.to_json()
         reconstructed = TSRChain.from_json(json_str)
-        
-        # Check that all attributes match
-        self.assertEqual(reconstructed.sample_start, self.chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, self.chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, self.chain.constrain)
+
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
-    
+
     def test_to_yaml(self):
         """Test TSRChain.to_yaml() method."""
         result = self.chain.to_yaml()
-        
-        # Check that it's valid YAML
+
         self.assertIsInstance(result, str)
         parsed = yaml.safe_load(result)
-        
-        # Check structure
-        self.assertIn('sample_start', parsed)
-        self.assertIn('sample_goal', parsed)
-        self.assertIn('constrain', parsed)
+
         self.assertIn('tsrs', parsed)
-        
-        # Check values
-        self.assertEqual(parsed['sample_start'], True)
-        self.assertEqual(parsed['sample_goal'], False)
-        self.assertEqual(parsed['constrain'], True)
         self.assertEqual(len(parsed['tsrs']), 2)
-    
+
     def test_from_yaml(self):
         """Test TSRChain.from_yaml() method."""
-        # Create YAML string
-        yaml_str = yaml.dump({
-            'sample_start': True,
-            'sample_goal': False,
-            'constrain': True,
-            'tsrs': [self.tsr1.to_dict(), self.tsr2.to_dict()]
-        })
-        
-        # Reconstruct TSRChain
+        yaml_str = yaml.dump({'tsrs': [self.tsr1.to_dict(), self.tsr2.to_dict()]})
+
         reconstructed = TSRChain.from_yaml(yaml_str)
-        
-        # Check that all attributes match
-        self.assertEqual(reconstructed.sample_start, self.chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, self.chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, self.chain.constrain)
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
-    
+
     def test_yaml_roundtrip(self):
         """Test that to_yaml -> from_yaml roundtrip preserves the TSRChain."""
-        # Convert to YAML and back
         yaml_str = self.chain.to_yaml()
         reconstructed = TSRChain.from_yaml(yaml_str)
-        
-        # Check that all attributes match
-        self.assertEqual(reconstructed.sample_start, self.chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, self.chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, self.chain.constrain)
+
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
-    
+
     def test_empty_chain(self):
         """Test serialization of empty TSRChain."""
         empty_chain = TSRChain()
-        
+
         # Test dict roundtrip
         data = empty_chain.to_dict()
         reconstructed = TSRChain.from_dict(data)
-        
-        self.assertEqual(reconstructed.sample_start, empty_chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, empty_chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, empty_chain.constrain)
         self.assertEqual(len(reconstructed.TSRs), 0)
-        
+
         # Test JSON roundtrip
         json_str = empty_chain.to_json()
         reconstructed = TSRChain.from_json(json_str)
-        
-        self.assertEqual(reconstructed.sample_start, empty_chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, empty_chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, empty_chain.constrain)
         self.assertEqual(len(reconstructed.TSRs), 0)
-        
+
         # Test YAML roundtrip
         yaml_str = empty_chain.to_yaml()
         reconstructed = TSRChain.from_yaml(yaml_str)
-        
-        self.assertEqual(reconstructed.sample_start, empty_chain.sample_start)
-        self.assertEqual(reconstructed.sample_goal, empty_chain.sample_goal)
-        self.assertEqual(reconstructed.constrain, empty_chain.constrain)
         self.assertEqual(len(reconstructed.TSRs), 0)
 
 

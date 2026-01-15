@@ -54,12 +54,7 @@ class TestTSRChainMethods(unittest.TestCase):
         )
         
         # Create TSRChain
-        self.chain = TSRChain(
-            sample_start=True,
-            sample_goal=False,
-            constrain=True,
-            TSRs=[self.tsr1, self.tsr2]
-        )
+        self.chain = TSRChain(TSRs=[self.tsr1, self.tsr2])
     
     def test_append(self):
         """Test TSRChain.append() method."""

@@ -10,36 +10,24 @@ from .utils import EPSILON, geodesic_distance
 
 class TSRChain:
     """
-    Core TSRChain class — geometry-only, robot-agnostic.
+    A sequence of composed TSRs.
 
-    A TSRChain represents a sequence of TSRs that can be used for:
-    - Sampling start/goal poses
-    - Constraining trajectories
-    - Complex motion planning tasks
+    TSRChain allows chaining multiple TSRs together where each TSR's frame
+    is relative to the previous one. This is useful for articulated constraints
+    like door handles attached to doors.
     """
 
-    def __init__(self, sample_start=False, sample_goal=False, constrain=False,
-                 TSR=None, TSRs=None, tsr=None):
+    def __init__(self, TSR=None, TSRs=None, tsr=None):
         """
-        A TSR chain is a combination of TSRs representing a motion constraint.
+        Create a TSR chain from one or more TSRs.
 
-        TSR chains compose multiple TSRs and the conditions under which they
-        must hold.  This class provides support for start, goal, and/or
-        trajectory-wide constraints.  They can be constructed from one or more
-        TSRs which must be applied together.
-
-        @param sample_start apply constraint to start configuration sampling
-        @param sample_goal apply constraint to goal configuration sampling
-        @param constrain apply constraint over the whole trajectory
         @param TSR a single TSR to use in this TSR chain
         @param TSRs a list of TSRs to use in this TSR chain
+        @param tsr alias for TSR parameter
         """
-        self.sample_start = sample_start
-        self.sample_goal = sample_goal
-        self.constrain = constrain
         self.TSRs = []
-        
-        # Handle both TSR and tsr parameters for backward compatibility
+
+        # Handle both TSR and tsr parameters
         single_tsr = TSR if TSR is not None else tsr
         if single_tsr is not None:
             self.append(single_tsr)
@@ -51,21 +39,15 @@ class TSRChain:
         self.TSRs.append(tsr)
 
     def to_dict(self):
-        """ Construct a TSR chain from a python dict. """
+        """Convert TSR chain to a python dict."""
         return {
-            'sample_goal': self.sample_goal,
-            'sample_start': self.sample_start,
-            'constrain': self.constrain,
             'tsrs': [tsr.to_dict() for tsr in self.TSRs],
         }
 
     @staticmethod
     def from_dict(x):
-        """ Construct a TSR chain from a python dict. """
+        """Construct a TSR chain from a python dict."""
         return TSRChain(
-            sample_start=x['sample_start'],
-            sample_goal=x['sample_goal'],
-            constrain=x['constrain'],
             TSRs=[TSR.from_dict(tsr) for tsr in x['tsrs']],
         )
 

@@ -158,10 +158,7 @@ For coupled constraints (e.g., door opening), use TSR chains:
 ```python
 from tsr.core.tsr_chain import TSRChain
 
-chain = TSRChain(
-    constrain=True,  # Apply over whole trajectory
-    TSRs=[hinge_tsr, handle_tsr]
-)
+chain = TSRChain(TSRs=[hinge_tsr, handle_tsr])
 
 pose = chain.sample()
 ```

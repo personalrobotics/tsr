@@ -51,12 +51,7 @@ def main():
     ee_tsr = TSR(T0_w=np.eye(4), Tw_e=ee_in_handle, Bw=ee_bounds)
     
     # Compose into a chain
-    door_chain = TSRChain(
-        sample_start=False,
-        sample_goal=False,
-        constrain=True,  # Apply constraint over whole trajectory
-        TSRs=[hinge_tsr, ee_tsr]
-    )
+    door_chain = TSRChain(TSRs=[hinge_tsr, ee_tsr])
     
     # Sample a pose from the chain
     door_pose = door_chain.sample()

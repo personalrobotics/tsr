@@ -43,18 +43,15 @@ class TSR:
 
 ### TSRChain
 
-Compose multiple TSRs for complex constraints.
+Compose multiple TSRs for articulated constraints (e.g., door handle attached to door).
 
 ```python
 class TSRChain:
-    def __init__(self, sample_start=False, sample_goal=False, constrain=False, TSRs=None):
+    def __init__(self, TSRs=None):
         """
         Initialize a TSR chain.
-        
+
         Args:
-            sample_start: Whether to sample start pose
-            sample_goal: Whether to sample goal pose
-            constrain: Whether to apply constraint over trajectory
             TSRs: List of TSR objects
         """
 ```
