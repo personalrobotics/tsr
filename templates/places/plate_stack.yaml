@@ -6,6 +6,7 @@ description: Place plate centered on existing stack
 task: place
 subject: plate
 reference: plate_stack
+reference_frame: bottom  # expects pose of plate's bottom surface
 
 position:
   type: point

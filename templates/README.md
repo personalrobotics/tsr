@@ -60,6 +60,39 @@ gripper:
 
 **Units:** All distances in **meters**, all angles in **degrees**.
 
+## Reference Frame
+
+For placement tasks, the constraint is often defined relative to a contact surface (e.g., bottom of mug) rather than the object's canonical frame (e.g., center of mass). The optional `reference_frame` field documents which frame the template expects:
+
+```yaml
+name: Mug on Table
+task: place
+subject: mug
+reference: table
+reference_frame: bottom  # expects pose of mug's bottom surface
+
+position:
+  type: plane
+  ...
+```
+
+**Convention:**
+- No `reference_frame` = object origin (default)
+- `reference_frame: bottom` = bottom contact surface
+- `reference_frame: side` = side contact surface
+- Other named frames as needed
+
+When using a template with `reference_frame`, transform your object pose accordingly:
+
+```python
+template = load_template_file("mug_on_table.yaml")
+print(template.reference_frame)  # "bottom"
+
+# Transform from your object's canonical frame to expected frame
+mug_bottom_pose = mug_com_pose @ T_com_to_bottom
+tsr = TSR(T0_w=mug_bottom_pose, Tw_e=template.Tw_e, Bw=template.Bw)
+```
+
 ## The 9 Geometric Primitives
 
 | Primitive | Description | Key Parameters |

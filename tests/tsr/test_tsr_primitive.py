@@ -351,6 +351,48 @@ standoff: 0
         self.assertEqual(result.Bw[0, 1], 0.1)
         self.assertEqual(result.Bw[2, 0], 0.02)
 
+    def test_reference_frame_field(self):
+        """Test reference_frame field for placement templates."""
+        yaml_str = """
+name: Mug on Table
+task: place
+subject: mug
+reference: table
+reference_frame: bottom
+
+position:
+  type: plane
+  x: [-0.1, 0.1]
+  y: [-0.1, 0.1]
+  z: 0
+
+standoff: 0
+"""
+        result = load_template_yaml(yaml_str)
+
+        self.assertEqual(result.reference_frame, 'bottom')
+        self.assertEqual(result.task, 'place')
+
+    def test_reference_frame_default_none(self):
+        """Test reference_frame defaults to None when not specified."""
+        yaml_str = """
+name: Side Grasp
+task: grasp
+subject: gripper
+reference: mug
+
+position:
+  type: cylinder
+  axis: z
+  radius: 0.04
+  height: [0.02, 0.08]
+
+standoff: 0.05
+"""
+        result = load_template_yaml(yaml_str)
+
+        self.assertIsNone(result.reference_frame)
+
 
 class TestOrientationFreedoms(TestCase):
     """Test orientation freedom parsing."""

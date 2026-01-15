@@ -6,6 +6,7 @@ description: Place cup centered on coaster
 task: place
 subject: cup
 reference: coaster
+reference_frame: bottom  # expects pose of cup's bottom surface
 
 position:
   type: disk

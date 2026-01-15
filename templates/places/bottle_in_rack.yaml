@@ -6,6 +6,7 @@ description: Place bottle horizontally in rack slot
 task: place
 subject: bottle
 reference: rack_slot
+reference_frame: side  # expects pose of bottle's side (contact point with rack)
 
 position:
   type: line

@@ -6,6 +6,7 @@ description: Place book upright with spine facing out
 task: place
 subject: book
 reference: shelf
+reference_frame: bottom  # expects pose of book's bottom edge
 
 position:
   type: box

@@ -558,6 +558,7 @@ class ParsedTemplate:
     Tw_e: np.ndarray
     Bw: np.ndarray
     gripper: Optional[Dict[str, Any]] = None
+    reference_frame: Optional[str] = None  # e.g., "bottom", "handle", None = object origin
 
 
 def parse_template(spec: Dict[str, Any]) -> ParsedTemplate:
@@ -575,6 +576,7 @@ def parse_template(spec: Dict[str, Any]) -> ParsedTemplate:
     task = spec.get('task', '')
     subject = spec.get('subject', 'gripper')
     reference = spec.get('reference', '')
+    reference_frame = spec.get('reference_frame', None)  # None = object origin
 
     # Parse position primitive
     position = spec.get('position', {'type': 'point'})
@@ -611,7 +613,8 @@ def parse_template(spec: Dict[str, Any]) -> ParsedTemplate:
         T_ref_tsr=T_ref_tsr,
         Tw_e=Tw_e,
         Bw=Bw,
-        gripper=gripper
+        gripper=gripper,
+        reference_frame=reference_frame,
     )
 
 

@@ -6,6 +6,7 @@ description: Place mug upright on table surface
 task: place
 subject: mug
 reference: table
+reference_frame: bottom  # expects pose of mug's bottom surface
 
 position:
   type: plane
