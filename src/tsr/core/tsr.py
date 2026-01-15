@@ -307,9 +307,115 @@ class TSR:
 
         return all(numpy.hstack((xyzcheck, rotcheck)))
 
-    def distance(self, trans):
+    def _displacement_to_tsr(self, trans):
         """
-        Computes the Geodesic Distance from the TSR to a transform
+        Compute the displacement vector from a transform to the TSR.
+
+        Implements Section 4.2 of Berenson et al. 2011:
+            T0_s' = T0_s * (Tw_e)^-1        (Equation 5)
+            Tw_s' = (T0_w)^-1 * T0_s'       (Equation 6)
+            dw = [translation; RPY]         (Equation 7)
+            Δx_i = displacement to bounds   (Equation 8)
+
+        @param trans 4x4 transform (T0_s - end-effector pose in world frame)
+        @return dx 6x1 displacement vector to TSR
+        @return dw 6x1 displacement vector in w frame (for computing bwopt)
+        """
+        # Equation 5: T0_s' = T0_s * (Tw_e)^-1
+        T0_s_prime = numpy.dot(trans, numpy.linalg.inv(self.Tw_e))
+
+        # Equation 6: Tw_s' = (T0_w)^-1 * T0_s'
+        Tw_s_prime = numpy.dot(numpy.linalg.inv(self.T0_w), T0_s_prime)
+
+        # Equation 7: Convert to displacement vector [xyz, rpy]
+        xyz = Tw_s_prime[0:3, 3]
+        rot = Tw_s_prime[0:3, 0:3]
+        rpy = TSR.rot_to_rpy(rot)
+        dw = numpy.hstack((xyz, rpy))
+
+        # Handle RPY redundancy - find the RPY representation that minimizes distance
+        # The paper mentions checking equivalent rotations {x4 ± π, −x5 ± π, x6 ± π}
+        best_dx = None
+        best_dw = None
+        best_norm = float('inf')
+
+        # Generate candidate RPY values (original + 8 equivalent representations)
+        rpy_candidates = [rpy]
+
+        # Add equivalent RPY representations due to Euler angle redundancy
+        # When pitch = ±π/2, there's a singularity with infinite solutions
+        # Otherwise, there are generally 2 solutions: (r, p, y) and (r±π, π-p, y±π)
+        r, p, y = rpy
+        rpy_candidates.append(numpy.array([r + pi, pi - p, y + pi]))
+        rpy_candidates.append(numpy.array([r + pi, pi - p, y - pi]))
+        rpy_candidates.append(numpy.array([r - pi, pi - p, y + pi]))
+        rpy_candidates.append(numpy.array([r - pi, pi - p, y - pi]))
+        rpy_candidates.append(numpy.array([r + pi, -pi - p, y + pi]))
+        rpy_candidates.append(numpy.array([r + pi, -pi - p, y - pi]))
+        rpy_candidates.append(numpy.array([r - pi, -pi - p, y + pi]))
+        rpy_candidates.append(numpy.array([r - pi, -pi - p, y - pi]))
+
+        for rpy_cand in rpy_candidates:
+            # Wrap RPY to bounds interval for comparison
+            rpy_wrapped = wrap_to_interval(rpy_cand, lower=self._Bw_cont[3:6, 0])
+            dw_cand = numpy.hstack((xyz, rpy_wrapped))
+
+            # Equation 8: Compute displacement to bounds
+            dx = numpy.zeros(6)
+            for i in range(6):
+                if dw_cand[i] < self._Bw_cont[i, 0]:
+                    dx[i] = dw_cand[i] - self._Bw_cont[i, 0]
+                elif dw_cand[i] > self._Bw_cont[i, 1]:
+                    dx[i] = dw_cand[i] - self._Bw_cont[i, 1]
+                # else: dx[i] = 0 (already initialized)
+
+            norm = numpy.linalg.norm(dx)
+            if norm < best_norm:
+                best_norm = norm
+                best_dx = dx
+                best_dw = dw_cand
+
+        return best_dx, best_dw
+
+    def distance(self, trans, rotation_weight=1.0):
+        """
+        Computes the distance from the TSR to a transform.
+
+        Implements the closed-form distance calculation from Section 4.2 of
+        Berenson et al. 2011. Translation is in meters, rotation in radians.
+
+        @param trans 4x4 transform
+        @param rotation_weight weight for rotation vs translation (default 1.0)
+                               Higher values penalize rotation errors more.
+        @return dist Distance to TSR (0 if transform is inside TSR)
+        @return bwopt Closest Bw value to trans (6x1 xyzrpy)
+        """
+        # Fast path: if transform is contained, distance is 0
+        if self.contains(trans):
+            return 0., self.to_xyzrpy(trans)
+
+        # Compute displacement using closed-form formula from paper
+        dx, dw = self._displacement_to_tsr(trans)
+
+        # Apply rotation weight (paper mentions translation/rotation can be weighted)
+        dx_weighted = dx.copy()
+        dx_weighted[3:6] *= rotation_weight
+
+        dist = numpy.linalg.norm(dx_weighted)
+
+        # Compute bwopt: the closest point in the TSR bounds
+        bwopt = numpy.clip(dw, self._Bw_cont[:, 0], self._Bw_cont[:, 1])
+        # Wrap RPY back to [-pi, pi]
+        bwopt[3:6] = wrap_to_interval(bwopt[3:6])
+
+        return dist, bwopt
+
+    def distance_optimize(self, trans):
+        """
+        Computes the Geodesic Distance from the TSR to a transform using
+        numerical optimization. This is slower but may be more accurate for
+        complex cases.
+
         @param trans 4x4 transform
         @return dist Geodesic distance to TSR
         @return bwopt Closest Bw value to trans

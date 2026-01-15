@@ -23,40 +23,78 @@ def wrap_to_interval(angles: np.ndarray, lower: np.ndarray = None) -> np.ndarray
     return (angles - lower) % (2 * pi) + lower
 
 
-def geodesic_error(t1: np.ndarray, t2: np.ndarray) -> np.ndarray:
+def rotation_angle(R: np.ndarray) -> float:
     """
-    Compute the error in global coordinates between two transforms.
+    Compute the angle of rotation for a rotation matrix.
+
+    The rotation angle θ satisfies: trace(R) = 1 + 2*cos(θ)
+    Therefore: θ = arccos((trace(R) - 1) / 2)
 
     Args:
-        t1: current transform (4x4)
-        t2: goal transform (4x4)
+        R: 3x3 rotation matrix
 
     Returns:
-        error: 4-vector [dx, dy, dz, solid angle]
+        angle: rotation angle in radians [0, π]
     """
-    trel = np.dot(np.linalg.inv(t1), t2)
-    trans = np.dot(t1[0:3, 0:3], trel[0:3, 3])
+    # Compute trace and clamp to valid range for arccos
+    trace = np.trace(R)
+    # trace = 1 + 2*cos(θ), so cos(θ) = (trace - 1) / 2
+    cos_angle = (trace - 1.0) / 2.0
+    # Clamp to [-1, 1] to handle numerical errors
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
+    return np.arccos(cos_angle)
 
-    # Extract rotation error (simplified - just use the rotation matrix)
-    # For a more accurate geodesic distance, we'd need to extract the rotation angle
-    # For now, use a simple approximation
-    angle_error = np.linalg.norm(trel[0:3, 0:3] - np.eye(3))
 
-    return np.hstack((trans, angle_error))
+def geodesic_error(t1: np.ndarray, t2: np.ndarray) -> np.ndarray:
+    """
+    Compute the geodesic error between two transforms on SE(3).
+
+    The error is computed as:
+    - Translation error: the Euclidean distance between positions
+    - Rotation error: the angle of the relative rotation R1^T * R2
+
+    Args:
+        t1: first transform (4x4)
+        t2: second transform (4x4)
+
+    Returns:
+        error: 4-vector [dx, dy, dz, rotation_angle]
+               where dx, dy, dz are in meters and rotation_angle is in radians
+    """
+    # Translation error (in world frame)
+    trans_error = t2[0:3, 3] - t1[0:3, 3]
+
+    # Rotation error: angle of R1^T * R2
+    R1 = t1[0:3, 0:3]
+    R2 = t2[0:3, 0:3]
+    R_rel = np.dot(R1.T, R2)
+    angle_error = rotation_angle(R_rel)
+
+    return np.hstack((trans_error, angle_error))
 
 
 def geodesic_distance(t1: np.ndarray, t2: np.ndarray, r: float = 1.0) -> float:
     """
-    Compute the geodesic distance between two transforms.
+    Compute the geodesic distance between two transforms on SE(3).
+
+    The distance combines translation (meters) and rotation (radians) errors.
+    The parameter `r` allows weighting rotation relative to translation.
+
+    As noted in Section 4.2 of Berenson et al. 2011:
+    "we implicitly weigh rotation in radians and translation in meters equally
+    when computing ||Δx||, but the two types of units can be weighed in an
+    arbitrary manner"
 
     Args:
-        t1: current transform (4x4)
-        t2: goal transform (4x4)
-        r: in units of meters/radians converts radians to meters
+        t1: first transform (4x4)
+        t2: second transform (4x4)
+        r: weight for rotation in units of meters/radian (default 1.0)
+           Higher values penalize rotation errors more.
 
     Returns:
-        distance: geodesic distance
+        distance: weighted geodesic distance
     """
     error = geodesic_error(t1, t2)
+    # Weight the rotation component
     error[3] = r * error[3]
     return np.linalg.norm(error)

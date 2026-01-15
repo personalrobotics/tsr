@@ -123,34 +123,49 @@ class TSRChain:
 
     def to_transform(self, xyzrpy_list):
         """
-        Converts a xyzrpy list into an
-        end-effector transform.
+        Converts a xyzrpy list into an end-effector transform.
 
-        @param  a list of xyzrpy values
-        @return trans 4x4 transform
+        This implements TSR chain composition as described in Section 5.1 of
+        Berenson et al. 2011:
+            C_i.T0_w = (C_{i-1}.T0_w) * (C_{i-1}.Tw_sample) * (C_{i-1}.Tw_e)
+
+        The final transform is: T0_sample = Cn.T0_w * Cn.Tw_sample * Cn.Tw_e
+
+        @param xyzrpy_list  a list of xyzrpy values, one per TSR in the chain
+        @return trans       4x4 transform
         """
-        # For optimization, be more lenient with bounds checking
-        # Only check if we're not in an optimization context
-        try:
-            check = self.is_valid(xyzrpy_list)
-            for idx in range(len(self.TSRs)):
-                if not all(check[idx]):
-                    # During optimization, clamp values to bounds instead of raising error
-                    xyzrpy = xyzrpy_list[idx]
-                    Bw = self.TSRs[idx]._Bw_cont
-                    xyzrpy_clamped = numpy.clip(xyzrpy, Bw[:, 0], Bw[:, 1])
-                    xyzrpy_list[idx] = xyzrpy_clamped
-        except:
-            # If validation fails, continue with the original values
-            pass
+        if len(self.TSRs) == 0:
+            raise ValueError('Cannot compute transform for empty TSR chain')
 
-        T_sofar = self.TSRs[0].T0_w
+        if len(xyzrpy_list) != len(self.TSRs):
+            raise ValueError(
+                f'xyzrpy_list length ({len(xyzrpy_list)}) must match '
+                f'number of TSRs ({len(self.TSRs)})'
+            )
+
+        # For optimization, clamp values to bounds instead of raising errors
+        xyzrpy_list_clamped = []
         for idx in range(len(self.TSRs)):
-            tsr_current = self.TSRs[idx]
-            tsr_current.T0_w = T_sofar
-            T_sofar = tsr_current.to_transform(xyzrpy_list[idx])
+            xyzrpy = numpy.array(xyzrpy_list[idx])
+            Bw = self.TSRs[idx]._Bw_cont
+            xyzrpy_clamped = numpy.clip(xyzrpy, Bw[:, 0], Bw[:, 1])
+            xyzrpy_list_clamped.append(xyzrpy_clamped)
 
-        return T_sofar
+        # Compute the chained transform WITHOUT modifying original TSR objects
+        # Start with the first TSR's T0_w
+        T0_w_current = self.TSRs[0].T0_w
+
+        for idx in range(len(self.TSRs)):
+            tsr = self.TSRs[idx]
+            xyzrpy = xyzrpy_list_clamped[idx]
+
+            # Convert xyzrpy to transform in w frame
+            Tw_sample = TSR.xyzrpy_to_trans(xyzrpy)
+
+            # Compute end-effector transform: T0_w_current * Tw_sample * Tw_e
+            T0_w_current = reduce(numpy.dot, [T0_w_current, Tw_sample, tsr.Tw_e])
+
+        return T0_w_current
 
     def sample_xyzrpy(self, xyzrpy_list=None):
         """
