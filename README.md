@@ -18,40 +18,26 @@ For a detailed description of TSRs and their uses, please refer to the 2010 IJRR
 
 ## 📦 Installation
 
-This project uses [uv](https://github.com/astral-sh/uv) for dependency management:
-
+**Add to your project (using uv):**
 ```bash
-# Install uv if you haven't already
-pip install uv
-
-# Clone and install the package
-git clone https://github.com/personalrobotics/tsr.git
-cd tsr
-uv sync
+uv add git+https://github.com/personalrobotics/tsr.git
 ```
 
-For development with testing dependencies:
+**Or add to `pyproject.toml`:**
+```toml
+dependencies = [
+    "tsr @ git+https://github.com/personalrobotics/tsr.git",
+]
+```
+
+**For development (clone and install):**
 ```bash
+git clone https://github.com/personalrobotics/tsr.git
+cd tsr
 uv sync --extra test
 ```
 
 ## 🎯 Quick Start
-
-### Installation
-
-**From PyPI (recommended):**
-```bash
-pip install tsr
-```
-
-**From source:**
-```bash
-git clone https://github.com/personalrobotics/tsr.git
-cd tsr
-uv sync
-```
-
-### Basic Usage
 
 ```python
 from tsr import TSR, TSRTemplate, TSRLibraryRelational, TaskType, TaskCategory, EntityClass
@@ -435,33 +421,31 @@ place_template = TSRTemplate(...)  # preshape will be None
 - **Library Integration**: Preshape information available in relational library queries
 ```
 
-### 4. PyPI Template Access
+### 4. Bundled Template Access
 
-When installed from PyPI, the package includes **pre-built templates** that can be accessed directly:
+The package includes **21 pre-built templates** that can be loaded directly:
 
 ```python
-from tsr import list_available_templates, load_package_template
+from tsr.core.tsr_primitive import load_template_file
 
-# Discover available templates in the package
-templates = list_available_templates()
-print(templates)  # ['grasps/mug_side_grasp.yaml', 'places/mug_on_table.yaml']
+# Load a grasp template
+template = load_template_file("templates/grasps/mug_side_grasp.yaml")
 
-# Load templates directly from the package
-mug_grasp = load_package_template("grasps", "mug_side_grasp.yaml")
-mug_place = load_package_template("places", "mug_on_table.yaml")
+# Use with TSR
+from tsr.core.tsr import TSR
+import numpy as np
 
-# Load all templates from a category
-from tsr import load_package_templates_by_category
-grasp_templates = load_package_templates_by_category("grasps")
+object_pose = np.eye(4)
+tsr = TSR(T0_w=object_pose, Tw_e=template.Tw_e, Bw=template.Bw)
+grasp_pose = tsr.sample()
 ```
 
-**Features:**
-- **Included Templates**: Templates are bundled with the PyPI package
-- **Easy Discovery**: List all available templates with `list_available_templates()`
-- **Simple Loading**: Load specific templates by category and name
-- **Category Organization**: Templates organized by task type (grasps, places, etc.)
-- **Offline Access**: Works without internet after installation
-- **Version Control**: Templates are version-controlled with the package
+**Included templates:**
+- **Grasps (11)**: mug, bottle, bowl, box, pen, screwdriver, spray bottle, jar lid, knife
+- **Placements (5)**: table, rack, shelf, stack, coaster
+- **Tasks (5)**: pour, valve, drawer, wipe, handover
+
+See [`templates/README.md`](templates/README.md) for the complete list.
 
 ### 5. Schema System
 
@@ -737,7 +721,7 @@ uv run python examples/05_sampling.py           # Advanced sampling techniques
 uv run python examples/06_serialization.py      # YAML serialization with semantic context
 uv run python examples/07_template_file_management.py  # Template file organization
 uv run python examples/08_template_generators.py       # Template generators for primitive objects
-uv run python examples/09_pypi_template_access.py      # PyPI template access demonstration
+uv run python examples/09_template_access.py           # Bundled template access demonstration
 uv run python examples/10_preshape_example.py          # Gripper preshape configuration examples
 
 ### Example Output: YAML Serialization
@@ -794,12 +778,11 @@ uv run python -m pytest tests/benchmarks/ -v  # Performance tests
 - **Rich Querying**: Filter and search templates by semantic criteria
 - **Template Browsing**: Discover available templates with descriptions
 
-### PyPI Template Access
-- **Included Templates**: Pre-built templates bundled with PyPI package
-- **Easy Discovery**: List available templates with simple function calls
-- **Simple Loading**: Load templates by category and name
-- **Offline Access**: Works without internet after installation
-- **Version Control**: Templates version-controlled with package releases
+### Bundled Templates
+- **21 Ready-to-Use Templates**: Grasps, placements, and manipulation tasks
+- **Human-Friendly Format**: YAML with geometric primitives
+- **LLM Authorable**: Simple enough for language models to generate
+- **9 Geometric Primitives**: point, line, plane, box, ring, disk, cylinder, shell, sphere
 
 ## 📈 Performance
 
