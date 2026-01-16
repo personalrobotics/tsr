@@ -113,6 +113,8 @@ The 6×2 bounds matrix $B_w$ is the heart of a TSR. Each row constrains one degr
 | 4 | Pitch | radians | Rotation about local Y axis |
 | 5 | Yaw | radians | Rotation about local Z axis |
 
+> **Units Convention:** The raw Bw matrix uses **radians** for rotations. YAML templates use **degrees** for human readability—conversion happens automatically when loading templates.
+
 ### Special Values
 
 - **Fixed constraint**: Set min = max (e.g., `z: [0, 0]` means z must be exactly 0)
@@ -156,24 +158,26 @@ Rather than manually constructing bounds matrices, this library provides **9 geo
 
 ### Orientation Primitives
 
-Orientation is specified using:
+In YAML templates, orientation is specified using:
 - **approach**: Direction the end-effector's Z-axis points (`+x`, `-z`, etc.)
-- **roll**, **pitch**, **yaw**: Allowed rotation ranges in radians
-- **free**: Shorthand for `[-π, π]`
+- **roll**, **pitch**, **yaw**: Allowed rotation ranges in **degrees**
+- **free**: Shorthand for full rotation freedom ([-180, 180])
 
 ### Primitive to Bounds Mapping
 
-Each primitive is converted to bounds internally. For example:
+Each primitive is converted to bounds internally. **YAML templates use degrees, but the underlying Bw matrix uses radians.** The conversion happens automatically when loading templates.
 
 **Disk** with `axis=z`, `radius=[0, 0.1]`, `height=0`, `angle=[0, 360]`:
 ```python
+# YAML uses degrees:        angle=[0, 360]
+# Converted to Bw radians:  yaw=[0, 2π]
 Bw = [
     [0, 0.1],        # radius maps to x
     [0, 0],          # y = 0 (cylindrical coords)
     [0, 0],          # z = height
     [0, 0],          # roll
     [0, 0],          # pitch
-    [0, 2π]          # yaw maps to angle
+    [0, 2π]          # yaw maps to angle (radians)
 ]
 ```
 
