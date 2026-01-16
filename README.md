@@ -25,6 +25,12 @@ cd tsr
 uv sync --extra test
 ```
 
+## Documentation
+
+- **[Tutorial](docs/tutorial.md)** - Comprehensive guide to TSR theory, math, and usage with figures
+- **[API Reference](docs/API.md)** - Complete API documentation
+- **[Templates Guide](templates/README.md)** - All included templates with examples
+
 ## Quick Start
 
 ```python
