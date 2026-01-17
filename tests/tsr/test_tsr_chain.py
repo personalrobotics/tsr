@@ -207,10 +207,10 @@ class TestTSRChainMethods(unittest.TestCase):
     
     def test_contains(self):
         """Test TSRChain.contains() method."""
-        # Create a transform that should be contained
-        contained_transform = np.eye(4)
-        contained_transform[:3, 3] = [0.005, 0.005, 0.005]
-        
+        # Create a transform that should be contained by generating it from valid Bw values
+        # Using tsr1.to_transform ensures the transform is in the correct frame
+        contained_transform = self.tsr1.to_transform(np.array([0.005, 0.005, 0.005, 0, 0, 0]))
+
         self.assertTrue(self.chain.contains(contained_transform))
         
         # Create a transform that should not be contained

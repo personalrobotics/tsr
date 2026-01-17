@@ -39,7 +39,13 @@ class TSR:
         # 2. signed rotations, necessary for expressiveness
         Bw_cont = numpy.copy(self.Bw)
 
+        # Compute interval size, handling outer intervals (where upper < lower)
+        # For outer intervals like [3*pi/4, -3*pi/4], the interval wraps around
+        # and has size 2*pi - (lower - upper)
         Bw_interval = Bw_cont[3:6, 1] - Bw_cont[3:6, 0]
+        # Handle outer intervals: if interval is negative, it wraps around
+        Bw_interval = numpy.where(Bw_interval < 0, 2*pi + Bw_interval, Bw_interval)
+        # Clamp to max 2*pi (full rotation)
         Bw_interval = numpy.minimum(Bw_interval, 2*pi)
 
         Bw_cont[3:6, 0] = wrap_to_interval(Bw_cont[3:6, 0])
@@ -295,11 +301,18 @@ class TSR:
         """
         Checks if the TSR contains the transform
         @param  trans 4x4 transform
-        @return a 6x1 vector of True if bound is valid and False if not
+        @return True if transform is within TSR bounds, False otherwise
         """
-        # Extract XYZ and rot components of input and TSR.
+        # Transform to TSR frame (same as _displacement_to_tsr)
+        # Equation 5: T0_s' = T0_s * (Tw_e)^-1
+        T0_s_prime = numpy.dot(trans, numpy.linalg.inv(self.Tw_e))
+        # Equation 6: Tw_s' = (T0_w)^-1 * T0_s'
+        Tw_s_prime = numpy.dot(numpy.linalg.inv(self.T0_w), T0_s_prime)
+
+        # Extract XYZ and rot components in the TSR frame
         Bw_xyz, Bw_rpy = self._Bw_cont[0:3, :], self._Bw_cont[3:6, :]
-        xyz, rot = trans[0:3, 3], trans[0:3, 0:3]  # Extract translation vector
+        xyz, rot = Tw_s_prime[0:3, 3], Tw_s_prime[0:3, 0:3]
+
         # Check bounds condition on XYZ component.
         xyzcheck = TSR.xyz_within_bounds(xyz, Bw_xyz)
         # Check bounds condition on rot component.
