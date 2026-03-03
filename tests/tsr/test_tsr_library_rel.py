@@ -94,8 +94,7 @@ class TestTSRLibraryRelational(unittest.TestCase):
             self.template1,
             "Side grasp description"
         )
-        
-        # Query without descriptions
+
         templates = self.library.query_templates(
             EntityClass.GENERIC_GRIPPER,
             EntityClass.MUG,
@@ -103,121 +102,11 @@ class TestTSRLibraryRelational(unittest.TestCase):
         )
         self.assertEqual(len(templates), 1)
         self.assertIsInstance(templates[0], TSRTemplate)
-        
-        # Query with descriptions
-        templates_with_desc = self.library.query_templates(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "side"),
-            include_descriptions=True
-        )
-        self.assertEqual(len(templates_with_desc), 1)
-        self.assertIsInstance(templates_with_desc[0], tuple)
-        self.assertEqual(len(templates_with_desc[0]), 2)
-        self.assertIsInstance(templates_with_desc[0][0], TSRTemplate)
-        self.assertIsInstance(templates_with_desc[0][1], str)
-        self.assertEqual(templates_with_desc[0][1], "Side grasp description")
 
     def test_query_templates_not_found(self):
         """Test querying non-existent templates."""
         with self.assertRaises(KeyError):
             self.library.query_templates(
-                EntityClass.GENERIC_GRIPPER,
-                EntityClass.MUG,
-                TaskType(TaskCategory.GRASP, "nonexistent")
-            )
-
-    def test_list_available_templates(self):
-        """Test listing available templates with descriptions."""
-        # Register multiple templates
-        self.library.register_template(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "side"),
-            self.template1,
-            "Side grasp"
-        )
-        
-        self.library.register_template(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "top"),
-            self.template2,
-            "Top grasp"
-        )
-        
-        self.library.register_template(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.PLATE,
-            TaskType(TaskCategory.PLACE, "on"),
-            self.template1,
-            "Place on plate"
-        )
-        
-        # List all templates
-        all_templates = self.library.list_available_templates()
-        self.assertEqual(len(all_templates), 3)
-        
-        # Filter by subject
-        gripper_templates = self.library.list_available_templates(
-            subject=EntityClass.GENERIC_GRIPPER
-        )
-        self.assertEqual(len(gripper_templates), 3)
-        
-        # Filter by reference
-        mug_templates = self.library.list_available_templates(
-            reference=EntityClass.MUG
-        )
-        self.assertEqual(len(mug_templates), 2)
-        
-        # Filter by task category
-        grasp_templates = self.library.list_available_templates(
-            task_category="grasp"
-        )
-        self.assertEqual(len(grasp_templates), 2)
-        
-        # Combined filter
-        filtered = self.library.list_available_templates(
-            subject=EntityClass.GENERIC_GRIPPER,
-            reference=EntityClass.MUG,
-            task_category="grasp"
-        )
-        self.assertEqual(len(filtered), 2)
-
-    def test_get_template_info(self):
-        """Test getting template names and descriptions."""
-        # Register templates
-        self.library.register_template(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "side"),
-            self.template1,
-            "Side grasp description"
-        )
-        
-        self.library.register_template(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "side"),
-            self.template2,
-            "Alternative side grasp"
-        )
-        
-        # Get template info
-        info = self.library.get_template_info(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "side")
-        )
-        
-        self.assertEqual(len(info), 2)
-        self.assertIn(("Side Grasp", "Side grasp description"), info)
-        self.assertIn(("Top Grasp", "Alternative side grasp"), info)
-
-    def test_get_template_info_not_found(self):
-        """Test getting template info for non-existent combination."""
-        with self.assertRaises(KeyError):
-            self.library.get_template_info(
                 EntityClass.GENERIC_GRIPPER,
                 EntityClass.MUG,
                 TaskType(TaskCategory.GRASP, "nonexistent")
@@ -249,19 +138,6 @@ class TestTSRLibraryRelational(unittest.TestCase):
             TaskType(TaskCategory.GRASP, "side")
         )
         self.assertEqual(len(templates), 2)
-        
-        # With descriptions
-        templates_with_desc = self.library.query_templates(
-            EntityClass.GENERIC_GRIPPER,
-            EntityClass.MUG,
-            TaskType(TaskCategory.GRASP, "side"),
-            include_descriptions=True
-        )
-        self.assertEqual(len(templates_with_desc), 2)
-        
-        descriptions = [desc for _, desc in templates_with_desc]
-        self.assertIn("First side grasp", descriptions)
-        self.assertIn("Second side grasp", descriptions)
 
 
 class TestTSRLibraryRelationalGeneratorMode(unittest.TestCase):

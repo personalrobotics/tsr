@@ -63,7 +63,6 @@ from .sampling import (
 
 # Template I/O
 from .io import (
-    TemplateIO,
     save_template,
     load_template,
     save_template_collection,
