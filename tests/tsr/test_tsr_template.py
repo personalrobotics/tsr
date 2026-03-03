@@ -10,8 +10,8 @@ import numpy as np
 import yaml
 import dataclasses
 from numpy import pi
-from tsr.core.tsr_template import TSRTemplate
-from tsr.core.tsr import TSR
+from tsr.template import TSRTemplate
+from tsr.tsr import TSR
 from tsr.schema import EntityClass, TaskCategory, TaskType
 
 

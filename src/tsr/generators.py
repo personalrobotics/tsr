@@ -7,7 +7,7 @@ All functions are simulator-agnostic and return TSRTemplate objects with semanti
 
 import numpy as np
 from typing import Optional, Tuple, List
-from .core.tsr_template import TSRTemplate
+from .template import TSRTemplate
 from .schema import EntityClass, TaskCategory, TaskType
 
 
@@ -489,42 +489,17 @@ def generate_transport_template(
     T_ref_tsr = np.eye(4)
     Tw_e = np.eye(4)  # Identity transform for transport
     
-    # Set up bounds based on variant
-    if variant == "upright":
-        # Keep object upright during transport
-        Bw = np.array([
-            [-100, 100],                # x: full reachability
-            [-100, 100],                # y: full reachability
-            [-100, 100],                # z: full reachability
-            [-roll_epsilon, roll_epsilon],    # roll: small tolerance
-            [-pitch_epsilon, pitch_epsilon],  # pitch: small tolerance
-            [-yaw_epsilon, yaw_epsilon]       # yaw: small tolerance
-        ])
-        
-    elif variant == "horizontal":
-        # Keep object horizontal during transport
-        Bw = np.array([
-            [-100, 100],                # x: full reachability
-            [-100, 100],                # y: full reachability
-            [-100, 100],                # z: full reachability
-            [-roll_epsilon, roll_epsilon],    # roll: small tolerance
-            [-pitch_epsilon, pitch_epsilon],  # pitch: small tolerance
-            [-yaw_epsilon, yaw_epsilon]       # yaw: small tolerance
-        ])
-        
-    elif variant == "custom":
-        # Custom orientation constraints
-        Bw = np.array([
-            [-100, 100],                # x: full reachability
-            [-100, 100],                # y: full reachability
-            [-100, 100],                # z: full reachability
-            [-roll_epsilon, roll_epsilon],    # roll: custom tolerance
-            [-pitch_epsilon, pitch_epsilon],  # pitch: custom tolerance
-            [-yaw_epsilon, yaw_epsilon]       # yaw: custom tolerance
-        ])
-        
-    else:
+    if variant not in ("upright", "horizontal", "custom"):
         raise ValueError(f'Unknown variant "{variant}". Must be "upright", "horizontal", or "custom"')
+
+    Bw = np.array([
+        [-100, 100],                          # x: full reachability
+        [-100, 100],                          # y: full reachability
+        [-100, 100],                          # z: full reachability
+        [-roll_epsilon, roll_epsilon],        # roll: orientation tolerance
+        [-pitch_epsilon, pitch_epsilon],      # pitch: orientation tolerance
+        [-yaw_epsilon, yaw_epsilon]           # yaw: orientation tolerance
+    ])
     
     return TSRTemplate(
         T_ref_tsr=T_ref_tsr,
