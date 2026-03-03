@@ -7,7 +7,7 @@ All functions are simulator-agnostic and return TSRTemplate objects with semanti
 
 import numpy as np
 from typing import Optional, Tuple, List
-from .core.tsr_template import TSRTemplate
+from .template import TSRTemplate
 from .schema import EntityClass, TaskCategory, TaskType
 
 

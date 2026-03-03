@@ -4,7 +4,7 @@ import os
 import yaml
 from pathlib import Path
 from typing import List, Dict, Union, Optional
-from .core.tsr_template import TSRTemplate
+from .template import TSRTemplate
 from .schema import EntityClass, TaskCategory, TaskType
 
 

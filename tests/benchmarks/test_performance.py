@@ -11,8 +11,7 @@ import numpy as np
 import unittest
 from numpy import pi
 
-# Import core implementation for testing
-from tsr.core.tsr import TSR as CoreTSR
+from tsr.tsr import TSR
 
 
 class PerformanceBenchmark(unittest.TestCase):
@@ -45,7 +44,7 @@ class PerformanceBenchmark(unittest.TestCase):
         ])
         
         # Create TSR instance
-        self.tsr = CoreTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+        self.tsr = TSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
     
     def test_benchmark_tsr_creation(self):
         """Benchmark TSR creation performance."""
@@ -54,7 +53,7 @@ class PerformanceBenchmark(unittest.TestCase):
         # Benchmark core creation
         start_time = time.time()
         for _ in range(num_iterations):
-            CoreTSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+            TSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
         creation_time = time.time() - start_time
         
         print(f"TSR Creation Benchmark:")

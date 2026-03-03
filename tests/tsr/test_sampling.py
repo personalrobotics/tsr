@@ -16,8 +16,8 @@ from tsr.sampling import (
     instantiate_templates,
     sample_from_templates
 )
-from tsr.core.tsr import TSR
-from tsr.core.tsr_template import TSRTemplate
+from tsr.tsr import TSR
+from tsr.template import TSRTemplate
 from tsr.schema import EntityClass, TaskCategory
 
 

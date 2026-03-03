@@ -4,10 +4,7 @@ from typing import List, Sequence, Optional
 import numpy as np
 from numpy import pi
 
-try:
-    from tsr.core.tsr import TSR as CoreTSR  # type: ignore[attr-defined]
-except Exception:  # pragma: no cover
-    CoreTSR = object  # type: ignore[assignment]
+from .tsr import TSR
 
 
 def _interval_sum(Bw: np.ndarray) -> float:
@@ -34,7 +31,7 @@ def _interval_sum(Bw: np.ndarray) -> float:
     return float(np.sum(widths))
 
 
-def weights_from_tsrs(tsrs: Sequence[CoreTSR]) -> np.ndarray:
+def weights_from_tsrs(tsrs: Sequence[TSR]) -> np.ndarray:
     """Compute non-negative weights ∝ sum of Bw widths; fallback to uniform if all zero.
     
     This function computes weights for TSRs based on their geometric volumes.
@@ -70,7 +67,7 @@ def weights_from_tsrs(tsrs: Sequence[CoreTSR]) -> np.ndarray:
     return w
 
 
-def choose_tsr_index(tsrs: Sequence[CoreTSR], rng: Optional[np.random.Generator] = None) -> int:
+def choose_tsr_index(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -> int:
     """Choose an index with probability proportional to weight.
     
     This function selects a TSR index using weighted random sampling.
@@ -108,7 +105,7 @@ def choose_tsr_index(tsrs: Sequence[CoreTSR], rng: Optional[np.random.Generator]
     return int(rng.choice(len(tsrs), p=p))
 
 
-def choose_tsr(tsrs: Sequence[CoreTSR], rng: Optional[np.random.Generator] = None) -> CoreTSR:
+def choose_tsr(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -> TSR:
     """Choose a TSR with probability proportional to weight.
     
     This function selects a TSR object using weighted random sampling.
@@ -137,7 +134,7 @@ def choose_tsr(tsrs: Sequence[CoreTSR], rng: Optional[np.random.Generator] = Non
     return tsrs[choose_tsr_index(tsrs, rng)]
 
 
-def sample_from_tsrs(tsrs: Sequence[CoreTSR], rng: Optional[np.random.Generator] = None) -> np.ndarray:
+def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -> np.ndarray:
     """Weighted-select a TSR and return a sampled 4×4 transform.
     
     This function combines TSR selection and sampling into a single operation.
@@ -168,14 +165,10 @@ def sample_from_tsrs(tsrs: Sequence[CoreTSR], rng: Optional[np.random.Generator]
     return choose_tsr(tsrs, rng).sample()
 
 
-# (Optional) helpers for TSRTemplate lists
-try:
-    from tsr.core.tsr_template import TSRTemplate  # type: ignore[attr-defined]
-except Exception:  # pragma: no cover
-    TSRTemplate = object  # type: ignore[assignment]
+from .template import TSRTemplate
 
 
-def instantiate_templates(templates: Sequence["TSRTemplate"], T_ref_world: np.ndarray) -> List[CoreTSR]:
+def instantiate_templates(templates: Sequence["TSRTemplate"], T_ref_world: np.ndarray) -> List[TSR]:
     """Instantiate a list of templates at a reference pose.
     
     This function converts a list of TSR templates into concrete TSRs

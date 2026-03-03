@@ -1,6 +1,6 @@
 import numpy
 from numpy import pi
-from tsr.core.tsr import TSR
+from tsr.tsr import TSR
 from unittest import TestCase
 
 

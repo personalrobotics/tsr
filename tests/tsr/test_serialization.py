@@ -12,8 +12,8 @@ import unittest
 import yaml
 from numpy import pi
 
-from tsr.core.tsr import TSR
-from tsr.core.tsr_chain import TSRChain
+from tsr.tsr import TSR
+from tsr.tsr_chain import TSRChain
 
 
 class TestTSRSerialization(unittest.TestCase):
