@@ -248,8 +248,13 @@ class TSR:
         """
         if len(xyzrpy) != 6:
             raise ValueError('xyzrpy must be of length 6')
-        if not all(self.is_valid(xyzrpy)):
-            raise ValueError('Invalid xyzrpy', xyzrpy)
+        validity = self.is_valid(xyzrpy)
+        if not all(validity):
+            violated = [i for i, v in enumerate(validity) if not v]
+            raise ValueError(
+                f'xyzrpy violates bounds at dimensions {violated}: '
+                f'xyzrpy={xyzrpy}, bounds={self._Bw_cont[violated]}'
+            )
         Tw = TSR.xyzrpy_to_trans(xyzrpy)
         trans = reduce(numpy.dot, [self.T0_w, Tw, self.Tw_e])
         return trans
@@ -524,12 +529,8 @@ class TSR:
         return yaml.dump(self.to_dict())
 
     @staticmethod
-    def from_yaml(x, *args, **kw_args):
-        """
-        Construct a TSR from a YAML string.
-
-        This method internally forwards all arguments to `yaml.safe_load`.
-        """
+    def from_yaml(x):
+        """Construct a TSR from a YAML string."""
         import yaml
-        x_dict = yaml.safe_load(x, *args, **kw_args)
+        x_dict = yaml.safe_load(x)
         return TSR.from_dict(x_dict)

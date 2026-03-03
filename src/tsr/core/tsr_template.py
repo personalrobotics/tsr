@@ -226,12 +226,8 @@ class TSRTemplate:
         return yaml.dump(self.to_dict())
 
     @staticmethod
-    def from_yaml(x, *args, **kw_args):
-        """
-        Construct a TSRTemplate from a YAML string.
-
-        This method internally forwards all arguments to `yaml.safe_load`.
-        """
+    def from_yaml(x):
+        """Construct a TSRTemplate from a YAML string."""
         import yaml
-        x_dict = yaml.safe_load(x, *args, **kw_args)
+        x_dict = yaml.safe_load(x)
         return TSRTemplate.from_dict(x_dict)

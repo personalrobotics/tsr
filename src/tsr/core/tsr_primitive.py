@@ -82,7 +82,9 @@ def parse_line(params: Dict[str, Any]) -> np.ndarray:
     Bw = np.zeros((6, 2))
 
     axis_map = {'x': 0, 'y': 1, 'z': 2}
-    axis_idx = axis_map.get(axis, 2)
+    if axis not in axis_map:
+        raise ValueError(f"Unknown axis: {axis!r}. Must be 'x', 'y', or 'z'")
+    axis_idx = axis_map[axis]
 
     Bw[axis_idx, :] = range_val
 
@@ -500,8 +502,6 @@ def approach_to_rotation(approach: str, axis: str = 'z') -> np.ndarray:
         ])
     else:
         raise ValueError(f"Unknown approach direction: {approach}")
-
-    return np.eye(3)
 
 
 def parse_orientation(orientation: Dict[str, Any], position: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
