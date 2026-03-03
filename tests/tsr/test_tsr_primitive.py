@@ -6,7 +6,7 @@ from unittest import TestCase
 import tempfile
 import os
 
-from tsr.core.tsr_primitive import (
+from tsr.primitives import (
     parse_point,
     parse_line,
     parse_plane,
@@ -23,7 +23,7 @@ from tsr.core.tsr_primitive import (
     load_template_file,
     deg2rad,
 )
-from tsr.core.tsr import TSR
+from tsr.tsr import TSR
 
 
 class TestPositionPrimitives(TestCase):
@@ -727,7 +727,7 @@ class TestErrorHandling(TestCase):
 
     def test_unknown_approach_direction(self):
         """Test error on unknown approach direction."""
-        from tsr.core.tsr_primitive import approach_to_rotation
+        from tsr.primitives import approach_to_rotation
         with self.assertRaises(ValueError) as ctx:
             approach_to_rotation('invalid_direction')
         self.assertIn('invalid_direction', str(ctx.exception))

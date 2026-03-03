@@ -4,9 +4,8 @@ from dataclasses import dataclass
 from typing import Optional
 import numpy as np
 
-# Use existing core TSR implementation without changes.
-from .tsr import TSR as CoreTSR  # type: ignore[attr-defined]
-from ..schema import EntityClass, TaskCategory
+from .tsr import TSR
+from .schema import EntityClass, TaskCategory
 
 
 @dataclass(frozen=True)
@@ -90,7 +89,7 @@ class TSRTemplate:
     description: str = ""
     preshape: Optional[np.ndarray] = None
 
-    def instantiate(self, T_ref_world: np.ndarray) -> CoreTSR:
+    def instantiate(self, T_ref_world: np.ndarray) -> TSR:
         """Bind this template to a concrete reference pose in world.
 
         This method creates a concrete TSR by combining the template's
@@ -103,7 +102,7 @@ class TSRTemplate:
                         manipulated (e.g., mug, table, valve).
 
         Returns:
-            CoreTSR whose T0_w = T_ref_world @ T_ref_tsr, Tw_e = Tw_e, Bw = Bw.
+            TSR whose T0_w = T_ref_world @ T_ref_tsr, Tw_e = Tw_e, Bw = Bw.
             The resulting TSR can be used for sampling, distance calculations,
             and other TSR operations.
 
@@ -165,7 +164,7 @@ class TSRTemplate:
             >>> placement_pose = place_tsr.sample()
         """
         T0_w = T_ref_world @ self.T_ref_tsr
-        return CoreTSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+        return TSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
 
     def to_dict(self):
         """Convert this TSRTemplate to a python dict for serialization."""

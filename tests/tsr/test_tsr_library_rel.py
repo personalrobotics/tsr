@@ -3,8 +3,8 @@
 import unittest
 import numpy as np
 
-from tsr.tsr_library_rel import TSRLibraryRelational
-from tsr.core.tsr_template import TSRTemplate
+from tsr.library import TSRLibraryRelational
+from tsr.template import TSRTemplate
 from tsr.schema import EntityClass, TaskCategory, TaskType
 
 

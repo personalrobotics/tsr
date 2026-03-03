@@ -7,7 +7,7 @@ import numpy as np
 import unittest
 from numpy import pi
 
-from tsr.core.utils import wrap_to_interval, geodesic_error, geodesic_distance
+from tsr.utils import wrap_to_interval, geodesic_error, geodesic_distance
 
 
 class TestWrapToInterval(unittest.TestCase):

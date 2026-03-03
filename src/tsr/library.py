@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Callable, Tuple, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Callable, Tuple, Union
 import numpy as np
 
-if TYPE_CHECKING:
-    from tsr.core.tsr_template import TSRTemplate
-    from tsr.schema import TaskType, EntityClass
-
-try:
-    from tsr.core.tsr_template import TSRTemplate  # type: ignore[attr-defined]
-    from tsr.schema import TaskType, EntityClass  # type: ignore[attr-defined]
-except Exception:  # pragma: no cover
-    TSRTemplate = object  # type: ignore[assignment]
-    TaskType = object  # type: ignore[assignment]
-    EntityClass = object  # type: ignore[assignment]
+from .template import TSRTemplate
+from .schema import TaskType, EntityClass
 
 # Type alias for generator functions
 Generator = Callable[[np.ndarray], List[TSRTemplate]]
@@ -117,11 +108,6 @@ class TSRLibraryRelational:
         Raises:
             KeyError: If no generator is registered for the given combination
         """
-        try:
-            from tsr.core.tsr import TSR as CoreTSR  # type: ignore[attr-defined]
-        except Exception:  # pragma: no cover
-            CoreTSR = object  # type: ignore[assignment]
-            
         key = (subject, reference, task)
         if key not in self._reg:
             raise KeyError(f"No generator registered for {key}")
