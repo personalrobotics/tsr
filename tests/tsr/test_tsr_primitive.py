@@ -147,8 +147,9 @@ class TestPositionPrimitives(TestCase):
         }
         Bw = parse_cylinder(params)
 
-        self.assertEqual(Bw[0, 0], 0.04)   # radius fixed
-        self.assertEqual(Bw[0, 1], 0.04)
+        # Cylinder radius goes into Tw_e standoff, not Bw position
+        self.assertEqual(Bw[0, 0], 0.0)    # x = 0 (at axis)
+        self.assertEqual(Bw[0, 1], 0.0)
         self.assertEqual(Bw[2, 0], 0.02)   # height range
         self.assertEqual(Bw[2, 1], 0.08)
         self.assertAlmostEqual(Bw[5, 1], 2 * pi)  # full yaw
@@ -176,8 +177,10 @@ class TestPositionPrimitives(TestCase):
         }
         Bw = parse_shell(params)
 
-        self.assertEqual(Bw[0, 0], 0.03)  # radius range
-        self.assertEqual(Bw[0, 1], 0.05)
+        # Shell: radius midpoint goes to Tw_e standoff, half-thickness to Bw
+        half_thickness = (0.05 - 0.03) / 2  # 0.01
+        self.assertAlmostEqual(Bw[0, 0], -half_thickness)
+        self.assertAlmostEqual(Bw[0, 1], half_thickness)
         self.assertEqual(Bw[2, 0], 0.02)  # height range
         self.assertEqual(Bw[2, 1], 0.08)
 
@@ -234,7 +237,7 @@ class TestParsePosition(TestCase):
             'angle': [0, 360]
         }
         Bw = parse_position(position)
-        self.assertEqual(Bw[0, 0], 0.04)
+        self.assertEqual(Bw[0, 0], 0.0)  # radius goes to Tw_e, not Bw
 
     def test_unknown_type(self):
         """Test error on unknown type."""
@@ -300,7 +303,7 @@ gripper:
         result = load_template_yaml(yaml_str)
 
         self.assertEqual(result.name, 'Side grasp mug')
-        self.assertEqual(result.Bw[0, 0], 0.04)  # radius
+        self.assertEqual(result.Bw[0, 0], 0.0)  # radius goes to Tw_e standoff
         self.assertAlmostEqual(result.Bw[5, 0], deg2rad(30))  # angle min
         self.assertEqual(result.gripper['aperture'], 0.06)
 
@@ -489,8 +492,8 @@ class TestCylinderAxes(TestCase):
         }
         Bw = parse_cylinder(params)
 
-        # For x-axis cylinder: y=radius, x=height, roll varies
-        self.assertEqual(Bw[1, 0], 0.04)  # y = radius
+        # For x-axis cylinder: y=0 (at axis), x=height, roll varies
+        self.assertEqual(Bw[1, 0], 0.0)   # y = 0 (radius goes to Tw_e)
         self.assertEqual(Bw[0, 0], -0.1)  # x = height range
         self.assertEqual(Bw[0, 1], 0.1)
         self.assertAlmostEqual(Bw[3, 1], 2 * pi)  # roll varies
@@ -505,8 +508,8 @@ class TestCylinderAxes(TestCase):
         }
         Bw = parse_cylinder(params)
 
-        # For y-axis cylinder: x=radius, y=height, pitch varies
-        self.assertEqual(Bw[0, 0], 0.04)  # x = radius
+        # For y-axis cylinder: x=0 (at axis), y=height, pitch varies
+        self.assertEqual(Bw[0, 0], 0.0)   # x = 0 (radius goes to Tw_e)
         self.assertEqual(Bw[1, 0], -0.1)  # y = height range
         self.assertAlmostEqual(Bw[4, 1], 2 * pi)  # pitch varies
 

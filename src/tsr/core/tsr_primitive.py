@@ -82,7 +82,9 @@ def parse_line(params: Dict[str, Any]) -> np.ndarray:
     Bw = np.zeros((6, 2))
 
     axis_map = {'x': 0, 'y': 1, 'z': 2}
-    axis_idx = axis_map.get(axis, 2)
+    if axis not in axis_map:
+        raise ValueError(f"Unknown axis: {axis!r}. Must be 'x', 'y', or 'z'")
+    axis_idx = axis_map[axis]
 
     Bw[axis_idx, :] = range_val
 
@@ -214,31 +216,35 @@ def parse_cylinder(params: Dict[str, Any]) -> np.ndarray:
     """
     Parse a cylinder primitive (cylinder surface around axis).
 
+    For cylindrical TSRs, the radius is NOT encoded in Bw. Instead, it should
+    be added to the standoff in Tw_e so that the entire offset (radius + standoff)
+    rotates together with yaw/roll/pitch. This is handled in parse_template().
+
     Args:
         params: dict with axis, radius, height (range), angle (degrees)
 
     Returns:
-        6x2 Bw array
+        6x2 Bw array with position at cylinder axis (x=0, y=0 for z-axis cylinder)
     """
     axis = params.get('axis', 'z')
-    radius = float(params.get('radius', 0))
     height = ensure_range(params.get('height', [0, 0]))
     angle = ensure_range_deg(params.get('angle', [0, 360]))
 
     Bw = np.zeros((6, 2))
 
     if axis == 'z':
-        Bw[0, :] = [radius, radius]
+        # Position at cylinder axis, yaw determines angle around cylinder
+        Bw[0, :] = [0, 0]  # x = 0 (not radius!)
         Bw[1, :] = [0, 0]
         Bw[2, :] = height
         Bw[5, :] = angle  # yaw
     elif axis == 'x':
         Bw[0, :] = height
-        Bw[1, :] = [radius, radius]
+        Bw[1, :] = [0, 0]  # y = 0 (not radius!)
         Bw[2, :] = [0, 0]
         Bw[3, :] = angle  # roll
     elif axis == 'y':
-        Bw[0, :] = [radius, radius]
+        Bw[0, :] = [0, 0]  # x = 0 (not radius!)
         Bw[1, :] = height
         Bw[2, :] = [0, 0]
         Bw[4, :] = angle  # pitch
@@ -249,6 +255,14 @@ def parse_cylinder(params: Dict[str, Any]) -> np.ndarray:
 def parse_shell(params: Dict[str, Any]) -> np.ndarray:
     """
     Parse a shell primitive (thick-walled cylinder).
+
+    Similar to cylinder, the radius midpoint is added to standoff in parse_template()
+    so the entire offset rotates with yaw/roll/pitch. The radius variation (thickness)
+    is encoded as a radial tolerance in the x component.
+
+    Note: This is an approximation. At non-zero yaw, the x tolerance doesn't perfectly
+    correspond to radial tolerance. For full cylindrical coordinate support, the TSR
+    library would need native support for cylindrical Bw bounds.
 
     Args:
         params: dict with axis, radius (range), height (range), angle (degrees)
@@ -261,20 +275,24 @@ def parse_shell(params: Dict[str, Any]) -> np.ndarray:
     height = ensure_range(params.get('height', [0, 0]))
     angle = ensure_range_deg(params.get('angle', [0, 360]))
 
+    # Compute half-thickness (radial variation from midpoint)
+    half_thickness = (radius[1] - radius[0]) / 2
+
     Bw = np.zeros((6, 2))
 
     if axis == 'z':
-        Bw[0, :] = radius
+        # Position at cylinder axis + radial tolerance
+        Bw[0, :] = [-half_thickness, half_thickness]
         Bw[1, :] = [0, 0]
         Bw[2, :] = height
         Bw[5, :] = angle  # yaw
     elif axis == 'x':
         Bw[0, :] = height
-        Bw[1, :] = radius
+        Bw[1, :] = [-half_thickness, half_thickness]
         Bw[2, :] = [0, 0]
         Bw[3, :] = angle  # roll
     elif axis == 'y':
-        Bw[0, :] = radius
+        Bw[0, :] = [-half_thickness, half_thickness]
         Bw[1, :] = height
         Bw[2, :] = [0, 0]
         Bw[4, :] = angle  # pitch
@@ -397,26 +415,40 @@ def approach_to_rotation(approach: str, axis: str = 'z') -> np.ndarray:
         3x3 rotation matrix
     """
     if approach == 'radial':
-        # Gripper z-axis points toward the reference axis (inward)
-        # For z-axis reference: approach from +x direction
+        # Gripper z-axis points radially TOWARD the cylinder axis (inward).
+        # Gripper y-axis (finger opening direction) is horizontal,
+        # perpendicular to both the approach and cylinder axis.
+        # This orients fingers to wrap around the cylinder horizontally.
+        #
+        # Convention: gripper z = approach direction, gripper y = finger opening
         if axis == 'z':
-            # Rotate so gripper -z points toward cylinder center
-            # i.e., gripper z points outward (+x in TSR frame)
+            # Cylinder along z-axis. At yaw=0, gripper is at (radius, 0, z).
+            # gripper z → -x (approach TOWARD center at origin)
+            # gripper y → +y (horizontal fingers)
+            # gripper x → +z (by right-hand rule: y × z)
             return np.array([
-                [0, 0, 1],
-                [1, 0, 0],
-                [0, 1, 0]
-            ])
-        elif axis == 'x':
-            return np.array([
+                [0, 0, -1],
                 [0, 1, 0],
-                [0, 0, 1],
                 [1, 0, 0]
             ])
-        elif axis == 'y':
+        elif axis == 'x':
+            # Cylinder along x-axis. At roll=0, position is at (height, radius, 0).
+            # gripper z → -y (approach TOWARD center at y=0)
+            # gripper y → +z (fingers horizontal, perpendicular to cylinder)
+            # gripper x → +x (by right-hand rule: y × z)
             return np.array([
                 [1, 0, 0],
-                [0, 0, 1],
+                [0, 0, -1],
+                [0, 1, 0]
+            ])
+        elif axis == 'y':
+            # Cylinder along y-axis. At pitch=0, position is at (radius, height, 0).
+            # gripper z → -x (approach TOWARD center at x=0)
+            # gripper y → +z (fingers horizontal, perpendicular to cylinder)
+            # gripper x → +y (by right-hand rule: y × z)
+            return np.array([
+                [0, 0, -1],
+                [1, 0, 0],
                 [0, 1, 0]
             ])
     elif approach == 'axial':
@@ -470,8 +502,6 @@ def approach_to_rotation(approach: str, axis: str = 'z') -> np.ndarray:
         ])
     else:
         raise ValueError(f"Unknown approach direction: {approach}")
-
-    return np.eye(3)
 
 
 def parse_orientation(orientation: Dict[str, Any], position: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
@@ -596,6 +626,17 @@ def parse_template(spec: Dict[str, Any]) -> ParsedTemplate:
     # Build Tw_e from orientation and standoff
     standoff = float(spec.get('standoff', 0))
     approach = orientation.get('approach', '-z') if orientation else '-z'
+
+    # For cylinder and shell primitives, add radius to standoff so the entire
+    # offset (radius + standoff) rotates together with yaw/roll/pitch
+    ptype = position.get('type', 'raw')
+    if ptype in ('cylinder', 'shell'):
+        radius = position.get('radius', 0)
+        # For shell, radius can be a range - use the midpoint
+        if isinstance(radius, (list, tuple)):
+            radius = (radius[0] + radius[1]) / 2
+        standoff = standoff + float(radius)
+
     Tw_e = build_Tw_e(R, standoff, approach)
 
     # T_ref_tsr is identity by default (TSR frame = reference frame)
