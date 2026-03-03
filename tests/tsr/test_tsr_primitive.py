@@ -30,17 +30,12 @@ class TestPositionPrimitives(TestCase):
     """Test position primitive parsers."""
 
     def test_parse_point(self):
-        """Test point primitive parsing."""
+        """Test point primitive — returns all-zero Bw (offset goes to T_ref_tsr)."""
         params = {'x': 0.1, 'y': 0.2, 'z': 0.3}
         Bw = parse_point(params)
 
         self.assertEqual(Bw.shape, (6, 2))
-        self.assertEqual(Bw[0, 0], 0.1)
-        self.assertEqual(Bw[0, 1], 0.1)
-        self.assertEqual(Bw[1, 0], 0.2)
-        self.assertEqual(Bw[2, 0], 0.3)
-        # Rotation should be zero
-        np.testing.assert_array_equal(Bw[3:6, :], np.zeros((3, 2)))
+        np.testing.assert_array_equal(Bw, np.zeros((6, 2)))
 
     def test_parse_point_defaults(self):
         """Test point with defaults."""
@@ -96,7 +91,7 @@ class TestPositionPrimitives(TestCase):
         self.assertEqual(Bw[2, 1], 0.3)
 
     def test_parse_ring_z(self):
-        """Test ring around z-axis."""
+        """Test ring around z-axis — radius NOT in Bw (goes to Tw_e)."""
         params = {
             'axis': 'z',
             'radius': 0.04,
@@ -105,8 +100,8 @@ class TestPositionPrimitives(TestCase):
         }
         Bw = parse_ring(params)
 
-        self.assertEqual(Bw[0, 0], 0.04)  # x = radius
-        self.assertEqual(Bw[0, 1], 0.04)
+        self.assertEqual(Bw[0, 0], 0.0)    # x = 0 (radius goes to Tw_e)
+        self.assertEqual(Bw[0, 1], 0.0)
         self.assertEqual(Bw[1, 0], 0)      # y = 0
         self.assertEqual(Bw[2, 0], 0.05)   # z = height
         self.assertAlmostEqual(Bw[5, 0], 0)          # yaw min
@@ -125,7 +120,7 @@ class TestPositionPrimitives(TestCase):
         self.assertAlmostEqual(Bw[5, 1], deg2rad(330))
 
     def test_parse_disk(self):
-        """Test disk primitive (annulus)."""
+        """Test disk primitive — half-thickness in Bw, midpoint goes to Tw_e."""
         params = {
             'axis': 'z',
             'radius': [0.03, 0.05],
@@ -133,8 +128,9 @@ class TestPositionPrimitives(TestCase):
         }
         Bw = parse_disk(params)
 
-        self.assertEqual(Bw[0, 0], 0.03)  # x = radius min
-        self.assertEqual(Bw[0, 1], 0.05)  # x = radius max
+        half_thickness = (0.05 - 0.03) / 2  # 0.01
+        self.assertAlmostEqual(Bw[0, 0], -half_thickness)
+        self.assertAlmostEqual(Bw[0, 1], half_thickness)
         self.assertAlmostEqual(Bw[5, 1], 2 * pi)
 
     def test_parse_cylinder_z(self):
@@ -185,7 +181,7 @@ class TestPositionPrimitives(TestCase):
         self.assertEqual(Bw[2, 1], 0.08)
 
     def test_parse_sphere(self):
-        """Test sphere primitive."""
+        """Test sphere primitive — radius NOT in Bw (goes to Tw_e)."""
         params = {
             'radius': 0.1,
             'pitch': [-90, 90],
@@ -193,7 +189,7 @@ class TestPositionPrimitives(TestCase):
         }
         Bw = parse_sphere(params)
 
-        self.assertEqual(Bw[0, 0], 0.1)  # radius
+        self.assertEqual(Bw[0, 0], 0.0)  # radius goes to Tw_e
         self.assertAlmostEqual(Bw[4, 0], -pi/2)  # pitch
         self.assertAlmostEqual(Bw[4, 1], pi/2)
         self.assertAlmostEqual(Bw[5, 0], 0)      # yaw
@@ -222,10 +218,10 @@ class TestParsePosition(TestCase):
     """Test the unified position parser."""
 
     def test_dispatch_point(self):
-        """Test dispatch to point parser."""
+        """Test dispatch to point parser — Bw is all zeros."""
         position = {'type': 'point', 'x': 0.1, 'y': 0.2, 'z': 0.3}
         Bw = parse_position(position)
-        self.assertEqual(Bw[0, 0], 0.1)
+        np.testing.assert_array_equal(Bw, np.zeros((6, 2)))
 
     def test_dispatch_cylinder(self):
         """Test dispatch to cylinder parser."""
@@ -329,7 +325,9 @@ standoff: 0.05
         result = load_template_yaml(yaml_str)
 
         self.assertEqual(result.name, 'Top grasp mug')
-        self.assertEqual(result.Bw[2, 0], 0.12)  # z fixed
+        # Point offset goes to T_ref_tsr, Bw is zero
+        np.testing.assert_array_equal(result.Bw[0:3, :], np.zeros((3, 2)))
+        self.assertAlmostEqual(result.T_ref_tsr[2, 3], 0.12)
 
     def test_placement_template(self):
         """Test placement template."""
@@ -610,20 +608,26 @@ orientation:
 standoff: 0.05
 """
         parsed = load_template_yaml(yaml_str)
-        tsr = TSR(T0_w=np.eye(4), Tw_e=parsed.Tw_e, Bw=parsed.Bw)
+        # Point offset is in T_ref_tsr, must compose with T0_w
+        T0_w = np.eye(4) @ parsed.T_ref_tsr
+        tsr = TSR(T0_w=T0_w, Tw_e=parsed.Tw_e, Bw=parsed.Bw)
 
-        # Sample and verify point is fixed
+        # Bw position should be zero (all freedom is in yaw only)
+        np.testing.assert_array_equal(parsed.Bw[0:3, :], np.zeros((3, 2)))
+
+        # Sample and verify the TSR produces valid transforms
         for _ in range(10):
-            xyzrpy = tsr.sample_xyzrpy()
-            self.assertAlmostEqual(xyzrpy[0], 0, places=5)
-            self.assertAlmostEqual(xyzrpy[1], 0, places=5)
-            self.assertAlmostEqual(xyzrpy[2], 0.12, places=5)
+            pose = tsr.sample()
+            self.assertEqual(pose.shape, (4, 4))
+            R = pose[0:3, 0:3]
+            self.assertTrue(np.allclose(R @ R.T, np.eye(3), atol=1e-6))
             # Yaw should vary (free)
+            xyzrpy = tsr.sample_xyzrpy()
             self.assertGreaterEqual(xyzrpy[5], -pi - 1e-6)
             self.assertLessEqual(xyzrpy[5], pi + 1e-6)
 
     def test_ring_grasp_samples_on_circle(self):
-        """Test that ring primitive samples points on a circle."""
+        """Test that ring primitive samples gripper positions on a circle."""
         yaml_str = """
 name: Ring grasp
 task: grasp
@@ -645,17 +649,18 @@ standoff: 0.03
         parsed = load_template_yaml(yaml_str)
         tsr = TSR(T0_w=np.eye(4), Tw_e=parsed.Tw_e, Bw=parsed.Bw)
 
-        # Sample and verify points lie on a ring
+        # Radius (0.05) + standoff (0.03) = 0.08 total offset in Tw_e
+        expected_dist = 0.05 + 0.03
+
+        # Sample and verify gripper positions lie on a circle
         for _ in range(20):
-            xyzrpy = tsr.sample_xyzrpy()
-            # Convert to Cartesian (x is radius, yaw rotates it)
-            x = xyzrpy[0] * np.cos(xyzrpy[5])
-            y = xyzrpy[0] * np.sin(xyzrpy[5])
-            # Distance from z-axis should be radius
+            pose = tsr.sample()
+            x, y, z = pose[0, 3], pose[1, 3], pose[2, 3]
+            # Distance from z-axis should be radius + standoff
             dist = np.sqrt(x**2 + y**2)
-            self.assertAlmostEqual(dist, 0.05, places=4)
-            # Height should be fixed
-            self.assertAlmostEqual(xyzrpy[2], 0.1, places=5)
+            self.assertAlmostEqual(dist, expected_dist, places=4)
+            # Height should be fixed at 0.1
+            self.assertAlmostEqual(z, 0.1, places=5)
 
     def test_tsr_distance_with_parsed_template(self):
         """Test distance calculation with parsed template."""
@@ -709,9 +714,11 @@ standoff: 0.05
         try:
             parsed = load_template_file(temp_path)
             self.assertEqual(parsed.name, 'Test Template')
-            self.assertEqual(parsed.Bw[0, 0], 0.1)
-            self.assertEqual(parsed.Bw[1, 0], 0.2)
-            self.assertEqual(parsed.Bw[2, 0], 0.3)
+            # Point offset goes to T_ref_tsr, Bw is zero
+            np.testing.assert_array_equal(parsed.Bw[0:3, :], np.zeros((3, 2)))
+            self.assertAlmostEqual(parsed.T_ref_tsr[0, 3], 0.1)
+            self.assertAlmostEqual(parsed.T_ref_tsr[1, 3], 0.2)
+            self.assertAlmostEqual(parsed.T_ref_tsr[2, 3], 0.3)
         finally:
             os.unlink(temp_path)
 
@@ -851,6 +858,7 @@ class TestEdgeCases(TestCase):
             'yaw': [0, 180]       # Only half rotation
         }
         Bw = parse_sphere(params)
+        self.assertEqual(Bw[0, 0], 0.0)  # radius goes to Tw_e
         self.assertAlmostEqual(Bw[4, 0], 0)
         self.assertAlmostEqual(Bw[4, 1], deg2rad(45))
         self.assertAlmostEqual(Bw[5, 0], 0)
@@ -879,3 +887,172 @@ standoff: 0.05
         self.assertEqual(parsed.Tw_e.shape, (4, 4))
         # The translation should reflect the standoff
         self.assertAlmostEqual(np.linalg.norm(parsed.Tw_e[0:3, 3]), 0.05, places=4)
+
+
+class TestGeometricCorrectness(TestCase):
+    """Tests that verify correct geometric behavior of primitives."""
+
+    def test_ring_positions_trace_circle(self):
+        """Ring with radial approach: sampled positions should trace a circle."""
+        yaml_str = """
+name: Ring test
+task: grasp
+subject: gripper
+reference: object
+position:
+  type: ring
+  axis: z
+  radius: 0.08
+  height: 0
+  angle: [0, 360]
+orientation:
+  approach: radial
+standoff: 0.05
+"""
+        parsed = load_template_yaml(yaml_str)
+        expected_radius = 0.08 + 0.05  # radius + standoff
+
+        # Verify Tw_e has the combined offset
+        self.assertAlmostEqual(parsed.Tw_e[0, 3], expected_radius, places=6)
+
+        tsr = TSR(T0_w=np.eye(4), Tw_e=parsed.Tw_e, Bw=parsed.Bw)
+        for _ in range(20):
+            pose = tsr.sample()
+            x, y, z = pose[0, 3], pose[1, 3], pose[2, 3]
+            dist = np.sqrt(x**2 + y**2)
+            self.assertAlmostEqual(dist, expected_radius, places=4)
+            self.assertAlmostEqual(z, 0.0, places=5)
+
+    def test_ring_nonradial_approach(self):
+        """Ring with non-radial approach: radius and standoff separate correctly."""
+        yaml_str = """
+name: Ring axial approach
+task: grasp
+subject: gripper
+reference: object
+position:
+  type: ring
+  axis: z
+  radius: 0.05
+  height: 0
+  angle: [0, 360]
+orientation:
+  approach: -z
+standoff: 0.03
+"""
+        parsed = load_template_yaml(yaml_str)
+        # Standoff goes along -z approach → Tw_e z offset
+        # Radius goes radially → Tw_e x offset
+        self.assertAlmostEqual(parsed.Tw_e[0, 3], 0.05, places=6)  # radius in x
+        self.assertAlmostEqual(parsed.Tw_e[2, 3], 0.03, places=6)  # standoff in z
+
+    def test_sphere_positions_on_sphere_surface(self):
+        """Sphere: sampled positions should lie on a sphere surface."""
+        yaml_str = """
+name: Sphere test
+task: handover
+subject: object
+reference: human
+position:
+  type: sphere
+  radius: 0.45
+  pitch: [-30, 30]
+  yaw: [-45, 45]
+orientation:
+  approach: -x
+standoff: 0
+"""
+        parsed = load_template_yaml(yaml_str)
+        tsr = TSR(T0_w=np.eye(4), Tw_e=parsed.Tw_e, Bw=parsed.Bw)
+
+        for _ in range(20):
+            pose = tsr.sample()
+            x, y, z = pose[0, 3], pose[1, 3], pose[2, 3]
+            dist = np.sqrt(x**2 + y**2 + z**2)
+            self.assertAlmostEqual(dist, 0.45, places=3)
+
+    def test_disk_positions_within_disk(self):
+        """Disk: sampled positions should be within the disk area."""
+        yaml_str = """
+name: Disk test
+task: place
+subject: cup
+reference: coaster
+position:
+  type: disk
+  axis: z
+  radius: [0, 0.02]
+  height: 0
+  angle: [0, 360]
+orientation:
+  approach: -z
+  yaw: free
+standoff: 0
+"""
+        parsed = load_template_yaml(yaml_str)
+        tsr = TSR(T0_w=np.eye(4), Tw_e=parsed.Tw_e, Bw=parsed.Bw)
+
+        for _ in range(20):
+            pose = tsr.sample()
+            x, y = pose[0, 3], pose[1, 3]
+            dist = np.sqrt(x**2 + y**2)
+            # Should be within disk radius (0.02) with tolerance
+            self.assertLessEqual(dist, 0.02 + 1e-6)
+
+    def test_point_offset_in_T_ref_tsr(self):
+        """Point: offset should be in T_ref_tsr, Bw should be all zeros."""
+        yaml_str = """
+name: Point test
+task: grasp
+subject: gripper
+reference: mug
+position:
+  type: point
+  x: 0.06
+  y: 0
+  z: 0.05
+orientation:
+  approach: -x
+standoff: 0.03
+"""
+        parsed = load_template_yaml(yaml_str)
+
+        # Bw should be all zeros for point
+        np.testing.assert_array_equal(parsed.Bw, np.zeros((6, 2)))
+
+        # T_ref_tsr should have the point offset
+        self.assertAlmostEqual(parsed.T_ref_tsr[0, 3], 0.06)
+        self.assertAlmostEqual(parsed.T_ref_tsr[1, 3], 0.0)
+        self.assertAlmostEqual(parsed.T_ref_tsr[2, 3], 0.05)
+
+        # Tw_e should have only the standoff
+        self.assertAlmostEqual(np.linalg.norm(parsed.Tw_e[0:3, 3]), 0.03, places=4)
+
+    def test_ring_x_axis(self):
+        """Ring around x-axis: positions trace circle in yz plane."""
+        yaml_str = """
+name: Valve ring
+task: grasp
+subject: gripper
+reference: valve
+position:
+  type: ring
+  axis: x
+  radius: 0.08
+  height: 0
+  angle: [0, 360]
+orientation:
+  approach: radial
+standoff: 0.03
+"""
+        parsed = load_template_yaml(yaml_str)
+        expected_radius = 0.08 + 0.03
+        tsr = TSR(T0_w=np.eye(4), Tw_e=parsed.Tw_e, Bw=parsed.Bw)
+
+        for _ in range(20):
+            pose = tsr.sample()
+            x, y, z = pose[0, 3], pose[1, 3], pose[2, 3]
+            # Circle in yz plane
+            dist = np.sqrt(y**2 + z**2)
+            self.assertAlmostEqual(dist, expected_radius, places=4)
+            self.assertAlmostEqual(x, 0.0, places=5)
