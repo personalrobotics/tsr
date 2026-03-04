@@ -3,18 +3,52 @@ description: Grasp mug from the side with 5cm approach distance
 task: grasp
 subject: gripper
 reference: mug
-
-position:
-  type: cylinder
-  axis: z
-  radius: 0.04
-  height: [0.02, 0.08]
-  angle: [0, 360]
-
-orientation:
-  approach: radial
-
-standoff: 0.05
-
-gripper:
-  aperture: 0.08
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 0.0
+  - 0.0
+  - -1.0
+  - 0.09
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.02
+  - 0.08
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 6.283185307179586
+preshape:
+- 0.08

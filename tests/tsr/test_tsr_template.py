@@ -40,9 +40,9 @@ class TestTSRTemplate(unittest.TestCase):
             T_ref_tsr=self.T_ref_tsr,
             Tw_e=self.Tw_e,
             Bw=self.Bw,
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side",
             name="Cylinder Side Grasp",
             description="Grasp a cylindrical object from the side with 5cm approach distance"
@@ -50,9 +50,9 @@ class TestTSRTemplate(unittest.TestCase):
 
     def test_tsr_template_creation(self):
         """Test TSRTemplate creation with semantic context."""
-        self.assertEqual(self.template.subject_entity, EntityClass.GENERIC_GRIPPER)
-        self.assertEqual(self.template.reference_entity, EntityClass.MUG)
-        self.assertEqual(self.template.task_category, TaskCategory.GRASP)
+        self.assertEqual(self.template.subject, "generic_gripper")
+        self.assertEqual(self.template.reference, "mug")
+        self.assertEqual(self.template.task, "grasp")
         self.assertEqual(self.template.variant, "side")
         self.assertEqual(self.template.name, "Cylinder Side Grasp")
         self.assertEqual(self.template.description, "Grasp a cylindrical object from the side with 5cm approach distance")
@@ -86,9 +86,9 @@ class TestTSRTemplate(unittest.TestCase):
             T_ref_tsr=self.T_ref_tsr,
             Tw_e=self.Tw_e,
             Bw=self.Bw,
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side"
         )
         
@@ -122,9 +122,9 @@ class TestTSRTemplateSerialization(unittest.TestCase):
                 [0, 0],
                 [-np.pi, np.pi]
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side",
             name="Test Template",
             description="Test description"
@@ -136,9 +136,9 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         
         self.assertEqual(result['name'], "Test Template")
         self.assertEqual(result['description'], "Test description")
-        self.assertEqual(result['subject_entity'], "generic_gripper")
-        self.assertEqual(result['reference_entity'], "mug")
-        self.assertEqual(result['task_category'], "grasp")
+        self.assertEqual(result['subject'], "generic_gripper")
+        self.assertEqual(result['reference'], "mug")
+        self.assertEqual(result['task'], "grasp")
         self.assertEqual(result['variant'], "side")
         
         # Check that arrays are converted to lists
@@ -156,9 +156,9 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         data = {
             'name': 'Test Template',
             'description': 'Test description',
-            'subject_entity': 'generic_gripper',
-            'reference_entity': 'mug',
-            'task_category': 'grasp',
+            'subject': 'generic_gripper',
+            'reference': 'mug',
+            'task': 'grasp',
             'variant': 'side',
             'T_ref_tsr': [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
             'Tw_e': [[0, 0, 1, -0.05], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]],
@@ -169,9 +169,9 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         
         self.assertEqual(reconstructed.name, "Test Template")
         self.assertEqual(reconstructed.description, "Test description")
-        self.assertEqual(reconstructed.subject_entity, EntityClass.GENERIC_GRIPPER)
-        self.assertEqual(reconstructed.reference_entity, EntityClass.MUG)
-        self.assertEqual(reconstructed.task_category, TaskCategory.GRASP)
+        self.assertEqual(reconstructed.subject, "generic_gripper")
+        self.assertEqual(reconstructed.reference, "mug")
+        self.assertEqual(reconstructed.task, "grasp")
         self.assertEqual(reconstructed.variant, "side")
         
         np.testing.assert_array_equal(reconstructed.T_ref_tsr, self.template.T_ref_tsr)
@@ -185,9 +185,9 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         
         self.assertEqual(reconstructed.name, self.template.name)
         self.assertEqual(reconstructed.description, self.template.description)
-        self.assertEqual(reconstructed.subject_entity, self.template.subject_entity)
-        self.assertEqual(reconstructed.reference_entity, self.template.reference_entity)
-        self.assertEqual(reconstructed.task_category, self.template.task_category)
+        self.assertEqual(reconstructed.subject, self.template.subject)
+        self.assertEqual(reconstructed.reference, self.template.reference)
+        self.assertEqual(reconstructed.task, self.template.task)
         self.assertEqual(reconstructed.variant, self.template.variant)
         
         np.testing.assert_array_equal(reconstructed.T_ref_tsr, self.template.T_ref_tsr)
@@ -201,17 +201,17 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         # Check that it's valid YAML
         parsed = yaml.safe_load(result)
         self.assertEqual(parsed['name'], "Test Template")
-        self.assertEqual(parsed['subject_entity'], "generic_gripper")
-        self.assertEqual(parsed['task_category'], "grasp")
+        self.assertEqual(parsed['subject'], "generic_gripper")
+        self.assertEqual(parsed['task'], "grasp")
 
     def test_from_yaml(self):
         """Test TSRTemplate.from_yaml() method."""
         yaml_str = """
 name: Test Template
 description: Test description
-subject_entity: generic_gripper
-reference_entity: mug
-task_category: grasp
+task: grasp
+subject: generic_gripper
+reference: mug
 variant: side
 T_ref_tsr:
   - [1, 0, 0, 0]
@@ -236,9 +236,9 @@ Bw:
         
         self.assertEqual(reconstructed.name, "Test Template")
         self.assertEqual(reconstructed.description, "Test description")
-        self.assertEqual(reconstructed.subject_entity, EntityClass.GENERIC_GRIPPER)
-        self.assertEqual(reconstructed.reference_entity, EntityClass.MUG)
-        self.assertEqual(reconstructed.task_category, TaskCategory.GRASP)
+        self.assertEqual(reconstructed.subject, "generic_gripper")
+        self.assertEqual(reconstructed.reference, "mug")
+        self.assertEqual(reconstructed.task, "grasp")
         self.assertEqual(reconstructed.variant, "side")
 
     def test_yaml_roundtrip(self):
@@ -248,9 +248,9 @@ Bw:
         
         self.assertEqual(reconstructed.name, self.template.name)
         self.assertEqual(reconstructed.description, self.template.description)
-        self.assertEqual(reconstructed.subject_entity, self.template.subject_entity)
-        self.assertEqual(reconstructed.reference_entity, self.template.reference_entity)
-        self.assertEqual(reconstructed.task_category, self.template.task_category)
+        self.assertEqual(reconstructed.subject, self.template.subject)
+        self.assertEqual(reconstructed.reference, self.template.reference)
+        self.assertEqual(reconstructed.task, self.template.task)
         self.assertEqual(reconstructed.variant, self.template.variant)
         
         np.testing.assert_array_equal(reconstructed.T_ref_tsr, self.template.T_ref_tsr)
@@ -265,17 +265,17 @@ Bw:
         
         self.assertEqual(reconstructed.name, self.template.name)
         self.assertEqual(reconstructed.description, self.template.description)
-        self.assertEqual(reconstructed.subject_entity, self.template.subject_entity)
-        self.assertEqual(reconstructed.reference_entity, self.template.reference_entity)
-        self.assertEqual(reconstructed.task_category, self.template.task_category)
+        self.assertEqual(reconstructed.subject, self.template.subject)
+        self.assertEqual(reconstructed.reference, self.template.reference)
+        self.assertEqual(reconstructed.task, self.template.task)
         self.assertEqual(reconstructed.variant, self.template.variant)
 
     def test_from_dict_missing_optional_fields(self):
         """Test from_dict with missing optional fields."""
         data = {
-            'subject_entity': 'generic_gripper',
-            'reference_entity': 'mug',
-            'task_category': 'grasp',
+            'subject': 'generic_gripper',
+            'reference': 'mug',
+            'task': 'grasp',
             'variant': 'side',
             'T_ref_tsr': [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
             'Tw_e': [[0, 0, 1, -0.05], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]],
@@ -286,9 +286,9 @@ Bw:
         
         self.assertEqual(reconstructed.name, "")
         self.assertEqual(reconstructed.description, "")
-        self.assertEqual(reconstructed.subject_entity, EntityClass.GENERIC_GRIPPER)
-        self.assertEqual(reconstructed.reference_entity, EntityClass.MUG)
-        self.assertEqual(reconstructed.task_category, TaskCategory.GRASP)
+        self.assertEqual(reconstructed.subject, "generic_gripper")
+        self.assertEqual(reconstructed.reference, "mug")
+        self.assertEqual(reconstructed.task, "grasp")
         self.assertEqual(reconstructed.variant, "side")
 
 
@@ -313,9 +313,9 @@ class TestTSRTemplateExamples(unittest.TestCase):
                 [0, 0],           # pitch: fixed
                 [-np.pi, np.pi]   # yaw: full rotation
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side",
             name="Cylinder Side Grasp",
             description="Grasp a cylindrical object from the side with 5cm approach distance"
@@ -358,9 +358,9 @@ class TestTSRTemplateExamples(unittest.TestCase):
                 [0, 0],            # pitch: keep level
                 [-np.pi/4, np.pi/4]  # yaw: allow some rotation
             ]),
-            subject_entity=EntityClass.MUG,
-            reference_entity=EntityClass.TABLE,
-            task_category=TaskCategory.PLACE,
+            subject="mug",
+            reference="table",
+            task="place",
             variant="on",
             name="Table Placement",
             description="Place object on table surface with 2cm clearance"
