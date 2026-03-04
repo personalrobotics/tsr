@@ -166,9 +166,9 @@ class TestTemplateSampling(unittest.TestCase):
                 [0, 0],      # pitch: fixed
                 [-pi, pi]    # yaw: full rotation
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side"
         )
         
@@ -183,9 +183,9 @@ class TestTemplateSampling(unittest.TestCase):
                 [0, 0],      # pitch: fixed
                 [0, 0]       # yaw: fixed
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="top"
         )
         
