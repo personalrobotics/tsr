@@ -1,22 +1,52 @@
-# Place a cup on a circular coaster
-# Cup base must fit within coaster bounds
-
 name: Cup on Coaster
 description: Place cup centered on coaster
 task: place
 subject: cup
 reference: coaster
-reference_frame: bottom  # expects pose of cup's bottom surface
-
-position:
-  type: disk
-  axis: z
-  radius: [0, 0.02]     # must be nearly centered
-  height: 0             # on coaster surface
-  angle: [0, 360]
-
-orientation:
-  approach: -z          # cup upright
-  yaw: free
-
-standoff: 0
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.01
+- - 0.0
+  - -1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - -1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - -0.01
+  - 0.01
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - -3.141592653589793
+  - 3.141592653589793
