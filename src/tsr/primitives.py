@@ -49,21 +49,17 @@ def parse_point(params: Dict[str, Any]) -> np.ndarray:
     """
     Parse a point primitive.
 
+    A point has zero degrees of freedom — no bounds variation.
+    The x/y/z offset is handled by parse_template() which places it
+    in T_ref_tsr rather than Bw.
+
     Args:
-        params: dict with x, y, z values
+        params: dict with x, y, z values (used by parse_template, not here)
 
     Returns:
-        6x2 Bw array with fixed position, zero rotation
+        6x2 Bw array of all zeros
     """
-    x = float(params.get('x', 0))
-    y = float(params.get('y', 0))
-    z = float(params.get('z', 0))
-
-    Bw = np.zeros((6, 2))
-    Bw[0, :] = [x, x]
-    Bw[1, :] = [y, y]
-    Bw[2, :] = [z, z]
-    return Bw
+    return np.zeros((6, 2))
 
 
 def parse_line(params: Dict[str, Any]) -> np.ndarray:
@@ -141,36 +137,29 @@ def parse_ring(params: Dict[str, Any]) -> np.ndarray:
     """
     Parse a ring primitive (circle/arc around axis).
 
+    The radius is NOT encoded in Bw. Instead, it is added as a radial offset
+    to Tw_e by parse_template() so it rotates with the angular DOF.
+
     Args:
         params: dict with axis, radius, angle (degrees), and optional height
 
     Returns:
-        6x2 Bw array
+        6x2 Bw array with radial component = 0
     """
     axis = params.get('axis', 'z')
-    radius = float(params.get('radius', 0))
     angle = ensure_range_deg(params.get('angle', [0, 360]))
     height = float(params.get('height', 0))
 
     Bw = np.zeros((6, 2))
 
     if axis == 'z':
-        # Ring around z-axis: x=radius, y=0, z=height, yaw varies
-        Bw[0, :] = [radius, radius]
-        Bw[1, :] = [0, 0]
         Bw[2, :] = [height, height]
         Bw[5, :] = angle  # yaw
     elif axis == 'x':
-        # Ring around x-axis: x=height, y=radius, z=0, roll varies
         Bw[0, :] = [height, height]
-        Bw[1, :] = [radius, radius]
-        Bw[2, :] = [0, 0]
         Bw[3, :] = angle  # roll
     elif axis == 'y':
-        # Ring around y-axis: x=radius, y=height, z=0, pitch varies
-        Bw[0, :] = [radius, radius]
         Bw[1, :] = [height, height]
-        Bw[2, :] = [0, 0]
         Bw[4, :] = angle  # pitch
 
     return Bw
@@ -180,33 +169,35 @@ def parse_disk(params: Dict[str, Any]) -> np.ndarray:
     """
     Parse a disk primitive (filled circle/annulus).
 
+    Like shell, the radius midpoint is added to Tw_e by parse_template().
+    The radial variation (half-thickness) is kept in Bw.
+
     Args:
         params: dict with axis, radius (range), angle (degrees), and optional height
 
     Returns:
-        6x2 Bw array
+        6x2 Bw array with radial half-thickness centered at 0
     """
     axis = params.get('axis', 'z')
     radius = ensure_range(params.get('radius', [0, 0]))
     angle = ensure_range_deg(params.get('angle', [0, 360]))
     height = float(params.get('height', 0))
 
+    half_thickness = (radius[1] - radius[0]) / 2
+
     Bw = np.zeros((6, 2))
 
     if axis == 'z':
-        Bw[0, :] = radius  # x = radius range
-        Bw[1, :] = [0, 0]
+        Bw[0, :] = [-half_thickness, half_thickness]
         Bw[2, :] = [height, height]
         Bw[5, :] = angle  # yaw
     elif axis == 'x':
         Bw[0, :] = [height, height]
-        Bw[1, :] = radius
-        Bw[2, :] = [0, 0]
+        Bw[1, :] = [-half_thickness, half_thickness]
         Bw[3, :] = angle  # roll
     elif axis == 'y':
-        Bw[0, :] = radius
+        Bw[0, :] = [-half_thickness, half_thickness]
         Bw[1, :] = [height, height]
-        Bw[2, :] = [0, 0]
         Bw[4, :] = angle  # pitch
 
     return Bw
@@ -304,20 +295,19 @@ def parse_sphere(params: Dict[str, Any]) -> np.ndarray:
     """
     Parse a sphere primitive.
 
+    The radius is NOT encoded in Bw. Instead, it is added as a radial offset
+    to Tw_e by parse_template() so it rotates with pitch/yaw.
+
     Args:
         params: dict with radius, pitch (range), yaw (range) in degrees
 
     Returns:
-        6x2 Bw array
+        6x2 Bw array with x = 0
     """
-    radius = float(params.get('radius', 0))
     pitch = ensure_range_deg(params.get('pitch', [-90, 90]))
     yaw = ensure_range_deg(params.get('yaw', [0, 360]))
 
     Bw = np.zeros((6, 2))
-    Bw[0, :] = [radius, radius]
-    Bw[1, :] = [0, 0]
-    Bw[2, :] = [0, 0]
     Bw[4, :] = pitch
     Bw[5, :] = yaw
 
@@ -639,8 +629,33 @@ def parse_template(spec: Dict[str, Any]) -> ParsedTemplate:
 
     Tw_e = build_Tw_e(R, standoff, approach)
 
+    # For ring, disk, and sphere: add radius as a radial offset to Tw_e.
+    # Unlike cylinder/shell (where radial approach aligns standoff with
+    # the radial direction), these primitives may use non-radial approaches,
+    # so the radius is added directly in the radial direction of the TSR frame.
+    _RADIAL_INDEX = {'z': 0, 'x': 1, 'y': 0}
+
+    if ptype in ('ring', 'sphere'):
+        radius = float(position.get('radius', 0))
+        axis = position.get('axis', 'z')
+        Tw_e[_RADIAL_INDEX[axis], 3] += radius
+
+    if ptype == 'disk':
+        radius_range = ensure_range(position.get('radius', [0, 0]))
+        radius_mid = (radius_range[0] + radius_range[1]) / 2
+        axis = position.get('axis', 'z')
+        Tw_e[_RADIAL_INDEX[axis], 3] += radius_mid
+
     # T_ref_tsr is identity by default (TSR frame = reference frame)
     T_ref_tsr = np.eye(4)
+
+    # For point primitive, the offset goes into T_ref_tsr (not Bw).
+    # A point has zero DOF — Bw is all zeros, and the fixed offset
+    # shifts the TSR frame relative to the reference.
+    if ptype == 'point':
+        T_ref_tsr[0, 3] = float(position.get('x', 0))
+        T_ref_tsr[1, 3] = float(position.get('y', 0))
+        T_ref_tsr[2, 3] = float(position.get('z', 0))
 
     # Gripper info
     gripper = spec.get('gripper', None)
