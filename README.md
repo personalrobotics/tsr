@@ -156,8 +156,7 @@ Requires the `viz` extra: `uv sync --extra viz`.
 ## Documentation
 
 - **[Tutorial](docs/tutorial.md)** — TSR theory, math, and worked examples
-- **[API Reference](docs/API.md)** — Complete API documentation
-- **[Examples](examples/)** — Runnable scripts
+- **[Examples](examples/)** — Runnable scripts (`uv run python examples/<script>.py`)
 
 ## Testing
 
