@@ -12,7 +12,7 @@ import dataclasses
 from numpy import pi
 from tsr.template import TSRTemplate
 from tsr.tsr import TSR
-from tsr.schema import EntityClass, TaskCategory, TaskType
+
 
 
 class TestTSRTemplate(unittest.TestCase):

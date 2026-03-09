@@ -45,9 +45,6 @@ from .tsr import TSR
 from .tsr_chain import TSRChain
 from .utils import EPSILON, wrap_to_interval, geodesic_distance, geodesic_error
 
-# Schema
-from .schema import TaskCategory, TaskType, EntityClass
-
 # Templates
 from .template import TSRTemplate
 
@@ -73,15 +70,3 @@ from .io import (
     load_package_templates_by_category,
 )
 
-# Template generators
-from .generators import (
-    generate_cylinder_grasp_template,
-    generate_box_grasp_template,
-    generate_place_template,
-    generate_transport_template,
-    generate_mug_grasp_template,
-    generate_box_place_template,
-)
-
-# Relational library
-from .library import TSRLibraryRelational
