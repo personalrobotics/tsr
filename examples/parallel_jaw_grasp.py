@@ -1,105 +1,123 @@
-"""Parallel jaw gripper TSR autogeneration example.
+"""Parallel jaw gripper TSR example.
 
-This module shows how to write a gripper class that autogenerates TSR templates
-from object geometry. The pattern:
-  - ParallelJawGripper knows its own geometry (finger_length, max_aperture)
-  - It generates TSRTemplates from object shape parameters
+Shows how to write a hand class that generates TSRTemplates from object
+geometry, and how to visualize sampled poses with TSRVisualizer.
+
+This is the canonical pattern for adding a new hand to the TSR library:
+  1. Implement grasp_* methods that return TSRTemplates
+  2. Pass a renderer factory to TSRVisualizer for visualization
 
 Gripper frame convention (canonical for this library):
     z = approach direction (toward object surface)
     y = finger opening direction
     x = palm normal  (right-hand rule: x = y × z)
 
-AnyGrasp / GraspNet convention:
-    x = approach direction
-    y = finger opening direction
-    z = palm normal
+AnyGrasp / GraspNet uses x=approach → convert with R_y(90°):
+    R_convert = [[0, 0, -1], [0, 1, 0], [1, 0, 0]]
 
-To convert AnyGrasp output to this library's convention, apply R_y(90°):
-    R_convert = [[0, 0, -1],
-                 [0, 1,  0],
-                 [1, 0,  0]]
+Saves: assets/tsr_viz.png
 
 Usage:
     uv run python examples/parallel_jaw_grasp.py
 """
-
 import numpy as np
-from typing import Tuple, Optional
+from typing import List, Optional, Tuple
+
 from tsr.template import TSRTemplate
+from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
+
+# ── Scene parameters ──────────────────────────────────────────────────────────
+MUG_R = 0.040   # mug radius [m]
+MUG_H = 0.120   # mug height [m]
+N     = 15      # gripper samples to visualize
 
 
+# ── Gripper ───────────────────────────────────────────────────────────────────
 class ParallelJawGripper:
-    """Generates TSR templates for a parallel jaw gripper.
+    """Parallel jaw gripper: generates TSRTemplates from object geometry.
+
+    The poses sampled from these TSRs are pre-grasp configurations — the hand
+    is open at the specified preshape, positioned so that closing the fingers
+    achieves force closure on the object. The TSR itself does not enforce
+    force closure; it constrains where the hand must be before closing.
 
     Frame convention:
         z = approach direction (toward object surface)
         y = finger opening direction
         x = palm normal (right-hand rule: x = y × z)
 
-    For a cylinder side grasp, at yaw=0 in the object's TSR frame:
-        - EE x-axis aligns with the cylinder axis (z of TSR frame)
-        - EE y-axis is tangential (y of TSR frame)
-        - EE z-axis points radially inward toward the cylinder center (-x of TSR frame)
-        - EE origin is at (radius + finger_length) radially outward from cylinder center
+    AnyGrasp / GraspNet uses x=approach → convert with R_y(90°):
+        R = [[0, 0, -1], [0, 1, 0], [1, 0, 0]]
 
-    This gives the Tw_e:
-        [[0, 0, -1, radius + finger_length],
-         [0, 1,  0, 0                    ],
-         [1, 0,  0, 0                    ],
-         [0, 0,  0, 1                    ]]
+    To add a new hand:
+        1. Copy this class
+        2. Set finger_length and max_aperture for your hand
+        3. Register a renderer in tsr.viz (or write a custom one)
 
     Args:
-        finger_length: Distance from palm to fingertip in meters.
-        max_aperture: Maximum jaw opening in meters.
+        finger_length: Distance from palm to fingertip [m].
+        max_aperture:  Maximum jaw opening [m].
     """
 
     def __init__(self, finger_length: float, max_aperture: float):
         self.finger_length = finger_length
-        self.max_aperture = max_aperture
+        self.max_aperture  = max_aperture
 
     def grasp_cylinder(
         self,
         object_radius: float,
         height_range: Tuple[float, float],
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
         angle_range: Tuple[float, float] = (0., 2 * np.pi),
         subject: str = "gripper",
-        reference: str = "object",
+        reference: str = "cylinder",
         name: str = "",
         description: str = "",
-    ) -> TSRTemplate:
-        """Generate a side grasp template for a cylinder.
+    ) -> List[TSRTemplate]:
+        """Side grasp templates for a cylinder — 2*k templates total.
 
-        The TSR frame coincides with the cylinder frame (z = cylinder axis).
-        The gripper approaches radially from outside the cylinder, can land at
-        any height in height_range, and can rotate freely in angle_range around
-        the cylinder axis.
+        Returns k depth levels × 2 roll orientations. Each template has a fixed
+        radial offset baked into Tw_e, covering the full pre-grasp volume:
+
+          depth 1/k : fingertips clearance inside surface (shallowest)
+          depth k/k : palm clearance from surface (deepest)
+
+        Two roll orientations per depth (180° apart around z_EE):
+          roll=0 : palm normal = +cylinder_axis, fingers open in +tangential
+          roll=π : palm normal = -cylinder_axis, fingers open in -tangential
+        A symmetric hand produces identical poses; a non-symmetric hand needs both.
+
+        The radial approach direction couples with yaw and cannot be encoded in
+        Bw directly. Instead, k discrete depths are baked into Tw_e so the full
+        pre-grasp volume is covered without post-processing.
 
         Args:
-            object_radius: Cylinder radius in meters.
-            height_range: (z_min, z_max) grasp height range relative to cylinder
-                base in meters.
-            angle_range: (angle_min, angle_max) in radians around cylinder axis.
-            subject: Subject entity string (e.g. "gripper", "robotiq_2f140").
-            reference: Reference entity string (e.g. "mug", "can").
-            name: Template name (auto-generated if empty).
-            description: Template description (auto-generated if empty).
+            preshape:   Pre-grasp jaw opening [m]. Default: 2*r + clearance
+                        (minimum viable opening). Must exceed cylinder diameter.
+            k:          Number of discrete approach depths (default 3).
+            clearance:  Safety buffer [m] applied to: height ends, fingertip
+                        start depth, and palm stop depth. Default: 10% of finger_length.
 
-        Returns:
-            TSRTemplate for cylinder side grasp.
-
-        Raises:
-            ValueError: If object diameter >= max_aperture or parameters invalid.
+        Returns [] if preshape <= cylinder diameter (fingers can't span it).
+        Raises ValueError for invalid geometry parameters.
         """
+        if clearance is None:
+            clearance = 0.1 * self.finger_length
+        if preshape is None:
+            preshape = 2. * object_radius + clearance
         if object_radius <= 0:
             raise ValueError("object_radius must be > 0")
-        if 2. * object_radius >= self.max_aperture:
+        if preshape > self.max_aperture:
             raise ValueError(
-                f"object diameter {2*object_radius:.3f}m >= max_aperture {self.max_aperture:.3f}m"
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
             )
-        h0, h1 = height_range
+        if preshape <= 2. * object_radius:
+            return []   # preshape too small to span cylinder
+        h0, h1 = height_range[0] + clearance, height_range[1] - clearance
         if h1 <= h0:
-            raise ValueError("height_range[1] must be > height_range[0]")
+            raise ValueError("height_range too narrow for the given clearance")
 
         if not name:
             name = f"{reference.title()} Cylinder Side Grasp"
@@ -109,243 +127,124 @@ class ParallelJawGripper:
                 f"h=[{h0*100:.0f},{h1*100:.0f}]cm)"
             )
 
-        # T_ref_tsr shifts TSR frame to height midpoint so Bw[2] is symmetric.
-        z_mid = (h0 + h1) / 2.
-        z_half = (h1 - h0) / 2.
+        z_mid, z_half = (h0 + h1) / 2., (h1 - h0) / 2.
         T_ref_tsr = np.eye(4)
         T_ref_tsr[2, 3] = z_mid
 
-        # Tw_e: EE is at (radius + finger_length) radially outward from cylinder
-        # center at yaw=0. EE z-axis points inward (toward cylinder = approach).
-        #
-        # Columns of rotation part (EE frame axes in TSR frame):
-        #   col 0 (x̂_EE) = [0,0,1] = ẑ_TSR  (cylinder axis = palm normal)
-        #   col 1 (ŷ_EE) = [0,1,0] = ŷ_TSR  (tangential = finger opening)
-        #   col 2 (ẑ_EE) = [-1,0,0] = -x̂_TSR (radially inward = approach)
-        radial_offset = object_radius + self.finger_length
-        Tw_e = np.array([
-            [0., 0., -1., radial_offset],
-            [0., 1.,  0., 0.           ],
-            [1., 0.,  0., 0.           ],
-            [0., 0.,  0., 1.           ],
-        ])
-
+        # Bw is identical for all templates (height + yaw freedom only).
+        # Radial depth is NOT in Bw — it's baked into Tw_e per depth level.
         Bw = np.array([
-            [0.,            0.          ],   # x: no radial freedom
-            [0.,            0.          ],   # y: no tangential freedom
-            [-z_half,       z_half      ],   # z: height range (symmetric)
-            [0.,            0.          ],   # roll: fixed
-            [0.,            0.          ],   # pitch: fixed
-            [angle_range[0], angle_range[1]], # yaw: angular freedom
+            [0.,             0.            ],  # x: no radial freedom
+            [0.,             0.            ],  # y: no tangential freedom
+            [-z_half,        z_half        ],  # z: height range (symmetric)
+            [0.,             0.            ],  # roll: fixed (encoded in Tw_e)
+            [0.,             0.            ],  # pitch
+            [angle_range[0], angle_range[1]],  # yaw: angular freedom
         ])
 
-        return TSRTemplate(
-            T_ref_tsr=T_ref_tsr,
-            Tw_e=Tw_e,
-            Bw=Bw,
-            task="grasp",
-            subject=subject,
-            reference=reference,
-            name=name,
-            description=description,
-            preshape=np.array([2. * object_radius]),
+        # k depths: fingertips clearance-inside-surface → palm clearance-from-surface.
+        # Both ends maintain a clearance buffer from the cylinder surface.
+        approach_max = min(self.finger_length, object_radius) - clearance
+        depths = np.linspace(clearance, approach_max, max(k, 1))
+
+        # Human-readable depth labels: shallow/mid/deep for k≤3, else "depth i/k".
+        _depth_labels = {1: ["mid"], 2: ["shallow", "deep"],
+                         3: ["shallow", "mid", "deep"]}
+
+        # Tw_e encodes both roll orientation and radial depth.
+        # z_EE = [-1,0,0] in TSR frame (radially inward) for all variants.
+        # roll=0:  x_EE=[0,0,1],  y_EE=[0, 1,0]
+        # roll=π:  x_EE=[0,0,-1], y_EE=[0,-1,0]  (180° around z_EE)
+        common = dict(
+            T_ref_tsr=T_ref_tsr, Bw=Bw,
+            task="grasp", subject=subject, reference=reference,
+            preshape=np.array([preshape]),
         )
-
-    def grasp_box_face(
-        self,
-        face_width: float,
-        face_height: float,
-        face_depth: float,
-        subject: str = "gripper",
-        reference: str = "object",
-        name: str = "",
-        description: str = "",
-    ) -> TSRTemplate:
-        """Generate a grasp template for the front face of a box.
-
-        The TSR frame is at the face center (z = outward normal of face).
-        The gripper approaches along the face normal.
-
-        Args:
-            face_width: Width of the face (finger opening direction) in meters.
-            face_height: Height of the face in meters.
-            face_depth: Unused (included for clarity of caller intent).
-            subject: Subject entity string.
-            reference: Reference entity string.
-            name: Template name.
-            description: Template description.
-
-        Returns:
-            TSRTemplate for box face grasp.
-        """
-        if face_width <= 0 or face_height <= 0:
-            raise ValueError("face dimensions must be > 0")
-        if face_width >= self.max_aperture:
-            raise ValueError(
-                f"face_width {face_width:.3f}m >= max_aperture {self.max_aperture:.3f}m"
-            )
-
-        if not name:
-            name = f"{reference.title()} Box Face Grasp"
-        if not description:
-            description = f"Front face grasp on {reference}"
-
-        # TSR frame: at face center, z = outward face normal.
-        # EE approaches along -z (face normal inward = approach).
-        # EE z-axis = -z_TSR (inward), y-axis = y_TSR (height), x-axis = x_TSR (width)
-        #
-        # Columns of rotation:
-        #   col 0 (x̂_EE) = [1, 0, 0] = x̂_TSR  (width direction = palm normal)
-        #   col 1 (ŷ_EE) = [0, 1, 0] = ŷ_TSR  (height direction = finger opening)
-        #   col 2 (ẑ_EE) = [0, 0, -1] = -ẑ_TSR (inward = approach)
-        T_ref_tsr = np.eye(4)
-        Tw_e = np.array([
-            [1., 0.,  0., 0.                  ],
-            [0., 1.,  0., 0.                  ],
-            [0., 0., -1., self.finger_length   ],
-            [0., 0.,  0., 1.                  ],
-        ])
-
-        Bw = np.array([
-            [-face_width/2.,   face_width/2. ],   # x: slide along width
-            [-face_height/2.,  face_height/2.],   # y: slide along height
-            [0.,               0.            ],   # z: fixed (at face)
-            [0.,               0.            ],   # roll: fixed
-            [0.,               0.            ],   # pitch: fixed
-            [0.,               0.            ],   # yaw: fixed
-        ])
-
-        return TSRTemplate(
-            T_ref_tsr=T_ref_tsr,
-            Tw_e=Tw_e,
-            Bw=Bw,
-            task="grasp",
-            subject=subject,
-            reference=reference,
-            name=name,
-            description=description,
-            preshape=np.array([face_width]),
-        )
-
-    def grasp_plane(
-        self,
-        x_range: Tuple[float, float],
-        y_range: Tuple[float, float],
-        subject: str = "gripper",
-        reference: str = "surface",
-        name: str = "",
-        description: str = "",
-    ) -> TSRTemplate:
-        """Generate a top-down grasp template for a planar surface.
-
-        The gripper approaches from above (along -z of surface frame) and can
-        land anywhere within the x/y range on the surface, at any yaw angle.
-
-        Args:
-            x_range: (x_min, x_max) reachable x range on surface in meters.
-            y_range: (y_min, y_max) reachable y range on surface in meters.
-            subject: Subject entity string.
-            reference: Reference entity string.
-            name: Template name.
-            description: Template description.
-
-        Returns:
-            TSRTemplate for planar top-down grasp.
-        """
-        if not name:
-            name = f"{reference.title()} Top Grasp"
-        if not description:
-            description = f"Top-down grasp on {reference} surface"
-
-        T_ref_tsr = np.eye(4)
-
-        # EE z-axis = -z_TSR (downward = approach toward surface).
-        # EE y-axis = y_TSR (finger opening direction in surface plane).
-        # EE x-axis = -x_TSR (palm normal).
-        #
-        # Columns: col0=[-1,0,0], col1=[0,1,0], col2=[0,0,-1]
-        Tw_e = np.array([
-            [-1.,  0.,  0., 0.                ],
-            [ 0.,  1.,  0., 0.                ],
-            [ 0.,  0., -1., self.finger_length ],
-            [ 0.,  0.,  0., 1.                ],
-        ])
-
-        Bw = np.array([
-            [x_range[0], x_range[1]],  # x: range on surface
-            [y_range[0], y_range[1]],  # y: range on surface
-            [0.,         0.         ],  # z: fixed
-            [0.,         0.         ],  # roll: fixed
-            [0.,         0.         ],  # pitch: fixed
-            [-np.pi,     np.pi      ],  # yaw: any approach angle
-        ])
-
-        return TSRTemplate(
-            T_ref_tsr=T_ref_tsr,
-            Tw_e=Tw_e,
-            Bw=Bw,
-            task="grasp",
-            subject=subject,
-            reference=reference,
-            name=name,
-            description=description,
-        )
+        templates = []
+        for i, d in enumerate(depths):
+            ro = object_radius + self.finger_length - d  # radial offset for this depth
+            depth_label = (_depth_labels.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+            Tw_e_0 = np.array([
+                [ 0.,  0., -1., ro],
+                [ 0.,  1.,  0., 0.],
+                [ 1.,  0.,  0., 0.],
+                [ 0.,  0.,  0., 1.],
+            ])
+            Tw_e_pi = np.array([
+                [ 0.,  0., -1., ro],
+                [ 0., -1.,  0., 0.],
+                [-1.,  0.,  0., 0.],
+                [ 0.,  0.,  0., 1.],
+            ])
+            for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
+                t_desc = (description or (
+                    f"{depth_label.capitalize()} side grasp on {reference}: "
+                    f"standoff {ro*1000:.0f}mm from axis, {roll_label}, "
+                    f"preshape {preshape*1000:.0f}mm"
+                ))
+                templates.append(TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name} — {depth_label}, {roll_label}",
+                    description=t_desc,
+                    **common,
+                ))
+        return templates
 
 
-def main():
-    """Demonstrate ParallelJawGripper for a Robotiq 2F-140."""
-    # Robotiq 2F-140: 140mm max aperture, ~100mm finger length
-    gripper = ParallelJawGripper(finger_length=0.10, max_aperture=0.14)
 
-    print("ParallelJawGripper (Robotiq 2F-140 approximation)")
-    print(f"  finger_length = {gripper.finger_length*1000:.0f}mm")
-    print(f"  max_aperture  = {gripper.max_aperture*1000:.0f}mm")
-    print()
+# ── Main ──────────────────────────────────────────────────────────────────────
+def main() -> None:
+    from pathlib import Path
 
-    # --- Can grasp ---
-    can_radius = 0.033   # 330ml beverage can
-    can_height = 0.115
-    can_grasp = gripper.grasp_cylinder(
-        object_radius=can_radius,
-        height_range=(0.03, can_height - 0.03),
-        subject="robotiq_2f140",
-        reference="can",
+    out = Path(__file__).parent.parent / "assets" / "tsr_viz.png"
+
+    # ── 1. Define your gripper ────────────────────────────────────────────────
+    # Robotiq 2F-140: 140mm max aperture, 55mm finger length.
+    # For a different hand: change these two numbers and register a renderer.
+    gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
+
+    # ── 2. Generate TSR templates from object geometry ────────────────────────
+    # preshape and clearance are auto-computed from geometry (10% of finger_length).
+    templates = gripper.grasp_cylinder(
+        object_radius=MUG_R,
+        height_range=(0.025, MUG_H - 0.025),
+        reference="mug",
     )
-    print(f"Can side grasp: {can_grasp.name}")
-    print(f"  task={can_grasp.task}  subject={can_grasp.subject}  reference={can_grasp.reference}")
-    print(f"  Tw_e:\n{np.array2string(can_grasp.Tw_e, precision=4, suppress_small=True)}")
-    print(f"  Bw:\n{np.array2string(can_grasp.Bw, precision=4, suppress_small=True)}")
-    print(f"  preshape (aperture): {can_grasp.preshape[0]*1000:.0f}mm")
-    print()
+    for t in templates:
+        print(f"Template: {t.name}")
+        print(f"  Tw_e:\n{np.array2string(t.Tw_e, precision=4, suppress_small=True)}")
+    print(f"  Bw:\n{np.array2string(templates[0].Bw, precision=4, suppress_small=True)}")
 
-    # --- Box grasp ---
-    box_grasp = gripper.grasp_box_face(
-        face_width=0.08,
-        face_height=0.12,
-        face_depth=0.20,
-        subject="robotiq_2f140",
-        reference="cereal_box",
+    # ── 3. Instantiate at object pose and sample from all templates ──────────
+    mug_pose = np.eye(4)
+
+    # One color per TSR template.
+    tsr_colors = plasma_colors(len(templates), lo=0.05, hi=0.95)
+    n_per = max(N // len(templates), 1)
+
+    poses, colors = [], []
+    for i, template in enumerate(templates):
+        tsr = template.instantiate(mug_pose)
+        batch = [tsr.sample() for _ in range(n_per)]
+        poses.extend(batch)
+        colors.extend([tsr_colors[i]] * n_per)
+
+    # ── 4. Visualize ──────────────────────────────────────────────────────────
+    TSRVisualizer(
+        title=f"Task Space Region — Cylinder Side Grasp\n"
+              f"{len(templates)} templates · {len(poses)} sampled gripper poses",
+        focus=(0., 0., MUG_H / 2.),
+    ).render(
+        reference_renderer=cylinder_renderer(radius=MUG_R, height=MUG_H),
+        subject_renderer=parallel_jaw_renderer(
+            finger_length=gripper.finger_length,
+            half_aperture=gripper.max_aperture / 2,
+        ),
+        poses=poses,
+        colors=colors,
+        out=str(out),
     )
-    print(f"Box front grasp: {box_grasp.name}")
-    print(f"  task={box_grasp.task}  preshape: {box_grasp.preshape[0]*1000:.0f}mm")
-    print()
-
-    # --- Instantiate at a concrete object pose and sample ---
-    object_pose = np.array([
-        [1., 0., 0., 0.5],
-        [0., 1., 0., 0.2],
-        [0., 0., 1., 0.8],
-        [0., 0., 0., 1. ],
-    ])
-    tsr = can_grasp.instantiate(object_pose)
-    sample = tsr.sample()
-    print(f"Sampled grasp pose (can at [0.5, 0.2, 0.8]):")
-    print(f"{np.array2string(sample, precision=4, suppress_small=True)}")
-
-    R = sample[:3, :3]
-    assert np.allclose(R @ R.T, np.eye(3), atol=1e-6), "Not orthogonal"
-    assert np.allclose(np.linalg.det(R), 1., atol=1e-6), "Not special orthogonal"
-    print("\nValid SE(3) transform confirmed.")
+    print(f"\nSaved → {out}")
 
 
 if __name__ == "__main__":
