@@ -1,0 +1,24 @@
+"""tsr.hands — Gripper hand models with TSR template generation.
+
+Usage::
+
+    from tsr.hands import ParallelJawGripper, Robotiq2F140
+
+    gripper   = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
+    templates = gripper.grasp_cylinder(object_radius=0.04,
+                                       height_range=(0.02, 0.10),
+                                       reference="mug")
+    tsr  = templates[0].instantiate(mug_pose)
+    pose = tsr.sample()
+"""
+from .base import GripperBase
+from .parallel_jaw import ParallelJawGripper, Robotiq2F140
+from .registry import HandRegistry, default_registry
+
+__all__ = [
+    "GripperBase",
+    "ParallelJawGripper",
+    "Robotiq2F140",
+    "HandRegistry",
+    "default_registry",
+]
