@@ -18,7 +18,7 @@ from tsr.sampling import (
 )
 from tsr.tsr import TSR
 from tsr.template import TSRTemplate
-from tsr.schema import EntityClass, TaskCategory
+
 
 
 class TestSamplingUtilities(unittest.TestCase):
