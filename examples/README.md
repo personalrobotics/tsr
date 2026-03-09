@@ -1,68 +1,88 @@
 # TSR Examples
 
-Simple examples demonstrating the TSR library.
-
-## Running Examples
+Runnable scripts demonstrating the TSR library.
 
 ```bash
-# Run any example
-uv run python examples/01_basic_tsr.py
+uv run python examples/<script>.py
 ```
 
 ## Examples
 
 | Example | Description |
 |---------|-------------|
+| `parallel_jaw_grasp.py` | Generate and visualize cylinder side-grasp templates with a parallel jaw gripper |
 | `01_basic_tsr.py` | Core TSR API: create, sample, contains, distance |
-| `02_templates.py` | Loading human-readable YAML templates |
+| `02_templates.py` | Save and load serialized TSRTemplate YAML files |
 | `03_tsr_chains.py` | Chaining TSRs for articulated constraints |
-| `04_placements.py` | Using reference_frame for placement constraints |
+| `04_placements.py` | Placement constraints with reference frame offsets |
 
-## Quick Overview
+## Grasp template generation (`parallel_jaw_grasp.py`)
 
-### 1. Basic TSR (`01_basic_tsr.py`)
+The canonical pattern for generating grasp TSRs from object geometry:
 
-Create TSRs directly with matrices:
+```python
+from examples.parallel_jaw_grasp import ParallelJawGripper
+
+gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
+
+# Returns 2*k TSRTemplates: k depth levels × 2 roll orientations
+templates = gripper.grasp_cylinder(
+    object_radius=0.040,
+    height_range=(0.02, 0.10),
+    reference="mug",
+)
+# "Mug Cylinder Side Grasp — shallow, roll 0°"
+# "Mug Cylinder Side Grasp — shallow, roll 180°"
+# "Mug Cylinder Side Grasp — mid, roll 0°"
+# ...
+
+# Bind to a scene object and sample
+tsr = templates[0].instantiate(mug_pose)
+grasp_pose = tsr.sample()
+```
+
+Key design decisions:
+- `preshape` defaults to `2 * object_radius + clearance` (minimum viable jaw opening)
+- `clearance` (default 10% of `finger_length`) applies to height ends and radial depth limits
+- Radial approach cannot be encoded in `Bw` (couples with yaw), so k discrete depths are baked into `Tw_e`
+
+## Basic TSR (`01_basic_tsr.py`)
 
 ```python
 from tsr import TSR
+import numpy as np
 
-tsr = TSR(T0_w=object_pose, Tw_e=gripper_offset, Bw=bounds)
-pose = tsr.sample()
+Bw = np.zeros((6, 2))
+Bw[2, :] = [0.0, 0.10]       # z: 0–10 cm
+Bw[5, :] = [-np.pi, np.pi]   # yaw: full rotation
+
+tsr = TSR(T0_w=object_pose, Tw_e=gripper_offset, Bw=Bw)
+pose     = tsr.sample()
 is_valid = tsr.contains(pose)
+distance, _ = tsr.distance(pose)
 ```
 
-### 2. Templates (`02_templates.py`)
-
-Load human-readable templates instead of writing matrices:
+## Templates (`02_templates.py`)
 
 ```python
-from tsr.core.tsr_primitive import load_template_file
+from tsr import TSRTemplate, save_template, load_template
 
-template = load_template_file("templates/grasps/mug_side_grasp.yaml")
-tsr = TSR(T0_w=mug_pose, Tw_e=template.Tw_e, Bw=template.Bw)
+template = TSRTemplate(
+    T_ref_tsr=np.eye(4), Tw_e=Tw_e, Bw=Bw,
+    task="grasp", subject="gripper", reference="mug",
+    name="Mug Side Grasp",
+)
+save_template(template, "my_grasp.yaml")
+template = load_template("my_grasp.yaml")
+
+tsr = template.instantiate(mug_pose)
 ```
 
-### 3. TSR Chains (`03_tsr_chains.py`)
-
-Chain TSRs for articulated objects like doors:
+## TSR Chains (`03_tsr_chains.py`)
 
 ```python
 from tsr import TSRChain
 
 chain = TSRChain(TSRs=[hinge_tsr, handle_tsr])
-pose = chain.sample()
-```
-
-### 4. Placements (`04_placements.py`)
-
-Handle reference frames for placements:
-
-```python
-template = load_template_file("templates/places/mug_on_table.yaml")
-print(template.reference_frame)  # "bottom"
-
-# Transform from COM to bottom frame
-mug_bottom = mug_com @ T_com_to_bottom
-tsr = TSR(T0_w=mug_bottom, Tw_e=template.Tw_e, Bw=template.Bw)
+pose  = chain.sample()
 ```
