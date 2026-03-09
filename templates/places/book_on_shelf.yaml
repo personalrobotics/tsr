@@ -1,21 +1,52 @@
-# Place a book upright on a shelf
-# Book spine faces outward
-
 name: Book on Shelf
 description: Place book upright with spine facing out
 task: place
 subject: book
 reference: shelf
-reference_frame: bottom  # expects pose of book's bottom edge
-
-position:
-  type: box
-  x: [-0.1, 0.1]        # slide along shelf
-  y: [-0.01, 0.01]      # flush against back
-  z: 0                  # on shelf surface
-
-orientation:
-  approach: +y          # spine faces out (+y)
-  yaw: 0                # no rotation
-
-standoff: 0
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - -1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - -0.1
+  - 0.1
+- - -0.01
+  - 0.01
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0

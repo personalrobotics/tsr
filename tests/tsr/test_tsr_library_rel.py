@@ -28,9 +28,9 @@ class TestTSRLibraryRelational(unittest.TestCase):
                 [0, 0], [0, 0], [-0.01, 0.01],
                 [0, 0], [0, 0], [-np.pi, np.pi]
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side",
             name="Side Grasp",
             description="Grasp mug from the side"
@@ -48,9 +48,9 @@ class TestTSRLibraryRelational(unittest.TestCase):
                 [0, 0], [0, 0], [-0.01, 0.01],
                 [0, 0], [0, 0], [-np.pi, np.pi]
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="top",
             name="Top Grasp",
             description="Grasp mug from the top"
@@ -160,9 +160,9 @@ class TestTSRLibraryRelationalGeneratorMode(unittest.TestCase):
                 [0, 0], [0, 0], [-0.01, 0.01],
                 [0, 0], [0, 0], [-np.pi, np.pi]
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side"
         )
 
@@ -281,9 +281,9 @@ class TestTSRLibraryRelationalMixedMode(unittest.TestCase):
                 [0, 0], [0, 0], [-0.01, 0.01],
                 [0, 0], [0, 0], [-np.pi, np.pi]
             ]),
-            subject_entity=EntityClass.GENERIC_GRIPPER,
-            reference_entity=EntityClass.MUG,
-            task_category=TaskCategory.GRASP,
+            subject="generic_gripper",
+            reference="mug",
+            task="grasp",
             variant="side"
         )
 

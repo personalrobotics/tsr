@@ -1,180 +1,169 @@
 # Task Space Regions (TSR)
 
-A Python library for defining pose constraints in robotics manipulation using human-friendly geometric primitives.
+A Python library for pose-constrained manipulation planning using Task Space Regions.
 
 Based on the IJRR paper ["Task Space Regions: A Framework for Pose-Constrained Manipulation Planning"](https://www.ri.cmu.edu/pub_files/2011/10/dmitry_ijrr10-1.pdf) by Berenson, Srinivasa, and Kuffner.
 
+![TSR Cylinder Side Grasp](assets/tsr_viz.png)
+
 ## Installation
 
-**Add to your project:**
 ```bash
 uv add git+https://github.com/personalrobotics/tsr.git
 ```
 
-**Or in `pyproject.toml`:**
-```toml
-dependencies = [
-    "tsr @ git+https://github.com/personalrobotics/tsr.git",
-]
+For visualization support:
+```bash
+uv add "tsr[viz] @ git+https://github.com/personalrobotics/tsr.git"
 ```
 
-**For development:**
+For development:
 ```bash
 git clone https://github.com/personalrobotics/tsr.git
 cd tsr
 uv sync --extra test
 ```
 
-## Documentation
-
-- **[Tutorial](docs/tutorial.md)** - Comprehensive guide to TSR theory, math, and usage with figures
-- **[API Reference](docs/API.md)** - Complete API documentation
-- **[Templates Guide](templates/README.md)** - All included templates with examples
-
 ## Quick Start
 
+### Generate grasp templates from object geometry
+
 ```python
-from tsr.core.tsr_primitive import load_template_file
-from tsr.core.tsr import TSR
+from tsr.template import TSRTemplate
 import numpy as np
 
-# Load a template
-template = load_template_file("templates/grasps/mug_side_grasp.yaml")
+# Define your gripper (finger_length and max_aperture are all you need)
+from examples.parallel_jaw_grasp import ParallelJawGripper
 
-# Create TSR at object pose
+gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
+
+# Generate side-grasp templates for a cylinder
+# Returns 6 TSRTemplates: 3 depth levels × 2 roll orientations
+templates = gripper.grasp_cylinder(
+    object_radius=0.040,        # 4cm radius
+    height_range=(0.02, 0.10),  # graspable height band
+    reference="mug",            # label for the reference object
+)
+
+for t in templates:
+    print(t.name)
+    # "Mug Cylinder Side Grasp — shallow, roll 0°"
+    # "Mug Cylinder Side Grasp — shallow, roll 180°"
+    # ...
+
+# Instantiate at a specific object pose and sample
 mug_pose = np.eye(4)
-mug_pose[0, 3] = 0.5  # mug at x=0.5
+mug_pose[:3, 3] = [0.5, 0.0, 0.0]  # mug at x=0.5
 
-tsr = TSR(T0_w=mug_pose, Tw_e=template.Tw_e, Bw=template.Bw)
-
-# Sample valid grasp poses
-grasp_pose = tsr.sample()
-
-# Check if a pose is valid
-distance, _ = tsr.distance(grasp_pose)
-is_valid = tsr.contains(grasp_pose)
+grasp_poses = [t.instantiate(mug_pose).sample() for t in templates]
 ```
 
-## Template Format
-
-Templates use human-readable YAML with geometric primitives:
-
-```yaml
-name: Mug Side Grasp (Avoiding Handle)
-description: Grasp mug body from the side, keeping clear of handle
-task: grasp
-subject: gripper
-reference: mug
-
-position:
-  type: cylinder
-  axis: z
-  radius: 0.04
-  height: [0.03, 0.08]
-  angle: [45, 315]      # degrees - avoids handle at 0°
-
-orientation:
-  approach: radial      # gripper points toward cylinder axis
-
-standoff: 0.05          # 5cm approach distance
-
-gripper:
-  aperture: 0.09
-```
-
-**Units:** distances in **meters**, angles in **degrees**.
-
-## The 9 Geometric Primitives
-
-TSRs can represent 9 fundamental shapes through their 6-DOF bounds:
-
-| Primitive | Description | Use Case |
-|-----------|-------------|----------|
-| **point** | Fixed location | Precise grasp point |
-| **line** | Along one axis | Drawer handle, knife grip |
-| **plane** | Flat 2D region | Table placement |
-| **box** | 3D volume | Tolerance region |
-| **ring** | Circle around axis | Valve wheel, bowl rim |
-| **disk** | Filled circle | Coaster placement |
-| **cylinder** | Cylinder surface | Side grasps |
-| **shell** | Thick cylinder | Jar lid rim |
-| **sphere** | Spherical surface | Handover zone |
-
-The key insight: **rotation bounds sweep position**. Setting `x=radius` and `yaw=[0°, 360°]` sweeps the point around the z-axis, creating a ring.
-
-## Included Templates
-
-The library includes 21 ready-to-use templates:
-
-**Grasps (11):** mug (side, handle, avoid-handle), bottle, bowl rim, box top, pen, screwdriver, spray bottle, jar lid, knife handle
-
-**Placements (5):** table, rack, shelf, stack, coaster
-
-**Tasks (5):** pour, valve turn, drawer open, wipe surface, handover
-
-See [`templates/README.md`](templates/README.md) for complete documentation with examples for each primitive.
-
-## Orientation Options
-
-| Approach | Description |
-|----------|-------------|
-| `radial` | Point toward reference axis |
-| `axial` | Point along reference axis |
-| `+x`, `-x`, `+y`, `-y`, `+z`, `-z` | Fixed direction |
-
-Additional freedoms:
-```yaml
-orientation:
-  approach: -z
-  yaw: free           # or: [-45, 45]
-  roll: [-10, 10]     # degrees
-```
-
-## Core TSR API
-
-For advanced use, work directly with TSR components:
+### Work directly with TSRs
 
 ```python
-from tsr.core.tsr import TSR
+from tsr import TSR, TSRTemplate, TSRChain
 import numpy as np
 
-# TSR defined by three components:
-# - T0_w: Transform from world to TSR frame
-# - Tw_e: Transform from TSR frame to end-effector
-# - Bw: 6x2 bounds matrix [x, y, z, roll, pitch, yaw]
+# A TSR is defined by three components:
+#   T0_w : 4×4 transform — world frame to TSR frame
+#   Tw_e : 4×4 transform — TSR frame to end-effector at Bw=0
+#   Bw   : 6×2 bounds — [x, y, z, roll, pitch, yaw]
 
-T0_w = np.eye(4)  # TSR at origin
-Tw_e = np.eye(4)  # No offset
-Bw = np.zeros((6, 2))
-Bw[2, :] = [0, 0.1]           # z: 0 to 10cm
+T0_w = np.eye(4)
+Tw_e = np.eye(4)
+Bw   = np.zeros((6, 2))
+Bw[2, :] = [0.0,  0.10]       # z: 0–10 cm
 Bw[5, :] = [-np.pi, np.pi]    # yaw: full rotation
 
 tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
-pose = tsr.sample()              # Sample a pose
-xyzrpy = tsr.sample_xyzrpy()     # Sample raw coordinates
-distance, closest = tsr.distance(pose)  # Distance to TSR
-is_inside = tsr.contains(pose)   # Containment check
+pose     = tsr.sample()                      # random SE(3) pose in the region
+distance, _ = tsr.distance(pose)            # distance to nearest valid pose
+is_valid = tsr.contains(pose)               # containment check
+```
+
+### Save and load templates
+
+```python
+from tsr import TSRTemplate, save_template, load_template
+
+template = TSRTemplate(
+    T_ref_tsr=np.eye(4),
+    Tw_e=Tw_e,
+    Bw=Bw,
+    task="grasp",
+    subject="gripper",
+    reference="mug",
+    name="Mug Side Grasp",
+    description="Side grasp on a cylindrical mug body",
+)
+
+save_template(template, "my_grasp.yaml")
+template = load_template("my_grasp.yaml")
+
+# Bind to an object pose at runtime
+tsr = template.instantiate(mug_pose)
+```
+
+## Gripper frame convention
+
+All TSR templates in this library use a canonical gripper frame:
+
+```
+z = approach direction  (toward object surface)
+y = finger opening direction
+x = palm normal         (right-hand rule: x = y × z)
+```
+
+AnyGrasp / GraspNet uses `x = approach` — convert with:
+```python
+R_convert = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]])
 ```
 
 ## TSR Chains
 
-For coupled constraints (e.g., door opening), use TSR chains:
+For coupled constraints (e.g., door opening, constrained transport):
 
 ```python
-from tsr.core.tsr_chain import TSRChain
+from tsr import TSRChain
 
 chain = TSRChain(TSRs=[hinge_tsr, handle_tsr])
-
-pose = chain.sample()
+pose  = chain.sample()
 ```
+
+## Visualization
+
+```python
+from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
+
+poses  = [t.instantiate(mug_pose).sample() for t in templates]
+colors = plasma_colors(len(templates))
+
+TSRVisualizer(
+    title="Cylinder Side Grasp",
+    focus=(0., 0., 0.06),
+).render(
+    reference_renderer=cylinder_renderer(radius=0.04, height=0.12),
+    subject_renderer=parallel_jaw_renderer(finger_length=0.055, half_aperture=0.07),
+    poses=poses,
+    colors=colors,
+    out="grasp_viz.png",
+)
+```
+
+Requires the `viz` extra: `uv sync --extra viz`.
+
+## Documentation
+
+- **[Tutorial](docs/tutorial.md)** — TSR theory, math, and worked examples
+- **[Examples](examples/)** — Runnable scripts (`uv run python examples/<script>.py`)
 
 ## Testing
 
 ```bash
-uv run python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ## License
 
-BSD-2-Clause License - see LICENSE file.
+BSD-2-Clause — see LICENSE file.

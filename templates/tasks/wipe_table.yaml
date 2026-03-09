@@ -1,20 +1,52 @@
-# Constraint for wiping a table surface
-# Sponge must stay flat on surface while moving
-
 name: Table Wiping Constraint
 description: Keep sponge flat on table while wiping
 task: constrain
 subject: sponge
 reference: table
-
-position:
-  type: plane
-  x: [-0.3, 0.3]        # wiping area
-  y: [-0.2, 0.2]
-  z: 0                  # on surface
-
-orientation:
-  approach: -z          # sponge flat on table
-  yaw: free             # can rotate while wiping
-
-standoff: 0
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - -1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - -1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - -0.3
+  - 0.3
+- - -0.2
+  - 0.2
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - -3.141592653589793
+  - 3.141592653589793
