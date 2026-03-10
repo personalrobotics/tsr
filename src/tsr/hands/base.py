@@ -39,10 +39,26 @@ class GripperBase(ABC):
         anygrasp_pose = tsr_pose @ np.block([[R, np.zeros((3,1))],
                                              [np.zeros((1,3)), [[1]]]])
 
-    All cylinder methods use a consistent coordinate convention:
-        - Cylinder bottom face at z = 0
-        - Cylinder top face at z = cylinder_height
-        - Cylinder axis along z
+    **Object coordinate conventions:**
+
+    All grasp_cylinder_* methods expect the reference object's frame to be
+    placed with:
+
+        Cylinder::
+
+              ^ +z
+              |
+            --+-- z = cylinder_height  (top face)
+            | | |
+            | | |  ← axis along +z
+            | | |
+            --+-- z = 0               (bottom face, at origin)
+
+        The reference object pose (T_world_object) transforms this frame into
+        the world. E.g., a mug sitting upright on a table at position p::
+
+            T_world_mug = np.eye(4)
+            T_world_mug[:3, 3] = p        # bottom of mug at p
     """
 
     def grasp_cylinder(
