@@ -9,6 +9,12 @@ import numpy as np
 from tsr.template import TSRTemplate
 from .base import GripperBase
 
+_DEPTH_LABELS = {1: ["mid"], 2: ["shallow", "deep"], 3: ["shallow", "mid", "deep"]}
+
+
+def _depth_label(k: int, i: int) -> str:
+    return (_DEPTH_LABELS.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+
 
 class ParallelJawGripper(GripperBase):
     """Parallel jaw gripper: generates TSRTemplates from object geometry.
@@ -36,10 +42,18 @@ class ParallelJawGripper(GripperBase):
         self.finger_length = finger_length
         self.max_aperture  = max_aperture
 
-    def grasp_cylinder(
+    def _validate(self, cylinder_radius: float, preshape: float) -> None:
+        if cylinder_radius <= 0:
+            raise ValueError("cylinder_radius must be > 0")
+        if preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
+
+    def grasp_cylinder_side(
         self,
-        object_radius: float,
-        height_range: Tuple[float, float],
+        cylinder_radius: float,
+        cylinder_height: float,
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
@@ -49,7 +63,7 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Side grasp templates for a cylinder — 2*k templates total.
+        """Side grasp templates for a cylinder — 2*k templates.
 
         Returns k depth levels × 2 roll orientations. Each template has a fixed
         radial offset baked into Tw_e, covering the full pre-grasp volume:
@@ -58,47 +72,34 @@ class ParallelJawGripper(GripperBase):
           depth k/k : palm a clearance from the surface (deepest)
 
         Two roll orientations per depth (180° apart around z_EE):
-          roll=0 : palm normal = +cylinder_axis, fingers open in +tangential
-          roll=π : palm normal = -cylinder_axis, fingers open in -tangential
-        A symmetric hand produces identical poses; a non-symmetric hand needs both.
+          roll=0 : palm normal = +y_world, fingers open in +tangential
+          roll=π : palm normal = -y_world, fingers open in -tangential
+        A symmetric hand produces identical poses; asymmetric hands need both.
 
         The radial approach direction couples with yaw and cannot be encoded in
         Bw directly. Instead, k discrete depths are baked into Tw_e so the full
         pre-grasp volume is covered without post-processing.
 
         Args:
-            preshape:   Pre-grasp jaw opening [m]. Default: 2*r + clearance
-                        (minimum viable opening). Must exceed cylinder diameter.
-            k:          Number of discrete approach depths (default 3).
             clearance:  Safety buffer [m] applied to: height ends, fingertip
                         start depth, and palm stop depth. Default: 10% of finger_length.
 
-        Returns [] if preshape <= cylinder diameter (fingers can't span it).
-        Raises ValueError for invalid geometry parameters.
+        Returns [] if preshape <= cylinder diameter. Raises ValueError for
+        invalid geometry.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
         if preshape is None:
-            preshape = 2. * object_radius + clearance
-        if object_radius <= 0:
-            raise ValueError("object_radius must be > 0")
-        if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        if preshape <= 2. * object_radius:
+            preshape = 2. * cylinder_radius + clearance
+        self._validate(cylinder_radius, preshape)
+        if preshape <= 2. * cylinder_radius:
             return []
-        h0, h1 = height_range[0] + clearance, height_range[1] - clearance
+        h0, h1 = clearance, cylinder_height - clearance
         if h1 <= h0:
-            raise ValueError("height_range too narrow for the given clearance")
+            raise ValueError("cylinder_height too small for the given clearance")
 
         if not name:
             name = f"{reference.title()} Cylinder Side Grasp"
-        if not description:
-            description = (
-                f"Side grasp on {reference} (r={object_radius*100:.0f}cm, "
-                f"h=[{h0*100:.0f},{h1*100:.0f}]cm)"
-            )
 
         z_mid, z_half = (h0 + h1) / 2., (h1 - h0) / 2.
         T_ref_tsr = np.eye(4)
@@ -113,11 +114,8 @@ class ParallelJawGripper(GripperBase):
             [angle_range[0], angle_range[1]],  # yaw: angular freedom
         ])
 
-        approach_max = min(self.finger_length, object_radius) - clearance
+        approach_max = min(self.finger_length, cylinder_radius) - clearance
         depths = np.linspace(clearance, approach_max, max(k, 1))
-
-        _depth_labels = {1: ["mid"], 2: ["shallow", "deep"],
-                         3: ["shallow", "mid", "deep"]}
 
         common = dict(
             T_ref_tsr=T_ref_tsr, Bw=Bw,
@@ -126,8 +124,8 @@ class ParallelJawGripper(GripperBase):
         )
         templates = []
         for i, d in enumerate(depths):
-            ro = object_radius + self.finger_length - d
-            depth_label = (_depth_labels.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+            ro = cylinder_radius + self.finger_length - d
+            dlabel = _depth_label(k, i)
             Tw_e_0 = np.array([
                 [ 0.,  0., -1., ro],
                 [ 0.,  1.,  0., 0.],
@@ -141,14 +139,14 @@ class ParallelJawGripper(GripperBase):
                 [ 0.,  0.,  0., 1.],
             ])
             for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
-                t_desc = (description or (
-                    f"{depth_label.capitalize()} side grasp on {reference}: "
+                t_desc = description or (
+                    f"{dlabel.capitalize()} side grasp on {reference}: "
                     f"standoff {ro*1000:.0f}mm from axis, {roll_label}, "
                     f"preshape {preshape*1000:.0f}mm"
-                ))
+                )
                 templates.append(TSRTemplate(
                     Tw_e=Tw_e,
-                    name=f"{name} — {depth_label}, {roll_label}",
+                    name=f"{name} — {dlabel}, {roll_label}",
                     description=t_desc,
                     **common,
                 ))
@@ -156,7 +154,7 @@ class ParallelJawGripper(GripperBase):
 
     def grasp_cylinder_top(
         self,
-        object_radius: float,
+        cylinder_radius: float,
         cylinder_height: float,
         preshape: Optional[float] = None,
         k: int = 3,
@@ -169,21 +167,17 @@ class ParallelJawGripper(GripperBase):
     ) -> List[TSRTemplate]:
         """Top-down grasp templates for a cylinder — k templates.
 
-        Gripper approaches from above (z_EE = [0,0,-1]). Depth ranges from
-        fingertips a clearance inside the rim (shallowest) to palm a clearance
-        above the rim (deepest). Full yaw covers all finger orientations.
+        Gripper approaches from above (z_EE = [0,0,-1]). TSR origin at
+        z = cylinder_height. Depth ranges from fingertips a clearance inside
+        the rim (shallowest) to palm a clearance above the rim (deepest).
+        Full yaw covers all finger orientations.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
         if preshape is None:
-            preshape = 2. * object_radius + clearance
-        if object_radius <= 0:
-            raise ValueError("object_radius must be > 0")
-        if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        if preshape <= 2. * object_radius:
+            preshape = 2. * cylinder_radius + clearance
+        self._validate(cylinder_radius, preshape)
+        if preshape <= 2. * cylinder_radius:
             return []
 
         if not name:
@@ -202,9 +196,6 @@ class ParallelJawGripper(GripperBase):
         ])
 
         depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
-        _depth_labels = {1: ["mid"], 2: ["shallow", "deep"],
-                         3: ["shallow", "mid", "deep"]}
-
         common = dict(
             T_ref_tsr=T_ref_tsr, Bw=Bw,
             task="grasp", subject=subject, reference=reference,
@@ -212,10 +203,10 @@ class ParallelJawGripper(GripperBase):
         )
         templates = []
         for i, d in enumerate(depths):
-            h_palm = self.finger_length - d  # palm height above cylinder top
-            depth_label = (_depth_labels.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+            h_palm = self.finger_length - d
+            dlabel = _depth_label(k, i)
             t_desc = description or (
-                f"{depth_label.capitalize()} top grasp on {reference}: "
+                f"{dlabel.capitalize()} top grasp on {reference}: "
                 f"palm {h_palm*1000:.0f}mm above rim, preshape {preshape*1000:.0f}mm"
             )
             # z_EE = [0,0,-1] (approach down); x = y × z = [0,1,0]×[0,0,-1] = [-1,0,0]
@@ -227,7 +218,7 @@ class ParallelJawGripper(GripperBase):
             ])
             templates.append(TSRTemplate(
                 Tw_e=Tw_e,
-                name=f"{name} — {depth_label}",
+                name=f"{name} — {dlabel}",
                 description=t_desc,
                 **common,
             ))
@@ -235,8 +226,8 @@ class ParallelJawGripper(GripperBase):
 
     def grasp_cylinder_bottom(
         self,
-        object_radius: float,
-        cylinder_bottom: float = 0.0,
+        cylinder_radius: float,
+        cylinder_height: float,
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
@@ -248,29 +239,24 @@ class ParallelJawGripper(GripperBase):
     ) -> List[TSRTemplate]:
         """Bottom-up grasp templates for a cylinder — k templates.
 
-        Gripper approaches from below (z_EE = [0,0,+1]). Depth ranges from
-        fingertips a clearance inside the bottom face (shallowest) to palm a
-        clearance below the bottom face (deepest). Full yaw covers all finger
-        orientations.
+        Gripper approaches from below (z_EE = [0,0,+1]). TSR origin at z = 0
+        (bottom face). Depth ranges from fingertips a clearance inside the
+        bottom face (shallowest) to palm a clearance below it (deepest).
+        Full yaw covers all finger orientations.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
         if preshape is None:
-            preshape = 2. * object_radius + clearance
-        if object_radius <= 0:
-            raise ValueError("object_radius must be > 0")
-        if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        if preshape <= 2. * object_radius:
+            preshape = 2. * cylinder_radius + clearance
+        self._validate(cylinder_radius, preshape)
+        if preshape <= 2. * cylinder_radius:
             return []
 
         if not name:
             name = f"{reference.title()} Cylinder Bottom Grasp"
 
+        del cylinder_height  # bottom face is always at z=0; accepted for interface symmetry
         T_ref_tsr = np.eye(4)
-        T_ref_tsr[2, 3] = cylinder_bottom
 
         Bw = np.array([
             [0.,             0.            ],  # x
@@ -282,9 +268,6 @@ class ParallelJawGripper(GripperBase):
         ])
 
         depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
-        _depth_labels = {1: ["mid"], 2: ["shallow", "deep"],
-                         3: ["shallow", "mid", "deep"]}
-
         common = dict(
             T_ref_tsr=T_ref_tsr, Bw=Bw,
             task="grasp", subject=subject, reference=reference,
@@ -292,22 +275,22 @@ class ParallelJawGripper(GripperBase):
         )
         templates = []
         for i, d in enumerate(depths):
-            h_palm = self.finger_length - d  # palm depth below cylinder bottom
-            depth_label = (_depth_labels.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+            h_palm = self.finger_length - d
+            dlabel = _depth_label(k, i)
             t_desc = description or (
-                f"{depth_label.capitalize()} bottom grasp on {reference}: "
-                f"palm {h_palm*1000:.0f}mm below rim, preshape {preshape*1000:.0f}mm"
+                f"{dlabel.capitalize()} bottom grasp on {reference}: "
+                f"palm {h_palm*1000:.0f}mm below bottom, preshape {preshape*1000:.0f}mm"
             )
             # z_EE = [0,0,+1] (approach up); identity rotation
             Tw_e = np.array([
-                [ 1.,  0.,  0.,  0.      ],
-                [ 0.,  1.,  0.,  0.      ],
-                [ 0.,  0.,  1., -h_palm  ],
-                [ 0.,  0.,  0.,  1.      ],
+                [ 1.,  0.,  0.,  0.     ],
+                [ 0.,  1.,  0.,  0.     ],
+                [ 0.,  0.,  1., -h_palm ],
+                [ 0.,  0.,  0.,  1.     ],
             ])
             templates.append(TSRTemplate(
                 Tw_e=Tw_e,
-                name=f"{name} — {depth_label}",
+                name=f"{name} — {dlabel}",
                 description=t_desc,
                 **common,
             ))
@@ -348,8 +331,8 @@ class Robotiq2F140(ParallelJawGripper):
     Usage::
 
         gripper   = Robotiq2F140()
-        templates = gripper.grasp_cylinder(object_radius=0.04,
-                                           height_range=(0.02, 0.10),
+        templates = gripper.grasp_cylinder(cylinder_radius=0.04,
+                                           cylinder_height=0.10,
                                            reference="mug")
         tsr  = templates[0].instantiate(mug_pose)
         pose = tsr.sample()   # pose in Robotiq wrist frame
@@ -367,8 +350,8 @@ class Robotiq2F140(ParallelJawGripper):
     def _apply_frame_correction(self, templates: List[TSRTemplate]) -> List[TSRTemplate]:
         return [dataclasses.replace(t, Tw_e=t.Tw_e @ _R_z_neg90) for t in templates]
 
-    def grasp_cylinder(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_cylinder(*args, **kwargs))
+    def grasp_cylinder_side(self, *args, **kwargs) -> List[TSRTemplate]:
+        return self._apply_frame_correction(super().grasp_cylinder_side(*args, **kwargs))
 
     def grasp_cylinder_top(self, *args, **kwargs) -> List[TSRTemplate]:
         return self._apply_frame_correction(super().grasp_cylinder_top(*args, **kwargs))

@@ -45,7 +45,7 @@ class TestHandRegistry(unittest.TestCase):
     def test_generator_produces_templates(self):
         gen      = default_registry.get("parallel_jaw", "cylinder", "grasp")
         gripper  = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
-        templates = gen(gripper, object_radius=0.040, height_range=(0.02, 0.10))
-        self.assertEqual(len(templates), 6)
+        templates = gen(gripper, cylinder_radius=0.040, cylinder_height=0.10)
+        self.assertEqual(len(templates), 12)  # 4*k with k=3
         for t in templates:
             self.assertIsInstance(t, TSRTemplate)
