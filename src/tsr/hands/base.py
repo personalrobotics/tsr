@@ -77,6 +77,18 @@ class GripperBase(ABC):
                   * * *
             radius = object_radius
 
+        Torus::
+
+                 ___
+               /     \\
+              |   O   |     <- center at origin, axis along +z
+               \\     /
+                 ‾‾‾
+            torus_radius R = distance from center to tube center
+            tube_radius  r = tube cross-section radius
+            Tube center at azimuth θ: (R·cos θ, R·sin θ, 0)
+            Outer radius: R + r,  Inner radius: R - r
+
         The reference object pose (T_world_object) transforms this frame into
         the world. E.g., a box sitting upright on a table at position p::
 
@@ -456,18 +468,118 @@ class GripperBase(ABC):
         torus_radius: float,
         tube_radius: float,
         preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "torus",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for all torus grasp modes.
+
+        Combines radial side grasps (always) and span grasps (when the outer
+        diameter fits within max_aperture).
+
+        Torus coordinate convention: center at origin, axis along +z.
+            torus_radius R: distance from center to tube center.
+            tube_radius  r: cross-section radius of the tube.
+
+        Side mode (2*k templates):
+            Approach radially from outside; fingers straddle the tube
+            cross-section (preshape = 2*r + clearance). k depths × 2 roll
+            orientations. Full yaw covers all azimuth positions.
+
+        Span mode (up to 2*k templates, silently omitted if too large):
+            Approach from above and below; fingers span the full outer diameter
+            2*(R+r). Only included when 2*(R+r) + clearance ≤ max_aperture.
+            k depths each, full yaw covers all finger orientations.
+
+        Args:
+            torus_radius:  Major radius R [m] — center to tube center.
+            tube_radius:   Minor radius r [m] — tube cross-section.
+            preshape:      Jaw opening for side grasps [m]. Defaults to
+                           2*r + clearance.
+            k:             Number of discrete depths per mode (default 3).
+            clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
+            angle_range:   Yaw freedom for side grasps (default full 360°).
+            subject:       Label for the end-effector entity.
+            reference:     Label for the reference object.
+
+        Returns:
+            List of 2*k to 4*k TSRTemplates depending on span feasibility.
+        """
+        shared = dict(preshape=preshape, k=k, clearance=clearance,
+                      subject=subject, reference=reference)
+        return (
+            self.grasp_torus_side(torus_radius, tube_radius,
+                                  angle_range=angle_range, **shared)
+            + self.grasp_torus_span(torus_radius, tube_radius, **shared)
+        )
+
+    def grasp_torus_side(
+        self,
+        torus_radius: float,
+        tube_radius: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "torus",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Radial side grasp templates for a torus — 2*k templates.
+
+        Approach from outside radially; fingers straddle the tube cross-section.
+        TSR origin at torus center. Full yaw freedom covers all azimuth positions.
+        k depths × 2 roll orientations.
+
+        Args:
+            torus_radius:  Major radius R [m].
+            tube_radius:   Minor radius r [m].
+            preshape:      Jaw opening [m]. Defaults to 2*r + clearance.
+            k:             Number of discrete approach depths (default 3).
+            clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
+            angle_range:   Yaw freedom (default full 360°).
+
+        Returns:
+            List of 2*k TSRTemplates. Empty list if preshape cannot span tube.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_torus_side"
+        )
+
+    def grasp_torus_span(
+        self,
+        torus_radius: float,
+        tube_radius: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
         clearance: Optional[float] = None,
         subject: str = "gripper",
         reference: str = "torus",
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Generate TSRTemplates for grasping a torus (e.g., rotating handle).
+        """Span grasp templates for a torus — up to 2*k templates.
 
-        Not yet implemented — see https://github.com/personalrobotics/tsr/issues/26.
+        Approach from above (+k) and below (-k) with fingers spanning the full
+        outer diameter 2*(R+r). Full yaw freedom covers all finger orientations.
+        Silently returns [] if the outer diameter + clearance exceeds max_aperture.
+
+        Args:
+            torus_radius:  Major radius R [m].
+            tube_radius:   Minor radius r [m].
+            preshape:      Jaw opening [m]. Defaults to 2*(R+r) + clearance.
+            k:             Number of discrete depths per direction (default 3).
+            clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
+
+        Returns:
+            List of up to 2*k TSRTemplates (k top + k bottom).
+            Empty list if max_aperture cannot span the outer diameter.
         """
         raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_torus"
+            f"{type(self).__name__} does not implement grasp_torus_span"
         )
 
     def renderer(self):

@@ -670,6 +670,193 @@ class ParallelJawGripper(GripperBase):
             ))
         return templates
 
+    # ── Torus primitives ─────────────────────────────────────────────────────
+
+    def _validate_torus(self, torus_radius: float, tube_radius: float) -> None:
+        if torus_radius <= 0:
+            raise ValueError("torus_radius must be > 0")
+        if tube_radius <= 0:
+            raise ValueError("tube_radius must be > 0")
+        if tube_radius >= torus_radius:
+            raise ValueError(
+                f"tube_radius ({tube_radius}) must be < torus_radius ({torus_radius}) "
+                "to avoid a self-intersecting torus"
+            )
+
+    def grasp_torus_side(
+        self,
+        torus_radius: float,
+        tube_radius: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "torus",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Radial side grasp templates for a torus — 2*k templates.
+
+        Identical to cylinder side grasps, but with the major radius R added
+        to the standoff so the gripper is positioned outside the torus tube
+        rather than a simple cylinder.
+
+        Returns [] if preshape <= tube diameter. Raises ValueError for
+        invalid geometry or preshape > max_aperture.
+        """
+        if clearance is None:
+            clearance = 0.1 * self.finger_length
+        if preshape is None:
+            preshape = 2. * tube_radius + clearance
+        self._validate_torus(torus_radius, tube_radius)
+        if preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
+        if preshape <= 2. * tube_radius:
+            return []
+
+        if not name:
+            name = f"{reference.title()} Torus Side Grasp"
+
+        T_ref_tsr = np.eye(4)  # origin at torus center (equatorial plane z=0)
+
+        Bw = np.array([
+            [0.,             0.            ],  # x: no freedom
+            [0.,             0.            ],  # y: no freedom
+            [0.,             0.            ],  # z: fixed at torus equator
+            [0.,             0.            ],  # roll: fixed (encoded in Tw_e)
+            [0.,             0.            ],  # pitch: equatorial approach
+            [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
+        ])
+
+        approach_max = min(self.finger_length, tube_radius) - clearance
+        depths = np.linspace(clearance, approach_max, max(k, 1))
+
+        common = dict(
+            T_ref_tsr=T_ref_tsr, Bw=Bw,
+            task="grasp", subject=subject, reference=reference,
+            preshape=np.array([preshape]),
+        )
+        templates = []
+        for i, d in enumerate(depths):
+            # Standoff from torus axis: tube outer surface is at R+r, palm at R+r+fl-d
+            ro = torus_radius + tube_radius + self.finger_length - d
+            dlabel = _depth_label(k, i)
+            Tw_e_0 = np.array([
+                [ 0.,  0., -1., ro],
+                [ 0.,  1.,  0., 0.],
+                [ 1.,  0.,  0., 0.],
+                [ 0.,  0.,  0., 1.],
+            ])
+            Tw_e_pi = np.array([
+                [ 0.,  0., -1., ro],
+                [ 0., -1.,  0., 0.],
+                [-1.,  0.,  0., 0.],
+                [ 0.,  0.,  0., 1.],
+            ])
+            for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
+                t_desc = description or (
+                    f"{dlabel.capitalize()} torus side grasp on {reference}: "
+                    f"standoff {ro*1000:.0f}mm from axis, {roll_label}, "
+                    f"preshape {preshape*1000:.0f}mm"
+                )
+                templates.append(TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name} — {dlabel}, {roll_label}",
+                    description=t_desc,
+                    **common,
+                ))
+        return templates
+
+    def grasp_torus_span(
+        self,
+        torus_radius: float,
+        tube_radius: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        subject: str = "gripper",
+        reference: str = "torus",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Span grasp templates for a torus — up to 2*k templates.
+
+        Approach from above and below, fingers spanning the outer diameter
+        2*(R+r). Full yaw freedom covers all finger orientations. Silently
+        returns [] if the outer diameter + clearance exceeds max_aperture.
+        """
+        if clearance is None:
+            clearance = 0.1 * self.finger_length
+        if preshape is None:
+            preshape = 2. * (torus_radius + tube_radius) + clearance
+            if preshape > self.max_aperture:
+                return []       # torus too large for hardware — skip silently
+        else:
+            if preshape <= 2. * (torus_radius + tube_radius):
+                return []       # user preshape can't straddle outer diameter
+            if preshape > self.max_aperture:
+                raise ValueError(
+                    f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+                )
+        self._validate_torus(torus_radius, tube_radius)
+
+        if not name:
+            name = f"{reference.title()} Torus Span Grasp"
+
+        # Bw: yaw free [0, 2π] for full finger-orientation freedom; all else fixed
+        Bw = np.zeros((6, 2))
+        Bw[5, 1] = 2 * np.pi
+
+        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        templates = []
+        for i, d in enumerate(depths):
+            h_palm = self.finger_length - d
+            dlabel = _depth_label(k, i)
+
+            # Top: z_EE = [0,0,-1]; TSR origin at tube top (z = +tube_r)
+            T_top = np.eye(4); T_top[2, 3] = tube_radius
+            Tw_e_top = np.array([
+                [-1.,  0.,  0.,  0.     ],
+                [ 0.,  1.,  0.,  0.     ],
+                [ 0.,  0., -1.,  h_palm ],
+                [ 0.,  0.,  0.,  1.     ],
+            ])
+            t_desc = description or (
+                f"{dlabel.capitalize()} torus span top on {reference}: "
+                f"palm {h_palm*1000:.0f}mm above torus, preshape {preshape*1000:.0f}mm"
+            )
+            templates.append(TSRTemplate(
+                T_ref_tsr=T_top, Bw=Bw, Tw_e=Tw_e_top,
+                task="grasp", subject=subject, reference=reference,
+                preshape=np.array([preshape]),
+                name=f"{name} top — {dlabel}",
+                description=t_desc,
+            ))
+
+            # Bottom: z_EE = [0,0,+1]; TSR origin at tube bottom (z = -tube_r)
+            T_bot = np.eye(4); T_bot[2, 3] = -tube_radius
+            Tw_e_bot = np.array([
+                [ 1.,  0.,  0.,  0.     ],
+                [ 0.,  1.,  0.,  0.     ],
+                [ 0.,  0.,  1., -h_palm ],
+                [ 0.,  0.,  0.,  1.     ],
+            ])
+            t_desc = description or (
+                f"{dlabel.capitalize()} torus span bottom on {reference}: "
+                f"palm {h_palm*1000:.0f}mm below torus, preshape {preshape*1000:.0f}mm"
+            )
+            templates.append(TSRTemplate(
+                T_ref_tsr=T_bot, Bw=Bw, Tw_e=Tw_e_bot,
+                task="grasp", subject=subject, reference=reference,
+                preshape=np.array([preshape]),
+                name=f"{name} bottom — {dlabel}",
+                description=t_desc,
+            ))
+        return templates
+
     def renderer(self):
         """Return a SubjectRenderer using the parallel jaw wireframe.
 
@@ -747,3 +934,9 @@ class Robotiq2F140(ParallelJawGripper):
 
     def grasp_sphere(self, *args, **kwargs) -> List[TSRTemplate]:
         return self._apply_frame_correction(super().grasp_sphere(*args, **kwargs))
+
+    def grasp_torus_side(self, *args, **kwargs) -> List[TSRTemplate]:
+        return self._apply_frame_correction(super().grasp_torus_side(*args, **kwargs))
+
+    def grasp_torus_span(self, *args, **kwargs) -> List[TSRTemplate]:
+        return self._apply_frame_correction(super().grasp_torus_span(*args, **kwargs))

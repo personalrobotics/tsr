@@ -94,3 +94,9 @@ default_registry.register("parallel_jaw", "sphere", "grasp")(
 default_registry.register("robotiq_2f140", "sphere", "grasp")(
     lambda gripper, **kw: gripper.grasp_sphere(**kw)
 )
+default_registry.register("parallel_jaw", "torus", "grasp")(
+    lambda gripper, **kw: gripper.grasp_torus(**kw)
+)
+default_registry.register("robotiq_2f140", "torus", "grasp")(
+    lambda gripper, **kw: gripper.grasp_torus(**kw)
+)

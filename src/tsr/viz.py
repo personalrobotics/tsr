@@ -237,6 +237,53 @@ def sphere_renderer(
     return render
 
 
+def torus_renderer(
+    torus_radius: float,
+    tube_radius: float,
+    color: str = "#1c5f99",
+    rim_color: str = "#5aaaf0",
+    offset: tuple = (0., 0., 0.),
+) -> ReferenceRenderer:
+    """Renderer for a solid torus (ring/donut shape).
+
+    Torus coordinate convention: center at origin, axis along +z.
+    torus_radius R: distance from center to tube center.
+    tube_radius  r: cross-section radius of the tube.
+    """
+    ox, oy, oz = offset
+
+    def render(pl: pv.Plotter) -> None:
+        # Build torus surface via parametric sweep
+        N_phi, N_theta = 80, 40
+        phi   = np.linspace(0., 2. * np.pi, N_phi,   endpoint=False)  # around ring
+        theta = np.linspace(0., 2. * np.pi, N_theta, endpoint=False)  # around tube
+        PHI, THETA = np.meshgrid(phi, theta, indexing='ij')
+
+        X = (torus_radius + tube_radius * np.cos(THETA)) * np.cos(PHI) + ox
+        Y = (torus_radius + tube_radius * np.cos(THETA)) * np.sin(PHI) + oy
+        Z = tube_radius * np.sin(THETA) + oz
+
+        # Build StructuredGrid
+        pts = np.column_stack([X.ravel(), Y.ravel(), Z.ravel()])
+        grid = pv.StructuredGrid()
+        grid.points = pts
+        grid.dimensions = (N_phi, N_theta, 1)
+        surface = grid.extract_surface()
+        pl.add_mesh(surface, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+
+        # Outer and inner rim rings
+        th = np.linspace(0., 2. * np.pi, 120, endpoint=True)
+        for r_ring in (torus_radius + tube_radius, torus_radius - tube_radius):
+            pts_ring = np.column_stack([r_ring * np.cos(th) + ox,
+                                        r_ring * np.sin(th) + oy,
+                                        np.full(120, oz)])
+            pl.add_mesh(pv.Spline(pts_ring, n_points=120).tube(radius=0.0008),
+                        color=rim_color, opacity=0.85, smooth_shading=True, lighting=True)
+
+    return render
+
+
 # ── Subject renderers ─────────────────────────────────────────────────────────
 
 def parallel_jaw_renderer(
