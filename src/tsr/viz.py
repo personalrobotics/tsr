@@ -164,6 +164,43 @@ def cylinder_renderer(
     return render
 
 
+def box_renderer(
+    box_x: float,
+    box_y: float,
+    box_z: float,
+    color: str = "#1c5f99",
+    edge_color: str = "#5aaaf0",
+) -> ReferenceRenderer:
+    """Renderer for a solid box (cereal box, book, brick, etc.).
+
+    Box coordinate convention: centered in x/y, bottom face at z=0, top at z=box_z.
+    """
+    def render(pl: pv.Plotter) -> None:
+        box = pv.Box(bounds=(
+            -box_x / 2., box_x / 2.,
+            -box_y / 2., box_y / 2.,
+            0.,          box_z,
+        ))
+        pl.add_mesh(box, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+
+        # Draw edges
+        hx, hy, hz = box_x / 2., box_y / 2., box_z
+        corners = [
+            (-hx, -hy, 0.), ( hx, -hy, 0.), ( hx,  hy, 0.), (-hx,  hy, 0.), (-hx, -hy, 0.),
+        ]
+        for z_f in (0., hz):
+            pts = np.array([(x, y, z_f) for x, y, _ in corners])
+            pl.add_mesh(pv.Spline(pts, n_points=len(corners)).tube(radius=0.0008),
+                        color=edge_color, opacity=0.85, smooth_shading=True, lighting=True)
+        for x, y in ((-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)):
+            pts = np.array([(x, y, 0.), (x, y, hz)])
+            pl.add_mesh(pv.Spline(pts, n_points=2).tube(radius=0.0008),
+                        color=edge_color, opacity=0.85, smooth_shading=True, lighting=True)
+
+    return render
+
+
 # ── Subject renderers ─────────────────────────────────────────────────────────
 
 def parallel_jaw_renderer(
