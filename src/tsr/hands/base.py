@@ -54,11 +54,25 @@ class GripperBase(ABC):
             | | |
             --+-- z = 0               (bottom face, at origin)
 
-        The reference object pose (T_world_object) transforms this frame into
-        the world. E.g., a mug sitting upright on a table at position p::
+        Box::
 
-            T_world_mug = np.eye(4)
-            T_world_mug[:3, 3] = p        # bottom of mug at p
+              ^ +z
+              |
+            +-+--------+  z = box_z  (top face)
+            | |        |
+            | +--------+  ← centered in x, y
+            | |        |
+            +-+--------+  z = 0      (bottom face, at origin)
+              ·
+            x ∈ [-box_x/2, box_x/2]
+            y ∈ [-box_y/2, box_y/2]
+            z ∈ [0,        box_z   ]
+
+        The reference object pose (T_world_object) transforms this frame into
+        the world. E.g., a box sitting upright on a table at position p::
+
+            T_world_box = np.eye(4)
+            T_world_box[:3, 3] = p        # bottom-center of box at p
     """
 
     def grasp_cylinder(
@@ -206,6 +220,186 @@ class GripperBase(ABC):
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement grasp_cylinder_bottom"
+        )
+
+    def grasp_box(
+        self,
+        box_x: float,
+        box_y: float,
+        box_z: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        subject: str = "gripper",
+        reference: str = "box",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for all box grasp modes — 6*k templates.
+
+        Combines top, bottom, +x/-x face, and +y/-y face approaches.
+        Returns 2*k + 2*k + k + k = 6*k templates (default k=3: 18 templates).
+
+        Box coordinate convention::
+
+            x ∈ [-box_x/2, +box_x/2]   (centered)
+            y ∈ [-box_y/2, +box_y/2]   (centered)
+            z ∈ [0,         box_z   ]   (bottom at z=0)
+
+        Args:
+            box_x:     Box width  [m] (along x-axis).
+            box_y:     Box depth  [m] (along y-axis).
+            box_z:     Box height [m] (along z-axis; top face at z=box_z).
+            preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
+            k:         Number of discrete approach depths per face (default 3).
+            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+            subject:   Label for the end-effector entity.
+            reference: Label for the reference object.
+
+        Returns:
+            List of 6*k TSRTemplates.
+        """
+        shared = dict(preshape=preshape, k=k, clearance=clearance,
+                      subject=subject, reference=reference)
+        return (
+            self.grasp_box_face_x(box_x, box_y, box_z, **shared)
+            + self.grasp_box_face_y(box_x, box_y, box_z, **shared)
+            + self.grasp_box_top(box_x, box_y, box_z, **shared)
+            + self.grasp_box_bottom(box_x, box_y, box_z, **shared)
+        )
+
+    def grasp_box_top(
+        self,
+        box_x: float,
+        box_y: float,
+        box_z: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        subject: str = "gripper",
+        reference: str = "box",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for grasping a box from above — k templates.
+
+        Gripper approaches from above (z_EE = [0,0,-1]). TSR origin at
+        z = box_z (top face). Fingers slide freely in x and y within the face
+        bounds; no rotational freedom.
+
+        Args:
+            box_x:     Box width  [m].
+            box_y:     Box depth  [m].
+            box_z:     Box height [m] (z of top face).
+            preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
+            k:         Number of discrete approach depths (default 3).
+            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+
+        Returns:
+            List of k TSRTemplates.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_box_top"
+        )
+
+    def grasp_box_bottom(
+        self,
+        box_x: float,
+        box_y: float,
+        box_z: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        subject: str = "gripper",
+        reference: str = "box",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for grasping a box from below — k templates.
+
+        Gripper approaches from below (z_EE = [0,0,+1]). TSR origin at
+        z = 0 (bottom face). Fingers slide freely in x and y within the face
+        bounds; no rotational freedom.
+
+        Args:
+            box_x:     Box width  [m].
+            box_y:     Box depth  [m].
+            box_z:     Box height [m] (unused geometrically; kept for API symmetry).
+            preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
+            k:         Number of discrete approach depths (default 3).
+            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+
+        Returns:
+            List of k TSRTemplates.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_box_bottom"
+        )
+
+    def grasp_box_face_x(
+        self,
+        box_x: float,
+        box_y: float,
+        box_z: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        subject: str = "gripper",
+        reference: str = "box",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for grasping the ±x faces of a box — 2*k templates.
+
+        k templates approach from +x (z_EE = [-1,0,0]) and k from -x
+        (z_EE = [+1,0,0]). Fingers slide freely in y and z within the face
+        bounds; no rotational freedom.
+
+        Args:
+            box_x:     Box width  [m] (standoff is box_x/2 + finger_length - depth).
+            box_y:     Box depth  [m].
+            box_z:     Box height [m].
+            preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
+            k:         Number of discrete approach depths per face (default 3).
+            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+
+        Returns:
+            List of 2*k TSRTemplates (k for +x face, k for -x face).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_box_face_x"
+        )
+
+    def grasp_box_face_y(
+        self,
+        box_x: float,
+        box_y: float,
+        box_z: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        subject: str = "gripper",
+        reference: str = "box",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for grasping the ±y faces of a box — 2*k templates.
+
+        k templates approach from +y (z_EE = [0,-1,0]) and k from -y
+        (z_EE = [0,+1,0]). Fingers slide freely in x and z within the face
+        bounds; no rotational freedom.
+
+        Args:
+            box_x:     Box width  [m].
+            box_y:     Box depth  [m] (standoff is box_y/2 + finger_length - depth).
+            box_z:     Box height [m].
+            preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
+            k:         Number of discrete approach depths per face (default 3).
+            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+
+        Returns:
+            List of 2*k TSRTemplates (k for +y face, k for -y face).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_box_face_y"
         )
 
     def grasp_sphere(
