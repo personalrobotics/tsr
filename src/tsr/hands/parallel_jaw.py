@@ -581,6 +581,93 @@ class ParallelJawGripper(GripperBase):
                 box_z, 0, hx,      **kw, face_label=f"{sign} (span-z)")
         return templates
 
+    # ── Sphere primitives ─────────────────────────────────────────────────────
+
+    def grasp_sphere(
+        self,
+        object_radius: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "sphere",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Equatorial grasp templates for a sphere — 2*k templates.
+
+        Identical to cylinder side grasps but with no height freedom (Bw[2]=0).
+        TSR origin at sphere center. k depths × 2 roll orientations.
+
+        Returns [] if preshape <= sphere diameter. Raises ValueError for
+        invalid geometry.
+        """
+        if clearance is None:
+            clearance = 0.1 * self.finger_length
+        if preshape is None:
+            preshape = 2. * object_radius + clearance
+        if object_radius <= 0:
+            raise ValueError("object_radius must be > 0")
+        if preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
+        if preshape <= 2. * object_radius:
+            return []
+
+        if not name:
+            name = f"{reference.title()} Sphere Grasp"
+
+        T_ref_tsr = np.eye(4)   # origin at sphere center
+
+        Bw = np.array([
+            [0.,             0.            ],  # x: no radial freedom
+            [0.,             0.            ],  # y: no tangential freedom
+            [0.,             0.            ],  # z: fixed at equator
+            [0.,             0.            ],  # roll: fixed (encoded in Tw_e)
+            [0.,             0.            ],  # pitch: equatorial approach
+            [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
+        ])
+
+        approach_max = min(self.finger_length, object_radius) - clearance
+        depths = np.linspace(clearance, approach_max, max(k, 1))
+
+        common = dict(
+            T_ref_tsr=T_ref_tsr, Bw=Bw,
+            task="grasp", subject=subject, reference=reference,
+            preshape=np.array([preshape]),
+        )
+        templates = []
+        for i, d in enumerate(depths):
+            ro = object_radius + self.finger_length - d
+            dlabel = _depth_label(k, i)
+            Tw_e_0 = np.array([
+                [ 0.,  0., -1., ro],
+                [ 0.,  1.,  0., 0.],
+                [ 1.,  0.,  0., 0.],
+                [ 0.,  0.,  0., 1.],
+            ])
+            Tw_e_pi = np.array([
+                [ 0.,  0., -1., ro],
+                [ 0., -1.,  0., 0.],
+                [-1.,  0.,  0., 0.],
+                [ 0.,  0.,  0., 1.],
+            ])
+            for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
+                t_desc = description or (
+                    f"{dlabel.capitalize()} sphere grasp on {reference}: "
+                    f"standoff {ro*1000:.0f}mm from center, {roll_label}, "
+                    f"preshape {preshape*1000:.0f}mm"
+                )
+                templates.append(TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name} — {dlabel}, {roll_label}",
+                    description=t_desc,
+                    **common,
+                ))
+        return templates
+
     def renderer(self):
         """Return a SubjectRenderer using the parallel jaw wireframe.
 
@@ -655,3 +742,6 @@ class Robotiq2F140(ParallelJawGripper):
 
     def grasp_box_face_y(self, *args, **kwargs) -> List[TSRTemplate]:
         return self._apply_frame_correction(super().grasp_box_face_y(*args, **kwargs))
+
+    def grasp_sphere(self, *args, **kwargs) -> List[TSRTemplate]:
+        return self._apply_frame_correction(super().grasp_sphere(*args, **kwargs))

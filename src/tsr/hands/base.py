@@ -68,6 +68,15 @@ class GripperBase(ABC):
             y ∈ [-box_y/2, box_y/2]
             z ∈ [0,        box_z   ]
 
+        Sphere::
+
+                  * * *
+                *       *
+               *    O    *   ← center at origin (0, 0, 0)
+                *       *
+                  * * *
+            radius = object_radius
+
         The reference object pose (T_world_object) transforms this frame into
         the world. E.g., a box sitting upright on a table at position p::
 
@@ -408,15 +417,35 @@ class GripperBase(ABC):
         self,
         object_radius: float,
         preshape: Optional[float] = None,
+        k: int = 3,
         clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
         subject: str = "gripper",
         reference: str = "sphere",
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Generate TSRTemplates for grasping a sphere.
+        """Equatorial grasp templates for a sphere — 2*k templates.
 
-        Not yet implemented — see https://github.com/personalrobotics/tsr/issues/26.
+        Approach from any direction in the horizontal (xy) plane. TSR origin
+        at the sphere center. Full yaw covers all equatorial approach directions.
+        k discrete depths × 2 roll orientations.
+
+        Sphere coordinate convention: center at origin, radius = object_radius.
+
+        Args:
+            object_radius: Sphere radius [m].
+            preshape:      Jaw opening [m]. Defaults to 2*r + clearance.
+            k:             Number of discrete approach depths (default 3).
+            clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
+            angle_range:   Yaw freedom (default full 360°).
+            subject:       Label for the end-effector entity.
+            reference:     Label for the reference object.
+            name:          Template name prefix.
+            description:   Template description.
+
+        Returns:
+            List of 2*k TSRTemplates. Empty list if preshape cannot span the sphere.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement grasp_sphere"

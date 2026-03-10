@@ -208,6 +208,35 @@ def box_renderer(
     return render
 
 
+def sphere_renderer(
+    radius: float,
+    color: str = "#1c5f99",
+    rim_color: str = "#5aaaf0",
+    offset: tuple = (0., 0., 0.),
+) -> ReferenceRenderer:
+    """Renderer for a solid sphere.
+
+    Sphere coordinate convention: center at origin (offset shifts the center).
+    """
+    ox, oy, oz = offset
+
+    def render(pl: pv.Plotter) -> None:
+        sph = pv.Sphere(radius=radius, center=(ox, oy, oz), theta_resolution=60,
+                        phi_resolution=60)
+        pl.add_mesh(sph, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.6, diffuse=0.8, ambient=0.15)
+
+        # Equatorial ring
+        th  = np.linspace(0., 2. * np.pi, 120, endpoint=True)
+        pts = np.column_stack([radius * np.cos(th) + ox,
+                               radius * np.sin(th) + oy,
+                               np.full(120, oz)])
+        pl.add_mesh(pv.Spline(pts, n_points=120).tube(radius=0.0008),
+                    color=rim_color, opacity=0.85, smooth_shading=True, lighting=True)
+
+    return render
+
+
 # ── Subject renderers ─────────────────────────────────────────────────────────
 
 def parallel_jaw_renderer(
