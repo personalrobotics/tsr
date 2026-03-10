@@ -1,14 +1,14 @@
-"""Parallel jaw gripper TSR example.
+"""Parallel jaw gripper TSR example — cylinder and box grasps.
 
-Demonstrates all three cylinder grasp modes: side, top-down, and bottom-up.
+Shows all grasp modes for both primitives in a single scene:
+  Cylinder (left): side · top · bottom
+  Box (right):     ±x · ±y · top · bottom, two finger orientations per face
+                   (filtered by max_aperture)
 
-Gripper frame convention (canonical for this library):
+Gripper frame convention:
     z = approach direction (toward object surface)
     y = finger opening direction
     x = palm normal  (right-hand rule: x = y × z)
-
-AnyGrasp / GraspNet uses x=approach — convert with:
-    R_convert = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]])
 
 Saves: assets/tsr_viz.png
 
@@ -18,64 +18,84 @@ Usage:
 import numpy as np
 
 from tsr.hands import ParallelJawGripper
-from tsr.viz import TSRVisualizer, cylinder_renderer, plasma_colors
+from tsr.viz import TSRVisualizer, box_renderer, cylinder_renderer, plasma_colors
 
-# ── Scene parameters ──────────────────────────────────────────────────────────
+# ── Scene parameters ───────────────────────────────────────────────────────────
 MUG_R = 0.040   # mug radius [m]
 MUG_H = 0.120   # mug height [m]
-N     = 6       # samples per template
 
-# Mug coordinate frame (reference object convention for all grasp_cylinder_* methods):
-#
-#       ^ +z
-#       |
-#     --+-- z = MUG_H = 0.12 m   (top face / rim)
-#     | | |
-#     | | |  ← axis along +z
-#     | | |
-#     --+-- z = 0.0              (bottom face, at origin)
-#
-# mug_pose = np.eye(4) places the mug bottom at the world origin, upright.
+BOX_X = 0.080   # box width  [m]
+BOX_Y = 0.060   # box depth  [m]
+BOX_Z = 0.180   # box height [m]
+
+N = 3           # samples per template
+
+# Offsets: cylinder left, box right (separated in y)
+CYL_OFF = (0., -0.18, 0.)
+BOX_OFF = (0.,  0.20, 0.)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def _collect(templates, object_pose, n):
+    """Sample n poses per template; return (poses, colors) lists."""
+    cols = plasma_colors(len(templates), lo=0.05, hi=0.95)
+    poses, colors = [], []
+    for i, t in enumerate(templates):
+        tsr = t.instantiate(object_pose)
+        poses.extend(tsr.sample() for _ in range(n))
+        colors.extend([cols[i]] * n)
+    return poses, colors
+
+
+# ── Main ───────────────────────────────────────────────────────────────────────
 def main() -> None:
     from pathlib import Path
 
     out = Path(__file__).parent.parent / "assets" / "tsr_viz.png"
 
-    # ── 1. Define your gripper ────────────────────────────────────────────────
     gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
-    # ── 2. Generate templates for all three approach modes ────────────────────
-    templates = gripper.grasp_cylinder(
+    # Cylinder grasps
+    cyl_pose = np.eye(4); cyl_pose[:3, 3] = CYL_OFF
+    cyl_templates = gripper.grasp_cylinder(
         cylinder_radius=MUG_R, cylinder_height=MUG_H, reference="mug")
-    print(f"Templates: {len(templates)}")
+    cyl_poses, cyl_colors = _collect(cyl_templates, cyl_pose, N)
 
-    # ── 3. Instantiate at object pose and sample ──────────────────────────────
-    mug_pose   = np.eye(4)
-    tsr_colors = plasma_colors(len(templates), lo=0.05, hi=0.95)
-    poses, colors = [], []
-    for i, template in enumerate(templates):
-        tsr   = template.instantiate(mug_pose)
-        batch = [tsr.sample() for _ in range(N)]
-        poses.extend(batch)
-        colors.extend([tsr_colors[i]] * N)
+    # Box grasps
+    box_pose = np.eye(4); box_pose[:3, 3] = BOX_OFF
+    box_templates = gripper.grasp_box(
+        box_x=BOX_X, box_y=BOX_Y, box_z=BOX_Z, reference="box")
+    box_poses, box_colors = _collect(box_templates, box_pose, N)
 
-    print(f"Total poses: {len(poses)}")
+    all_poses  = cyl_poses  + box_poses
+    all_colors = cyl_colors + box_colors
 
-    # ── 4. Visualize ──────────────────────────────────────────────────────────
+    n_cyl = len(cyl_templates)
+    n_box = len(box_templates)
+    print(f"Cylinder: {n_cyl} templates · {len(cyl_poses)} poses")
+    print(f"Box:      {n_box} templates · {len(box_poses)} poses")
+
+    focus = (0.,
+             (CYL_OFF[1] + BOX_OFF[1]) / 2.,
+             (MUG_H + BOX_Z) / 4.)
+
+    def scene_renderer(pl):
+        cylinder_renderer(MUG_R, MUG_H, offset=CYL_OFF)(pl)
+        box_renderer(BOX_X, BOX_Y, BOX_Z, offset=BOX_OFF)(pl)
+
     TSRVisualizer(
-        title=(f"Task Space Regions — Cylinder Grasps (side · top · bottom)\n"
-               f"{len(templates)} templates · {len(poses)} sampled poses"),
-        focus=(0., 0., MUG_H / 2.),
-        camera_dist=0.65,
-        camera_el=30.,
+        title=(f"Task Space Regions — cylinder ({n_cyl} templates) · "
+               f"box ({n_box} templates)\n"
+               f"{len(all_poses)} sampled poses"),
+        focus=focus,
+        camera_dist=0.90,
+        camera_az=215.,
+        camera_el=28.,
     ).render(
-        reference_renderer=cylinder_renderer(radius=MUG_R, height=MUG_H),
+        reference_renderer=scene_renderer,
         subject_renderer=gripper.renderer(),
-        poses=poses,
-        colors=colors,
+        poses=all_poses,
+        colors=all_colors,
         out=str(out),
     )
     print(f"\nSaved → {out}")
