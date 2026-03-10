@@ -445,7 +445,7 @@ class GripperBase(ABC):
             description:   Template description.
 
         Returns:
-            List of 2*k TSRTemplates. Empty list if preshape cannot span the sphere.
+            List of k TSRTemplates. Empty list if preshape cannot span the sphere.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement grasp_sphere"

@@ -17,16 +17,16 @@ class TestGraspSphere(unittest.TestCase):
 
     # ── Template count ─────────────────────────────────────────────────────
 
-    def test_default_k3_returns_6_templates(self):
-        self.assertEqual(len(self.templates), 6)  # 2 rolls × 3 depths
+    def test_default_k3_returns_3_templates(self):
+        self.assertEqual(len(self.templates), 3)   # k depths, full SO(3) in Bw
 
-    def test_k1_returns_2_templates(self):
+    def test_k1_returns_1_template(self):
         ts = self.gripper.grasp_sphere(RADIUS, k=1)
-        self.assertEqual(len(ts), 2)
+        self.assertEqual(len(ts), 1)
 
-    def test_k5_returns_10_templates(self):
+    def test_k5_returns_5_templates(self):
         ts = self.gripper.grasp_sphere(RADIUS, k=5)
-        self.assertEqual(len(ts), 10)
+        self.assertEqual(len(ts), 5)
 
     # ── Geometry: Tw_e ────────────────────────────────────────────────────
 
@@ -41,7 +41,6 @@ class TestGraspSphere(unittest.TestCase):
         for t in self.templates:
             z_ee = t.Tw_e[:3, 2]
             trans = t.Tw_e[:3, 3]
-            # standoff is positive (gripper outside sphere), z_ee antiparallel to trans
             ro = np.linalg.norm(trans)
             self.assertGreater(ro, 0)
             np.testing.assert_allclose(trans / ro, -z_ee, atol=1e-10,
@@ -49,8 +48,6 @@ class TestGraspSphere(unittest.TestCase):
 
     def test_standoff_within_expected_range(self):
         clearance = 0.1 * FL
-        # shallowest: ro = r + fl - clearance
-        # deepest:    ro = r + fl - (min(fl, r) - clearance) = r + fl - min(fl,r) + clearance
         ro_max = RADIUS + FL - clearance
         ro_min = RADIUS + FL - (min(FL, RADIUS) - clearance)
         for t in self.templates:
@@ -67,15 +64,20 @@ class TestGraspSphere(unittest.TestCase):
                 self.assertEqual(t.Bw[row, 0], t.Bw[row, 1],
                                  msg=f"Bw row {row} not fixed in {t.name}")
 
+    def test_bw_full_roll_freedom(self):
+        for t in self.templates:
+            self.assertAlmostEqual(t.Bw[3, 0], 0.)
+            self.assertAlmostEqual(t.Bw[3, 1], 2 * np.pi)
+
+    def test_bw_full_pitch_range(self):
+        for t in self.templates:
+            self.assertAlmostEqual(t.Bw[4, 0], -np.pi / 2)
+            self.assertAlmostEqual(t.Bw[4, 1],  np.pi / 2)
+
     def test_bw_full_yaw_freedom(self):
         for t in self.templates:
             self.assertAlmostEqual(t.Bw[5, 0], 0.)
             self.assertAlmostEqual(t.Bw[5, 1], 2 * np.pi)
-
-    def test_bw_no_roll_or_pitch_freedom(self):
-        for t in self.templates:
-            self.assertEqual(t.Bw[3, 0], t.Bw[3, 1])
-            self.assertEqual(t.Bw[4, 0], t.Bw[4, 1])
 
     # ── Preshape ──────────────────────────────────────────────────────────
 
@@ -94,7 +96,6 @@ class TestGraspSphere(unittest.TestCase):
     # ── Filtering / errors ────────────────────────────────────────────────
 
     def test_returns_empty_when_preshape_too_small(self):
-        # preshape <= 2*r → can't straddle
         ts = self.gripper.grasp_sphere(RADIUS, preshape=2 * RADIUS - 0.001)
         self.assertEqual(ts, [])
 

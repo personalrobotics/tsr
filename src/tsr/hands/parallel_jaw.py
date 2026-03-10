@@ -595,10 +595,17 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Equatorial grasp templates for a sphere — 2*k templates.
+        """Full-sphere grasp templates — k templates.
 
-        Identical to cylinder side grasps but with no height freedom (Bw[2]=0).
-        TSR origin at sphere center. k depths × 2 roll orientations.
+        Approach from any direction in 3-D. Each template has continuous SO(3)
+        freedom in Bw so sampling produces uniformly distributed approach
+        directions over the sphere:
+
+          roll  ∈ [0, 2π]        — finger orientation around the approach axis
+          pitch ∈ [-π/2, π/2]   — elevation (covers full hemisphere, no double-cover)
+          yaw   ∈ angle_range    — azimuth (default full 360°)
+
+        TSR origin at sphere center. k discrete depths baked into Tw_e.
 
         Returns [] if preshape <= sphere diameter. Raises ValueError for
         invalid geometry.
@@ -622,12 +629,12 @@ class ParallelJawGripper(GripperBase):
         T_ref_tsr = np.eye(4)   # origin at sphere center
 
         Bw = np.array([
-            [0.,             0.            ],  # x: no radial freedom
-            [0.,             0.            ],  # y: no tangential freedom
-            [0.,             0.            ],  # z: fixed at equator
-            [0.,             0.            ],  # roll: fixed (encoded in Tw_e)
-            [0.,             0.            ],  # pitch: equatorial approach
-            [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
+            [0.,              0.           ],  # x: no translational freedom
+            [0.,              0.           ],  # y
+            [0.,              0.           ],  # z
+            [0.,              2 * np.pi    ],  # roll: full rotation around approach
+            [-np.pi / 2,      np.pi / 2    ],  # pitch: full elevation (no double-cover)
+            [angle_range[0],  angle_range[1]],  # yaw: azimuthal freedom
         ])
 
         approach_max = min(self.finger_length, object_radius) - clearance
@@ -642,30 +649,25 @@ class ParallelJawGripper(GripperBase):
         for i, d in enumerate(depths):
             ro = object_radius + self.finger_length - d
             dlabel = _depth_label(k, i)
-            Tw_e_0 = np.array([
+            # Approach along -x in TSR frame; standoff ro baked into Tw_e.
+            # Bw roll/pitch/yaw rotates this to any direction on the sphere.
+            Tw_e = np.array([
                 [ 0.,  0., -1., ro],
                 [ 0.,  1.,  0., 0.],
                 [ 1.,  0.,  0., 0.],
                 [ 0.,  0.,  0., 1.],
             ])
-            Tw_e_pi = np.array([
-                [ 0.,  0., -1., ro],
-                [ 0., -1.,  0., 0.],
-                [-1.,  0.,  0., 0.],
-                [ 0.,  0.,  0., 1.],
-            ])
-            for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
-                t_desc = description or (
-                    f"{dlabel.capitalize()} sphere grasp on {reference}: "
-                    f"standoff {ro*1000:.0f}mm from center, {roll_label}, "
-                    f"preshape {preshape*1000:.0f}mm"
-                )
-                templates.append(TSRTemplate(
-                    Tw_e=Tw_e,
-                    name=f"{name} — {dlabel}, {roll_label}",
-                    description=t_desc,
-                    **common,
-                ))
+            t_desc = description or (
+                f"{dlabel.capitalize()} sphere grasp on {reference}: "
+                f"standoff {ro*1000:.0f}mm from center, full SO(3), "
+                f"preshape {preshape*1000:.0f}mm"
+            )
+            templates.append(TSRTemplate(
+                Tw_e=Tw_e,
+                name=f"{name} — {dlabel}",
+                description=t_desc,
+                **common,
+            ))
         return templates
 
     def renderer(self):
