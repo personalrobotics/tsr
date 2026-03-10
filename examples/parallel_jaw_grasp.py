@@ -30,9 +30,9 @@ BOX_Z = 0.180   # box height [m]
 
 N = 3           # samples per template
 
-# Offsets: cylinder left, box right (separated in y)
-CYL_OFF = (0., -0.18, 0.)
-BOX_OFF = (0.,  0.20, 0.)
+# Objects separated along world-x, which is image-horizontal at az=270°
+CYL_OFF = (-0.26, 0., 0.)   # cylinder on the left
+BOX_OFF = ( 0.26, 0., 0.)   # box on the right
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -75,9 +75,8 @@ def main() -> None:
     print(f"Cylinder: {n_cyl} templates · {len(cyl_poses)} poses")
     print(f"Box:      {n_box} templates · {len(box_poses)} poses")
 
-    focus = (0.,
-             (CYL_OFF[1] + BOX_OFF[1]) / 2.,
-             (MUG_H + BOX_Z) / 4.)
+    # Camera at az=270° looks along +y; world-x = image-horizontal → side by side
+    focus = (0., 0., (MUG_H + BOX_Z) / 4.)
 
     def scene_renderer(pl):
         cylinder_renderer(MUG_R, MUG_H, offset=CYL_OFF)(pl)
@@ -88,9 +87,9 @@ def main() -> None:
                f"box ({n_box} templates)\n"
                f"{len(all_poses)} sampled poses"),
         focus=focus,
-        camera_dist=0.90,
-        camera_az=215.,
-        camera_el=28.,
+        camera_dist=1.05,
+        camera_az=270.,
+        camera_el=22.,
     ).render(
         reference_renderer=scene_renderer,
         subject_renderer=gripper.renderer(),
