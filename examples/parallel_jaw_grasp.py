@@ -31,8 +31,8 @@ BOX_Z = 0.180   # box height [m]
 N = 3           # samples per template
 
 # Objects separated along world-x, which is image-horizontal at az=270°
-CYL_OFF = (-0.26, 0., 0.)   # cylinder on the left
-BOX_OFF = ( 0.26, 0., 0.)   # box on the right
+CYL_OFF = (-0.18, 0., 0.)   # cylinder on the left
+BOX_OFF = ( 0.18, 0., 0.)   # box on the right
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
