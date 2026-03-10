@@ -298,15 +298,74 @@ class ParallelJawGripper(GripperBase):
 
     # ── Box primitives ────────────────────────────────────────────────────────
 
-    def _validate_box(self, box_x: float, box_y: float, box_z: float,
-                      preshape: float) -> None:
-        for dim, name in ((box_x, "box_x"), (box_y, "box_y"), (box_z, "box_z")):
+    def _validate_box(self, box_x: float, box_y: float, box_z: float) -> None:
+        for dim, label in ((box_x, "box_x"), (box_y, "box_y"), (box_z, "box_z")):
             if dim <= 0:
-                raise ValueError(f"{name} must be > 0")
-        if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+                raise ValueError(f"{label} must be > 0")
+
+    def _box_face_templates(
+        self,
+        T_ref_tsr: np.ndarray,
+        y_ee: np.ndarray,
+        z_ee: np.ndarray,
+        span_dim: float,
+        slide_bw_row: int,
+        slide_half: float,
+        preshape_user: Optional[float],
+        k: int,
+        clearance: float,
+        subject: str,
+        reference: str,
+        name_prefix: str,
+        description: str,
+        face_label: str,
+    ) -> List[TSRTemplate]:
+        """k depth templates for one face × finger-orientation combo.
+
+        Fingers open along y_ee, spanning span_dim.  The gripper slides in
+        slide_bw_row (world axis 0/1/2 = x/y/z) ± slide_half from the TSR
+        origin.  Returns [] if the finger span can't fit around the object or
+        the required preshape exceeds max_aperture.
+        """
+        if preshape_user is not None:
+            preshape = preshape_user
+            if preshape <= span_dim:
+                return []           # fingers can't straddle the object
+        else:
+            preshape = span_dim + clearance
+            if preshape > self.max_aperture:
+                return []           # geometry exceeds hardware — skip silently
+
+        Bw = np.zeros((6, 2))
+        Bw[slide_bw_row, 0] = -slide_half
+        Bw[slide_bw_row, 1] =  slide_half
+
+        R = np.column_stack([np.cross(y_ee, z_ee), y_ee, z_ee])
+
+        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        common = dict(
+            T_ref_tsr=T_ref_tsr, Bw=Bw,
+            task="grasp", subject=subject, reference=reference,
+            preshape=np.array([preshape]),
+        )
+        templates = []
+        for i, d in enumerate(depths):
+            h_palm = self.finger_length - d
+            dlabel = _depth_label(k, i)
+            Tw_e = np.eye(4)
+            Tw_e[:3, :3] = R
+            Tw_e[:3, 3]  = -z_ee * h_palm   # palm is h_palm outside the face
+            t_desc = description or (
+                f"{dlabel.capitalize()} {face_label} grasp on {reference}: "
+                f"standoff {h_palm*1000:.0f}mm, preshape {preshape*1000:.0f}mm"
             )
+            templates.append(TSRTemplate(
+                Tw_e=Tw_e,
+                name=f"{name_prefix} {face_label} — {dlabel}",
+                description=t_desc,
+                **common,
+            ))
+        return templates
 
     def grasp_box_top(
         self,
@@ -321,18 +380,21 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Top-down grasp templates for a box — k templates.
+        """Top-down grasp templates for a box — up to 2*k templates.
 
         Gripper approaches from above (z_EE = [0,0,-1]). TSR origin at
-        z = box_z. Fingers slide in x and y within [−box_x/2+c, +box_x/2−c]
-        and [−box_y/2+c, +box_y/2+c]; no rotational freedom.
+        z = box_z (top face). Two finger orientations:
+          - fingers along x: spans box_x, slides in y
+          - fingers along y: spans box_y, slides in x
+        Each orientation generates k depth templates if max_aperture allows.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
-        if preshape is None:
-            preshape = self.max_aperture / 2.
-        self._validate_box(box_x, box_y, box_z, preshape)
-
+        self._validate_box(box_x, box_y, box_z)
+        if preshape is not None and preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
         hx, hy = box_x / 2. - clearance, box_y / 2. - clearance
         if hx <= 0 or hy <= 0:
             raise ValueError("box face too small for the given clearance")
@@ -340,46 +402,21 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Box Top Grasp"
 
-        T_ref_tsr = np.eye(4)
-        T_ref_tsr[2, 3] = box_z
+        T = np.eye(4)
+        T[2, 3] = box_z
+        z_ee = np.array([0., 0., -1.])
 
-        Bw = np.array([
-            [-hx, hx],  # x: slide along face
-            [-hy, hy],  # y: slide along face
-            [0.,  0.],  # z: fixed at top face
-            [0.,  0.],  # roll
-            [0.,  0.],  # pitch
-            [0.,  0.],  # yaw: no rotation
-        ])
-
-        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
-        common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
-            preshape=np.array([preshape]),
+        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
+                  subject=subject, reference=reference,
+                  name_prefix=name, description=description)
+        return (
+            self._box_face_templates(T, np.array([1., 0., 0.]), z_ee,
+                                     box_x, 1, hy, **kw,
+                                     face_label="+z (span-x)")
+            + self._box_face_templates(T, np.array([0., 1., 0.]), z_ee,
+                                       box_y, 0, hx, **kw,
+                                       face_label="+z (span-y)")
         )
-        templates = []
-        for i, d in enumerate(depths):
-            h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
-            t_desc = description or (
-                f"{dlabel.capitalize()} top grasp on {reference}: "
-                f"palm {h_palm*1000:.0f}mm above top, preshape {preshape*1000:.0f}mm"
-            )
-            # z_EE = [0,0,-1] (approach down)
-            Tw_e = np.array([
-                [-1.,  0.,  0.,  0.     ],
-                [ 0.,  1.,  0.,  0.     ],
-                [ 0.,  0., -1.,  h_palm ],
-                [ 0.,  0.,  0.,  1.     ],
-            ])
-            templates.append(TSRTemplate(
-                Tw_e=Tw_e,
-                name=f"{name} — {dlabel}",
-                description=t_desc,
-                **common,
-            ))
-        return templates
 
     def grasp_box_bottom(
         self,
@@ -394,17 +431,21 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Bottom-up grasp templates for a box — k templates.
+        """Bottom-up grasp templates for a box — up to 2*k templates.
 
         Gripper approaches from below (z_EE = [0,0,+1]). TSR origin at
-        z = 0 (bottom face). Fingers slide in x and y; no rotational freedom.
+        z = 0 (bottom face). Two finger orientations:
+          - fingers along x: spans box_x, slides in y
+          - fingers along y: spans box_y, slides in x
+        Each orientation generates k depth templates if max_aperture allows.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
-        if preshape is None:
-            preshape = self.max_aperture / 2.
-        self._validate_box(box_x, box_y, box_z, preshape)
-
+        self._validate_box(box_x, box_y, box_z)
+        if preshape is not None and preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
         hx, hy = box_x / 2. - clearance, box_y / 2. - clearance
         if hx <= 0 or hy <= 0:
             raise ValueError("box face too small for the given clearance")
@@ -413,45 +454,20 @@ class ParallelJawGripper(GripperBase):
             name = f"{reference.title()} Box Bottom Grasp"
 
         del box_z  # bottom face is always at z=0; accepted for API symmetry
-        T_ref_tsr = np.eye(4)  # origin at z=0
+        T = np.eye(4)
+        z_ee = np.array([0., 0., 1.])
 
-        Bw = np.array([
-            [-hx, hx],  # x: slide along face
-            [-hy, hy],  # y: slide along face
-            [0.,  0.],  # z: fixed at bottom face
-            [0.,  0.],  # roll
-            [0.,  0.],  # pitch
-            [0.,  0.],  # yaw: no rotation
-        ])
-
-        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
-        common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
-            preshape=np.array([preshape]),
+        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
+                  subject=subject, reference=reference,
+                  name_prefix=name, description=description)
+        return (
+            self._box_face_templates(T, np.array([1., 0., 0.]), z_ee,
+                                     box_x, 1, hy, **kw,
+                                     face_label="-z (span-x)")
+            + self._box_face_templates(T, np.array([0., 1., 0.]), z_ee,
+                                       box_y, 0, hx, **kw,
+                                       face_label="-z (span-y)")
         )
-        templates = []
-        for i, d in enumerate(depths):
-            h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
-            t_desc = description or (
-                f"{dlabel.capitalize()} bottom grasp on {reference}: "
-                f"palm {h_palm*1000:.0f}mm below bottom, preshape {preshape*1000:.0f}mm"
-            )
-            # z_EE = [0,0,+1] (approach up); identity rotation
-            Tw_e = np.array([
-                [ 1.,  0.,  0.,  0.     ],
-                [ 0.,  1.,  0.,  0.     ],
-                [ 0.,  0.,  1., -h_palm ],
-                [ 0.,  0.,  0.,  1.     ],
-            ])
-            templates.append(TSRTemplate(
-                Tw_e=Tw_e,
-                name=f"{name} — {dlabel}",
-                description=t_desc,
-                **common,
-            ))
-        return templates
 
     def grasp_box_face_x(
         self,
@@ -466,104 +482,47 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Grasp templates for the ±x faces of a box — 2*k templates.
+        """Grasp templates for the ±x faces of a box — up to 4*k templates.
 
-        k templates approach from +x (z_EE = [-1,0,0]) and k from -x
-        (z_EE = [+1,0,0]). Fingers slide in y and z; no rotational freedom.
-
-        Rotation matrices (det=+1, each is a valid SO(3)):
-          +x face: z_EE=[-1,0,0], y_EE=[0,0,1]  →  x_EE = y×z = [0,1,0]×[-1,0,0] = [0,0,-1]
-                   Wait — let's be careful: x_EE = y_EE × z_EE = [0,0,1]×[-1,0,0] = [0*0-1*0, 1*(-1)-0*0, 0*0-0*(-1)] = [0,-1,0]
-          +x face: columns [x_EE | y_EE | z_EE] = [[0,-1,0]^T | [0,0,1]^T | [-1,0,0]^T]
-          -x face: z_EE=[+1,0,0], y_EE=[0,0,1] → x_EE = [0,0,1]×[1,0,0] = [0*0-1*0, 1*1-0*0, 0*0-0*1] = [0,1,0]
-          -x face: columns [[0,1,0]^T | [0,0,1]^T | [1,0,0]^T]
+        Two approach directions (+x and -x), each with two finger orientations:
+          - fingers along y: spans box_y, slides in z
+          - fingers along z: spans box_z, slides in y
+        Each valid orientation (max_aperture allows the span) generates k templates.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
-        if preshape is None:
-            preshape = self.max_aperture / 2.
-        self._validate_box(box_x, box_y, box_z, preshape)
-
+        self._validate_box(box_x, box_y, box_z)
+        if preshape is not None and preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
         hy = box_y / 2. - clearance
-        hz_lo = clearance
-        hz_hi = box_z - clearance
+        hz_half = box_z / 2. - clearance
         if hy <= 0:
             raise ValueError("box_y too small for the given clearance")
-        if hz_hi <= hz_lo:
+        if hz_half <= 0:
             raise ValueError("box_z too small for the given clearance")
 
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
 
-        hz_mid  = (hz_lo + hz_hi) / 2.
-        hz_half = (hz_hi - hz_lo) / 2.
+        T_pos = np.eye(4); T_pos[0, 3] =  box_x / 2.; T_pos[2, 3] = box_z / 2.
+        T_neg = np.eye(4); T_neg[0, 3] = -box_x / 2.; T_neg[2, 3] = box_z / 2.
 
-        approach_max = min(self.finger_length, box_x / 2.) - clearance
-        depths = np.linspace(clearance, approach_max, max(k, 1))
-
-        # +x face: approach from +x, z_EE = [-1,0,0], y_EE = [0,0,1], x_EE = [0,-1,0]
-        T_ref_tsr_pos = np.eye(4)
-        T_ref_tsr_pos[0, 3] = box_x / 2.
-        T_ref_tsr_pos[2, 3] = hz_mid
-
-        # -x face: approach from -x, z_EE = [+1,0,0], y_EE = [0,0,1], x_EE = [0,+1,0]
-        T_ref_tsr_neg = np.eye(4)
-        T_ref_tsr_neg[0, 3] = -box_x / 2.
-        T_ref_tsr_neg[2, 3] = hz_mid
-
-        Bw = np.array([
-            [0.,     0.    ],  # x: no radial freedom
-            [-hy,    hy    ],  # y: slide along face
-            [-hz_half, hz_half],  # z: height range
-            [0.,     0.    ],  # roll
-            [0.,     0.    ],  # pitch
-            [0.,     0.    ],  # yaw: no rotation
-        ])
-
-        common_pos = dict(
-            T_ref_tsr=T_ref_tsr_pos, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
-            preshape=np.array([preshape]),
-        )
-        common_neg = dict(
-            T_ref_tsr=T_ref_tsr_neg, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
-            preshape=np.array([preshape]),
-        )
-
+        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
+                  subject=subject, reference=reference,
+                  name_prefix=name, description=description)
         templates = []
-        for i, d in enumerate(depths):
-            standoff = box_x / 2. + self.finger_length - d
-            dlabel = _depth_label(k, i)
-
-            # +x face: R cols = [x_EE | y_EE | z_EE] = [[0,-1,0]^T | [0,0,1]^T | [-1,0,0]^T]
-            Tw_e_pos = np.array([
-                [ 0.,  0., -1.,  standoff],
-                [-1.,  0.,  0.,  0.      ],
-                [ 0.,  1.,  0.,  0.      ],
-                [ 0.,  0.,  0.,  1.      ],
-            ])
-            # -x face: R cols = [[0,1,0]^T | [0,0,1]^T | [1,0,0]^T]
-            Tw_e_neg = np.array([
-                [ 0.,  0.,  1., -standoff],
-                [ 1.,  0.,  0.,  0.      ],
-                [ 0.,  1.,  0.,  0.      ],
-                [ 0.,  0.,  0.,  1.      ],
-            ])
-            for Tw_e, common, face_label in (
-                (Tw_e_pos, common_pos, "+x"),
-                (Tw_e_neg, common_neg, "-x"),
-            ):
-                t_desc = description or (
-                    f"{dlabel.capitalize()} {face_label}-face grasp on {reference}: "
-                    f"standoff {standoff*1000:.0f}mm, preshape {preshape*1000:.0f}mm"
-                )
-                templates.append(TSRTemplate(
-                    Tw_e=Tw_e,
-                    name=f"{name} {face_label} — {dlabel}",
-                    description=t_desc,
-                    **common,
-                ))
+        for T_ref, z_ee, sign in (
+            (T_pos, np.array([-1., 0., 0.]), "+x"),
+            (T_neg, np.array([ 1., 0., 0.]), "-x"),
+        ):
+            templates += self._box_face_templates(
+                T_ref, np.array([0., 1., 0.]), z_ee,
+                box_y, 2, hz_half, **kw, face_label=f"{sign} (span-y)")
+            templates += self._box_face_templates(
+                T_ref, np.array([0., 0., 1.]), z_ee,
+                box_z, 1, hy,      **kw, face_label=f"{sign} (span-z)")
         return templates
 
     def grasp_box_face_y(
@@ -579,101 +538,47 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Grasp templates for the ±y faces of a box — 2*k templates.
+        """Grasp templates for the ±y faces of a box — up to 4*k templates.
 
-        k templates approach from +y (z_EE = [0,-1,0]) and k from -y
-        (z_EE = [0,+1,0]). Fingers slide in x and z; no rotational freedom.
-
-        Rotation matrices (det=+1):
-          +y face: z_EE=[0,-1,0], y_EE=[1,0,0] → x_EE = y×z = [1,0,0]×[0,-1,0] = [0,0,-1]
-                   cols = [[0,0,-1]^T | [1,0,0]^T | [0,-1,0]^T]
-          -y face: z_EE=[0,+1,0], y_EE=[1,0,0] → x_EE = [1,0,0]×[0,1,0] = [0,0,1]
-                   cols = [[0,0,1]^T | [1,0,0]^T | [0,1,0]^T]
+        Two approach directions (+y and -y), each with two finger orientations:
+          - fingers along x: spans box_x, slides in z
+          - fingers along z: spans box_z, slides in x
+        Each valid orientation (max_aperture allows the span) generates k templates.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
-        if preshape is None:
-            preshape = self.max_aperture / 2.
-        self._validate_box(box_x, box_y, box_z, preshape)
-
+        self._validate_box(box_x, box_y, box_z)
+        if preshape is not None and preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
         hx = box_x / 2. - clearance
-        hz_lo = clearance
-        hz_hi = box_z - clearance
+        hz_half = box_z / 2. - clearance
         if hx <= 0:
             raise ValueError("box_x too small for the given clearance")
-        if hz_hi <= hz_lo:
+        if hz_half <= 0:
             raise ValueError("box_z too small for the given clearance")
 
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
 
-        hz_mid  = (hz_lo + hz_hi) / 2.
-        hz_half = (hz_hi - hz_lo) / 2.
+        T_pos = np.eye(4); T_pos[1, 3] =  box_y / 2.; T_pos[2, 3] = box_z / 2.
+        T_neg = np.eye(4); T_neg[1, 3] = -box_y / 2.; T_neg[2, 3] = box_z / 2.
 
-        approach_max = min(self.finger_length, box_y / 2.) - clearance
-        depths = np.linspace(clearance, approach_max, max(k, 1))
-
-        T_ref_tsr_pos = np.eye(4)
-        T_ref_tsr_pos[1, 3] = box_y / 2.
-        T_ref_tsr_pos[2, 3] = hz_mid
-
-        T_ref_tsr_neg = np.eye(4)
-        T_ref_tsr_neg[1, 3] = -box_y / 2.
-        T_ref_tsr_neg[2, 3] = hz_mid
-
-        Bw = np.array([
-            [-hx,     hx    ],  # x: slide along face
-            [0.,      0.    ],  # y: no radial freedom
-            [-hz_half, hz_half],  # z: height range
-            [0.,      0.    ],  # roll
-            [0.,      0.    ],  # pitch
-            [0.,      0.    ],  # yaw: no rotation
-        ])
-
-        common_pos = dict(
-            T_ref_tsr=T_ref_tsr_pos, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
-            preshape=np.array([preshape]),
-        )
-        common_neg = dict(
-            T_ref_tsr=T_ref_tsr_neg, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
-            preshape=np.array([preshape]),
-        )
-
+        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
+                  subject=subject, reference=reference,
+                  name_prefix=name, description=description)
         templates = []
-        for i, d in enumerate(depths):
-            standoff = box_y / 2. + self.finger_length - d
-            dlabel = _depth_label(k, i)
-
-            # +y face: cols = [[0,0,-1]^T | [1,0,0]^T | [0,-1,0]^T]
-            Tw_e_pos = np.array([
-                [ 0.,  1.,  0.,  0.      ],
-                [ 0.,  0., -1.,  standoff],
-                [-1.,  0.,  0.,  0.      ],
-                [ 0.,  0.,  0.,  1.      ],
-            ])
-            # -y face: cols = [[0,0,1]^T | [1,0,0]^T | [0,1,0]^T]
-            Tw_e_neg = np.array([
-                [ 0.,  1.,  0.,  0.      ],
-                [ 0.,  0.,  1., -standoff],
-                [ 1.,  0.,  0.,  0.      ],
-                [ 0.,  0.,  0.,  1.      ],
-            ])
-            for Tw_e, common, face_label in (
-                (Tw_e_pos, common_pos, "+y"),
-                (Tw_e_neg, common_neg, "-y"),
-            ):
-                t_desc = description or (
-                    f"{dlabel.capitalize()} {face_label}-face grasp on {reference}: "
-                    f"standoff {standoff*1000:.0f}mm, preshape {preshape*1000:.0f}mm"
-                )
-                templates.append(TSRTemplate(
-                    Tw_e=Tw_e,
-                    name=f"{name} {face_label} — {dlabel}",
-                    description=t_desc,
-                    **common,
-                ))
+        for T_ref, z_ee, sign in (
+            (T_pos, np.array([0., -1., 0.]), "+y"),
+            (T_neg, np.array([0.,  1., 0.]), "-y"),
+        ):
+            templates += self._box_face_templates(
+                T_ref, np.array([1., 0., 0.]), z_ee,
+                box_x, 2, hz_half, **kw, face_label=f"{sign} (span-x)")
+            templates += self._box_face_templates(
+                T_ref, np.array([0., 0., 1.]), z_ee,
+                box_z, 0, hx,      **kw, face_label=f"{sign} (span-z)")
         return templates
 
     def renderer(self):

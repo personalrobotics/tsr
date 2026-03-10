@@ -236,7 +236,9 @@ class GripperBase(ABC):
         """Generate TSRTemplates for all box grasp modes — 6*k templates.
 
         Combines top, bottom, +x/-x face, and +y/-y face approaches.
-        Returns 2*k + 2*k + k + k = 6*k templates (default k=3: 18 templates).
+        Each face offers two finger orientations (one per face axis), filtered
+        by max_aperture.  Maximum 2 orientations × 6 faces × k depths = 12*k.
+        Actual count depends on box dimensions vs gripper aperture.
 
         Box coordinate convention::
 
