@@ -73,6 +73,77 @@ class GripperBase(ABC):
         """
         raise NotImplementedError
 
+    def grasp_cylinder_top(
+        self,
+        object_radius: float,
+        cylinder_height: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "cylinder",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for grasping a cylinder from above.
+
+        Returns k pre-grasp configurations with z_EE = [0,0,-1] (approach
+        downward). Depth ranges from fingertips barely inside the rim to palm
+        nearly flush with the rim. Full yaw covers all finger orientations.
+
+        Args:
+            object_radius:   Cylinder radius [m].
+            cylinder_height: z-coordinate of the cylinder top face [m].
+            preshape:        Jaw opening [m]. Must exceed cylinder diameter.
+                             Defaults to 2*r + clearance.
+            k:               Number of discrete approach depths (default 3).
+            clearance:       Safety buffer [m]. Defaults to 10% of finger_length.
+            angle_range:     Yaw freedom (default full 360°).
+
+        Returns:
+            List of k TSRTemplates. Empty list if preshape cannot span the cylinder.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_cylinder_top"
+        )
+
+    def grasp_cylinder_bottom(
+        self,
+        object_radius: float,
+        cylinder_bottom: float = 0.0,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "cylinder",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Generate TSRTemplates for grasping a cylinder from below.
+
+        Returns k pre-grasp configurations with z_EE = [0,0,+1] (approach
+        upward). Depth ranges from fingertips barely inside the bottom to palm
+        nearly flush with the bottom face. Full yaw covers all finger orientations.
+
+        Args:
+            object_radius:   Cylinder radius [m].
+            cylinder_bottom: z-coordinate of the cylinder bottom face [m].
+                             Defaults to 0.0.
+            preshape:        Jaw opening [m]. Must exceed cylinder diameter.
+                             Defaults to 2*r + clearance.
+            k:               Number of discrete approach depths (default 3).
+            clearance:       Safety buffer [m]. Defaults to 10% of finger_length.
+            angle_range:     Yaw freedom (default full 360°).
+
+        Returns:
+            List of k TSRTemplates. Empty list if preshape cannot span the cylinder.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement grasp_cylinder_bottom"
+        )
+
     def grasp_sphere(
         self,
         object_radius: float,

@@ -154,6 +154,165 @@ class ParallelJawGripper(GripperBase):
                 ))
         return templates
 
+    def grasp_cylinder_top(
+        self,
+        object_radius: float,
+        cylinder_height: float,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "cylinder",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Top-down grasp templates for a cylinder — k templates.
+
+        Gripper approaches from above (z_EE = [0,0,-1]). Depth ranges from
+        fingertips a clearance inside the rim (shallowest) to palm a clearance
+        above the rim (deepest). Full yaw covers all finger orientations.
+        """
+        if clearance is None:
+            clearance = 0.1 * self.finger_length
+        if preshape is None:
+            preshape = 2. * object_radius + clearance
+        if object_radius <= 0:
+            raise ValueError("object_radius must be > 0")
+        if preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
+        if preshape <= 2. * object_radius:
+            return []
+
+        if not name:
+            name = f"{reference.title()} Cylinder Top Grasp"
+
+        T_ref_tsr = np.eye(4)
+        T_ref_tsr[2, 3] = cylinder_height
+
+        Bw = np.array([
+            [0.,             0.            ],  # x
+            [0.,             0.            ],  # y
+            [0.,             0.            ],  # z: fixed at top face
+            [0.,             0.            ],  # roll
+            [0.,             0.            ],  # pitch
+            [angle_range[0], angle_range[1]],  # yaw: full rotation
+        ])
+
+        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        _depth_labels = {1: ["mid"], 2: ["shallow", "deep"],
+                         3: ["shallow", "mid", "deep"]}
+
+        common = dict(
+            T_ref_tsr=T_ref_tsr, Bw=Bw,
+            task="grasp", subject=subject, reference=reference,
+            preshape=np.array([preshape]),
+        )
+        templates = []
+        for i, d in enumerate(depths):
+            h_palm = self.finger_length - d  # palm height above cylinder top
+            depth_label = (_depth_labels.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+            t_desc = description or (
+                f"{depth_label.capitalize()} top grasp on {reference}: "
+                f"palm {h_palm*1000:.0f}mm above rim, preshape {preshape*1000:.0f}mm"
+            )
+            # z_EE = [0,0,-1] (approach down); x = y × z = [0,1,0]×[0,0,-1] = [-1,0,0]
+            Tw_e = np.array([
+                [-1.,  0.,  0.,  0.     ],
+                [ 0.,  1.,  0.,  0.     ],
+                [ 0.,  0., -1.,  h_palm ],
+                [ 0.,  0.,  0.,  1.     ],
+            ])
+            templates.append(TSRTemplate(
+                Tw_e=Tw_e,
+                name=f"{name} — {depth_label}",
+                description=t_desc,
+                **common,
+            ))
+        return templates
+
+    def grasp_cylinder_bottom(
+        self,
+        object_radius: float,
+        cylinder_bottom: float = 0.0,
+        preshape: Optional[float] = None,
+        k: int = 3,
+        clearance: Optional[float] = None,
+        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        subject: str = "gripper",
+        reference: str = "cylinder",
+        name: str = "",
+        description: str = "",
+    ) -> List[TSRTemplate]:
+        """Bottom-up grasp templates for a cylinder — k templates.
+
+        Gripper approaches from below (z_EE = [0,0,+1]). Depth ranges from
+        fingertips a clearance inside the bottom face (shallowest) to palm a
+        clearance below the bottom face (deepest). Full yaw covers all finger
+        orientations.
+        """
+        if clearance is None:
+            clearance = 0.1 * self.finger_length
+        if preshape is None:
+            preshape = 2. * object_radius + clearance
+        if object_radius <= 0:
+            raise ValueError("object_radius must be > 0")
+        if preshape > self.max_aperture:
+            raise ValueError(
+                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
+            )
+        if preshape <= 2. * object_radius:
+            return []
+
+        if not name:
+            name = f"{reference.title()} Cylinder Bottom Grasp"
+
+        T_ref_tsr = np.eye(4)
+        T_ref_tsr[2, 3] = cylinder_bottom
+
+        Bw = np.array([
+            [0.,             0.            ],  # x
+            [0.,             0.            ],  # y
+            [0.,             0.            ],  # z: fixed at bottom face
+            [0.,             0.            ],  # roll
+            [0.,             0.            ],  # pitch
+            [angle_range[0], angle_range[1]],  # yaw: full rotation
+        ])
+
+        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        _depth_labels = {1: ["mid"], 2: ["shallow", "deep"],
+                         3: ["shallow", "mid", "deep"]}
+
+        common = dict(
+            T_ref_tsr=T_ref_tsr, Bw=Bw,
+            task="grasp", subject=subject, reference=reference,
+            preshape=np.array([preshape]),
+        )
+        templates = []
+        for i, d in enumerate(depths):
+            h_palm = self.finger_length - d  # palm depth below cylinder bottom
+            depth_label = (_depth_labels.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+            t_desc = description or (
+                f"{depth_label.capitalize()} bottom grasp on {reference}: "
+                f"palm {h_palm*1000:.0f}mm below rim, preshape {preshape*1000:.0f}mm"
+            )
+            # z_EE = [0,0,+1] (approach up); identity rotation
+            Tw_e = np.array([
+                [ 1.,  0.,  0.,  0.      ],
+                [ 0.,  1.,  0.,  0.      ],
+                [ 0.,  0.,  1., -h_palm  ],
+                [ 0.,  0.,  0.,  1.      ],
+            ])
+            templates.append(TSRTemplate(
+                Tw_e=Tw_e,
+                name=f"{name} — {depth_label}",
+                description=t_desc,
+                **common,
+            ))
+        return templates
+
     def renderer(self):
         """Return a SubjectRenderer using the parallel jaw wireframe.
 
@@ -205,9 +364,14 @@ class Robotiq2F140(ParallelJawGripper):
             max_aperture=self.MAX_APERTURE,
         )
 
+    def _apply_frame_correction(self, templates: List[TSRTemplate]) -> List[TSRTemplate]:
+        return [dataclasses.replace(t, Tw_e=t.Tw_e @ _R_z_neg90) for t in templates]
+
     def grasp_cylinder(self, *args, **kwargs) -> List[TSRTemplate]:
-        templates = super().grasp_cylinder(*args, **kwargs)
-        return [
-            dataclasses.replace(t, Tw_e=t.Tw_e @ _R_z_neg90)
-            for t in templates
-        ]
+        return self._apply_frame_correction(super().grasp_cylinder(*args, **kwargs))
+
+    def grasp_cylinder_top(self, *args, **kwargs) -> List[TSRTemplate]:
+        return self._apply_frame_correction(super().grasp_cylinder_top(*args, **kwargs))
+
+    def grasp_cylinder_bottom(self, *args, **kwargs) -> List[TSRTemplate]:
+        return self._apply_frame_correction(super().grasp_cylinder_bottom(*args, **kwargs))
