@@ -5,8 +5,8 @@ Usage::
     from tsr.hands import ParallelJawGripper, Robotiq2F140
 
     gripper   = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
-    templates = gripper.grasp_cylinder(object_radius=0.04,
-                                       height_range=(0.02, 0.10),
+    templates = gripper.grasp_cylinder(cylinder_radius=0.04,
+                                       cylinder_height=0.12,
                                        reference="mug")
     tsr  = templates[0].instantiate(mug_pose)
     pose = tsr.sample()

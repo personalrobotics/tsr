@@ -8,11 +8,6 @@ import numpy as np
 
 from tsr.template import TSRTemplate
 
-_SHARED_KWARGS = dict(
-    preshape=None, k=3, clearance=None,
-    angle_range=(0., 2 * np.pi), subject="gripper", reference="cylinder",
-)
-
 
 class GripperBase(ABC):
     """Abstract base class for gripper hand models.
