@@ -38,7 +38,7 @@ BOX_X = 0.080   # box width  [m]
 BOX_Y = 0.060   # box depth  [m]
 BOX_Z = 0.180   # box height [m]
 
-N = 3           # samples per template
+TARGET = 36     # target total sampled poses per object
 
 # Objects separated along world-x, which is image-horizontal at az=270°
 CYL_OFF = (-0.30, 0., 0.      )   # cylinder on the far left
@@ -71,24 +71,28 @@ def main() -> None:
     cyl_pose = np.eye(4); cyl_pose[:3, 3] = CYL_OFF
     cyl_templates = gripper.grasp_cylinder(
         cylinder_radius=MUG_R, cylinder_height=MUG_H, reference="mug")
-    cyl_poses, cyl_colors = _collect(cyl_templates, cyl_pose, N)
+    cyl_poses, cyl_colors = _collect(cyl_templates, cyl_pose,
+                                      max(1, round(TARGET / len(cyl_templates))))
 
     # Sphere grasps
     sph_pose = np.eye(4); sph_pose[:3, 3] = SPH_OFF
     sph_templates = gripper.grasp_sphere(object_radius=SPH_R, reference="ball")
-    sph_poses, sph_colors = _collect(sph_templates, sph_pose, N)
+    sph_poses, sph_colors = _collect(sph_templates, sph_pose,
+                                      max(1, round(TARGET / len(sph_templates))))
 
     # Torus grasps
     tor_pose = np.eye(4); tor_pose[:3, 3] = TOR_OFF
     tor_templates = gripper.grasp_torus(
         torus_radius=TOR_R, tube_radius=TOR_r, reference="handle")
-    tor_poses, tor_colors = _collect(tor_templates, tor_pose, N)
+    tor_poses, tor_colors = _collect(tor_templates, tor_pose,
+                                      max(1, round(TARGET / len(tor_templates))))
 
     # Box grasps
     box_pose = np.eye(4); box_pose[:3, 3] = BOX_OFF
     box_templates = gripper.grasp_box(
         box_x=BOX_X, box_y=BOX_Y, box_z=BOX_Z, reference="box")
-    box_poses, box_colors = _collect(box_templates, box_pose, N)
+    box_poses, box_colors = _collect(box_templates, box_pose,
+                                      max(1, round(TARGET / len(box_templates))))
 
     all_poses  = cyl_poses  + sph_poses  + tor_poses  + box_poses
     all_colors = cyl_colors + sph_colors + tor_colors + box_colors
