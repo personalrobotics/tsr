@@ -29,33 +29,72 @@ uv sync --extra test
 ### Generate grasp templates from object geometry
 
 ```python
-from tsr.template import TSRTemplate
 import numpy as np
-
-# Define your gripper (finger_length and max_aperture are all you need)
-from examples.parallel_jaw_grasp import ParallelJawGripper
+from tsr.hands import ParallelJawGripper
 
 gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
-# Generate side-grasp templates for a cylinder
-# Returns 6 TSRTemplates: 3 depth levels × 2 roll orientations
+# Cylinder — side + top + bottom: 4*k templates (default k=3: 12 total)
 templates = gripper.grasp_cylinder(
-    object_radius=0.040,        # 4cm radius
-    height_range=(0.02, 0.10),  # graspable height band
-    reference="mug",            # label for the reference object
+    cylinder_radius=0.040,   # 4 cm radius
+    cylinder_height=0.120,   # 12 cm tall
+    reference="mug",
 )
-
 for t in templates:
     print(t.name)
     # "Mug Cylinder Side Grasp — shallow, roll 0°"
     # "Mug Cylinder Side Grasp — shallow, roll 180°"
     # ...
 
+# Box — all six faces, two finger orientations per face: up to 2*6*k templates
+templates = gripper.grasp_box(box_x=0.08, box_y=0.06, box_z=0.18, reference="box")
+
+# Sphere — full SO(3) approach: k templates
+templates = gripper.grasp_sphere(object_radius=0.040, reference="ball")
+
+# Torus — side (all minor angles) + span (if aperture allows): up to 2*k*n_minor + 2*k
+templates = gripper.grasp_torus(
+    torus_radius=0.035,   # major radius R: center to tube center
+    tube_radius=0.015,    # minor radius r: tube cross-section
+    reference="handle",
+)
+
 # Instantiate at a specific object pose and sample
 mug_pose = np.eye(4)
-mug_pose[:3, 3] = [0.5, 0.0, 0.0]  # mug at x=0.5
+mug_pose[:3, 3] = [0.5, 0.0, 0.0]   # mug at x=0.5m
 
 grasp_poses = [t.instantiate(mug_pose).sample() for t in templates]
+```
+
+### Torus grasps in detail
+
+The torus primitive covers handles, rings, and rotary knobs with two complementary modes:
+
+**Side grasps** (`grasp_torus_side`) — approach from `n_minor` discrete angles α around
+the tube cross-section, with full azimuthal yaw freedom around the ring:
+
+```
+α = −π/2  from below      α = −π/4  from below-outside
+α =  0    from outside     α = +π/4  from above-outside
+α = +π/2  from above
+```
+
+Depth range: fingertips sweep from the tube centerline (shallowest) to the
+inner tube surface (deepest), or stop when the palm reaches the outer surface.
+Returns `[]` if `finger_length ≤ tube_radius` (finger too short to reach centerline).
+
+**Span grasps** (`grasp_torus_span`) — approach from above/below with fingers spanning
+the full outer diameter `2*(R+r)`. Only generated when `2*(R+r) + clearance ≤ max_aperture`.
+
+```python
+# Side grasps: 5 angles × 3 depths × 2 flips = 30 templates
+side = gripper.grasp_torus_side(torus_radius=0.035, tube_radius=0.015, n_minor=5, k=3)
+
+# Span grasps: 3 top + 3 bottom = 6 templates (silently [] if torus too wide)
+span = gripper.grasp_torus_span(torus_radius=0.035, tube_radius=0.015, k=3)
+
+# Combined (recommended): side + span
+all_templates = gripper.grasp_torus(torus_radius=0.035, tube_radius=0.015)
 ```
 
 ### Work directly with TSRs
