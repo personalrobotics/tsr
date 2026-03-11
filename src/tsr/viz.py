@@ -284,6 +284,77 @@ def torus_renderer(
     return render
 
 
+# ── Placement renderers ───────────────────────────────────────────────────────
+
+def table_surface_renderer(
+    table_x: float,
+    table_y: float,
+    thickness: float = 0.015,
+    color: str = "#2d333b",
+    edge_color: str = "#3d4755",
+) -> ReferenceRenderer:
+    """Renderer for a flat table surface (reference for placement TSRs).
+
+    table_x, table_y: half-extents of the table surface [m].
+    """
+    def render(pl: pv.Plotter) -> None:
+        slab = pv.Box(bounds=(
+            -table_x, table_x, -table_y, table_y, -thickness, 0.
+        ))
+        pl.add_mesh(slab, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.1, diffuse=0.8, ambient=0.25)
+        corners = [
+            (-table_x, -table_y), (table_x, -table_y),
+            (table_x,  table_y), (-table_x,  table_y),
+            (-table_x, -table_y),
+        ]
+        pts = np.array([(x, y, 0.) for x, y in corners])
+        pl.add_mesh(pv.Spline(pts, n_points=len(corners)).tube(radius=0.002),
+                    color=edge_color, opacity=0.55, lighting=False)
+
+    return render
+
+
+def placed_box_renderer(
+    lx: float,
+    ly: float,
+    lz: float,
+) -> SubjectRenderer:
+    """Subject renderer for a placed box.
+
+    Box frame: origin at geometric center, axes aligned with extents (lx, ly, lz).
+    """
+    def render(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple,
+               opacity: float = 0.90) -> None:
+        box = pv.Box(bounds=(-lx / 2, lx / 2, -ly / 2, ly / 2, -lz / 2, lz / 2))
+        R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
+        box.points = (R @ box.points.T).T + t
+        pl.add_mesh(box, color=color, opacity=opacity, smooth_shading=True,
+                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+
+    return render
+
+
+def placed_cylinder_renderer(
+    radius: float,
+    height: float,
+) -> SubjectRenderer:
+    """Subject renderer for a placed cylinder.
+
+    Cylinder frame: origin at geometric center, z = cylinder axis.
+    """
+    def render(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple,
+               opacity: float = 0.90) -> None:
+        R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
+        direction = R @ np.array([0., 0., 1.])
+        cyl = pv.Cylinder(center=t, direction=direction,
+                          radius=radius, height=height, resolution=60, capping=True)
+        pl.add_mesh(cyl, color=color, opacity=opacity, smooth_shading=True,
+                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+
+    return render
+
+
 # ── Subject renderers ─────────────────────────────────────────────────────────
 
 def parallel_jaw_renderer(

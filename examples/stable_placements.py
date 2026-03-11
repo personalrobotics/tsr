@@ -3,9 +3,12 @@
 Demonstrates how to generate placement TSRs for geometric primitives and
 arbitrary meshes, then sample valid placement poses on a table surface.
 
+Also renders a visualization of a box in each of its 3 stable poses.
+
 Usage::
 
-    uv run python examples/03_placements.py
+    uv run python examples/stable_placements.py
+    uv sync --extra viz && uv run python examples/stable_placements.py
 """
 import numpy as np
 
@@ -72,3 +75,43 @@ for t in templates:
     pose = t.instantiate(table_pose).sample()
     margin_str = t.name.split("margin ")[1].rstrip(")")
     print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {margin_str}")
+
+
+# ── Visualization ────────────────────────────────────────────────────────────
+# Show a box (10×6×18 cm) in each of its 3 stable poses on a table.
+# Requires: uv sync --extra viz
+try:
+    from tsr.viz import (TSRVisualizer, table_surface_renderer,
+                         placed_box_renderer, plasma_colors)
+
+    TX, TY = 0.30, 0.20    # table half-extents
+    LX, LY, LZ = 0.10, 0.06, 0.18   # box dimensions
+
+    box_templates = TablePlacer(table_x=TX, table_y=TY).place_box(LX, LY, LZ)
+
+    # Canonical placement pose at each x offset (Bw = 0, yaw = 0).
+    x_offsets = np.linspace(-TX * 0.55, TX * 0.55, len(box_templates))
+    poses = []
+    for tmpl, x in zip(box_templates, x_offsets):
+        T = np.eye(4)
+        T[0, 3] = x
+        poses.append(T @ tmpl.Tw_e)
+
+    out = "assets/stable_placements.png"
+    TSRVisualizer(
+        window_size=(1400, 820),
+        camera_az=215., camera_el=28., camera_dist=0.62,
+        focus=(0., 0., 0.06),
+        title="Box — 3 stable placement poses (z-face · y-face · x-face)",
+        crop_pad=28,
+    ).render(
+        reference_renderer=table_surface_renderer(TX, TY),
+        subject_renderer=placed_box_renderer(LX, LY, LZ),
+        poses=poses,
+        out=out,
+        colors=plasma_colors(len(poses)),
+    )
+    print(f"\nSaved {out}")
+
+except ImportError:
+    print("\n(install viz extra for visualization: uv sync --extra viz)")
