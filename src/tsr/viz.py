@@ -137,29 +137,149 @@ def cylinder_renderer(
     height: float,
     color: str = "#1c5f99",
     rim_color: str = "#5aaaf0",
+    offset: tuple = (0., 0., 0.),
 ) -> ReferenceRenderer:
     """Renderer for a solid cylinder (mug, can, bottle, etc.)."""
+    ox, oy, oz = offset
+
     def render(pl: pv.Plotter) -> None:
         cyl = pv.Cylinder(
-            center=(0., 0., height / 2.), direction=(0., 0., 1.),
+            center=(ox, oy, oz + height / 2.), direction=(0., 0., 1.),
             radius=radius, height=height, resolution=60, capping=True,
         )
         pl.add_mesh(cyl, color=color, opacity=1.0, smooth_shading=True,
                     lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
 
-        for z_r in (0., height):
+        for z_r in (oz, oz + height):
             th  = np.linspace(0., 2. * np.pi, 120, endpoint=True)
-            pts = np.column_stack([radius * np.cos(th), radius * np.sin(th),
+            pts = np.column_stack([radius * np.cos(th) + ox,
+                                   radius * np.sin(th) + oy,
                                    np.full(120, z_r)])
             pl.add_mesh(pv.Spline(pts, n_points=120).tube(radius=0.0008),
                         color=rim_color, opacity=0.85, smooth_shading=True, lighting=True)
 
         for r in np.linspace(radius * 0.3, radius * 0.88, 4):
             th  = np.linspace(0., 2. * np.pi, 80, endpoint=True)
-            pts = np.column_stack([r * np.cos(th), r * np.sin(th),
-                                   np.full(80, height)])
+            pts = np.column_stack([r * np.cos(th) + ox,
+                                   r * np.sin(th) + oy,
+                                   np.full(80, oz + height)])
             pl.add_mesh(pv.Spline(pts, n_points=80).tube(radius=0.0004),
                         color=rim_color, opacity=0.22, lighting=False)
+
+    return render
+
+
+def box_renderer(
+    box_x: float,
+    box_y: float,
+    box_z: float,
+    color: str = "#1c5f99",
+    edge_color: str = "#5aaaf0",
+    offset: tuple = (0., 0., 0.),
+) -> ReferenceRenderer:
+    """Renderer for a solid box (cereal box, book, brick, etc.).
+
+    Box coordinate convention: centered in x/y, bottom face at z=0, top at z=box_z.
+    """
+    ox, oy, oz = offset
+
+    def render(pl: pv.Plotter) -> None:
+        box = pv.Box(bounds=(
+            ox - box_x / 2., ox + box_x / 2.,
+            oy - box_y / 2., oy + box_y / 2.,
+            oz,              oz + box_z,
+        ))
+        pl.add_mesh(box, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+
+        hx, hy, hz = box_x / 2., box_y / 2., box_z
+        corners = [
+            (-hx, -hy), ( hx, -hy), ( hx,  hy), (-hx,  hy), (-hx, -hy),
+        ]
+        for z_f in (oz, oz + hz):
+            pts = np.array([(ox + x, oy + y, z_f) for x, y in corners])
+            pl.add_mesh(pv.Spline(pts, n_points=len(corners)).tube(radius=0.0008),
+                        color=edge_color, opacity=0.85, smooth_shading=True, lighting=True)
+        for x, y in ((-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)):
+            pts = np.array([(ox + x, oy + y, oz), (ox + x, oy + y, oz + hz)])
+            pl.add_mesh(pv.Spline(pts, n_points=2).tube(radius=0.0008),
+                        color=edge_color, opacity=0.85, smooth_shading=True, lighting=True)
+
+    return render
+
+
+def sphere_renderer(
+    radius: float,
+    color: str = "#1c5f99",
+    rim_color: str = "#5aaaf0",
+    offset: tuple = (0., 0., 0.),
+) -> ReferenceRenderer:
+    """Renderer for a solid sphere.
+
+    Sphere coordinate convention: center at origin (offset shifts the center).
+    """
+    ox, oy, oz = offset
+
+    def render(pl: pv.Plotter) -> None:
+        sph = pv.Sphere(radius=radius, center=(ox, oy, oz), theta_resolution=60,
+                        phi_resolution=60)
+        pl.add_mesh(sph, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.6, diffuse=0.8, ambient=0.15)
+
+        # Equatorial ring
+        th  = np.linspace(0., 2. * np.pi, 120, endpoint=True)
+        pts = np.column_stack([radius * np.cos(th) + ox,
+                               radius * np.sin(th) + oy,
+                               np.full(120, oz)])
+        pl.add_mesh(pv.Spline(pts, n_points=120).tube(radius=0.0008),
+                    color=rim_color, opacity=0.85, smooth_shading=True, lighting=True)
+
+    return render
+
+
+def torus_renderer(
+    torus_radius: float,
+    tube_radius: float,
+    color: str = "#1c5f99",
+    rim_color: str = "#5aaaf0",
+    offset: tuple = (0., 0., 0.),
+) -> ReferenceRenderer:
+    """Renderer for a solid torus (ring/donut shape).
+
+    Torus coordinate convention: center at origin, axis along +z.
+    torus_radius R: distance from center to tube center.
+    tube_radius  r: cross-section radius of the tube.
+    """
+    ox, oy, oz = offset
+
+    def render(pl: pv.Plotter) -> None:
+        # Build torus surface via parametric sweep
+        N_phi, N_theta = 80, 40
+        phi   = np.linspace(0., 2. * np.pi, N_phi,   endpoint=False)  # around ring
+        theta = np.linspace(0., 2. * np.pi, N_theta, endpoint=False)  # around tube
+        PHI, THETA = np.meshgrid(phi, theta, indexing='ij')
+
+        X = (torus_radius + tube_radius * np.cos(THETA)) * np.cos(PHI) + ox
+        Y = (torus_radius + tube_radius * np.cos(THETA)) * np.sin(PHI) + oy
+        Z = tube_radius * np.sin(THETA) + oz
+
+        # Build StructuredGrid
+        pts = np.column_stack([X.ravel(), Y.ravel(), Z.ravel()])
+        grid = pv.StructuredGrid()
+        grid.points = pts
+        grid.dimensions = (N_phi, N_theta, 1)
+        surface = grid.extract_surface()
+        pl.add_mesh(surface, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+
+        # Outer and inner rim rings
+        th = np.linspace(0., 2. * np.pi, 120, endpoint=True)
+        for r_ring in (torus_radius + tube_radius, torus_radius - tube_radius):
+            pts_ring = np.column_stack([r_ring * np.cos(th) + ox,
+                                        r_ring * np.sin(th) + oy,
+                                        np.full(120, oz)])
+            pl.add_mesh(pv.Spline(pts_ring, n_points=120).tube(radius=0.0008),
+                        color=rim_color, opacity=0.85, smooth_shading=True, lighting=True)
 
     return render
 
