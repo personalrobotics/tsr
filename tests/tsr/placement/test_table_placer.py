@@ -232,8 +232,9 @@ class TestTablePlacerMesh(unittest.TestCase):
             np.testing.assert_allclose(pose[3], [0, 0, 0, 1], atol=1e-10)
             _valid_se3(pose)
 
-    def test_off_center_com_returns_six_templates(self):
-        # For a convex object, COM anywhere inside the hull keeps all faces stable.
+    def test_off_center_com_cube_still_six_templates(self):
+        # For a cube the face squares are large enough that any interior COM
+        # projection lands inside every face (cube-specific, not a general rule).
         L = 0.05
         verts = np.array([
             [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],
@@ -242,6 +243,20 @@ class TestTablePlacerMesh(unittest.TestCase):
         com = np.array([L * 0.5, L * 0.5, L * 0.5])
         templates = self.placer.place_mesh(verts, com)
         self.assertEqual(len(templates), 6)
+
+    def test_unstable_face_filtered(self):
+        # Elongated tetrahedron: tiny base triangle + apex very far in x.
+        # The COM lands outside the tiny base, so that face is not returned.
+        verts = np.array([
+            [0.0,   0.0,  0.0],
+            [0.01,  0.0,  0.0],
+            [0.005, 0.01, 0.0],
+            [100.0, 0.0,  0.001],  # apex far in x
+        ])
+        com = verts.mean(axis=0)   # centroid ≈ (25, 0.0025, 0.00025)
+        templates = self.placer.place_mesh(verts, com)
+        # Base face (z≈0) has COM projection at x≈25, outside the 0.01-wide triangle.
+        self.assertLess(len(templates), 4)
 
 
 class TestTablePlacerInit(unittest.TestCase):
