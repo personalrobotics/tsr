@@ -1,4 +1,4 @@
-"""03_placements.py — Stable placement TSR generation with TablePlacer.
+"""stable_placements.py — Stable placement TSR generation with TablePlacer.
 
 Demonstrates how to generate placement TSRs for geometric primitives and
 arbitrary meshes, then sample valid placement poses on a table surface.
