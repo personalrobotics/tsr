@@ -689,6 +689,7 @@ class ParallelJawGripper(GripperBase):
         tube_radius: float,
         preshape: Optional[float] = None,
         k: int = 3,
+        n_minor: int = 5,
         clearance: Optional[float] = None,
         angle_range: Tuple[float, float] = (0., 2 * np.pi),
         subject: str = "gripper",
@@ -696,14 +697,36 @@ class ParallelJawGripper(GripperBase):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Radial side grasp templates for a torus — 2*k templates.
+        """Side grasp templates for a torus tube — 2 * k * n_minor templates.
 
-        Identical to cylinder side grasps, but with the major radius R added
-        to the standoff so the gripper is positioned outside the torus tube
-        rather than a simple cylinder.
+        The gripper approaches the tube from n_minor discrete angles α in the
+        tube cross-section plane (the plane containing the radial and vertical
+        axes), ranging from directly below (α = −π/2) to directly above
+        (α = +π/2) via the outside equator (α = 0):
 
-        Returns [] if preshape <= tube diameter. Raises ValueError for
-        invalid geometry or preshape > max_aperture.
+            α = −π/2  from below    (matches span-bottom geometry)
+            α = −π/4  from below-outside
+            α =  0    from outside  (pure radial equatorial approach)
+            α = +π/4  from above-outside
+            α = +π/2  from above    (matches span-top geometry)
+
+        At each α the Bw yaw samples the full azimuth around the torus ring
+        (major radius), giving complete coverage of the tube surface. Two hand
+        flip variants (fingers open in ±tangential direction) are generated per
+        (α, depth) combination.
+
+        Gripper position in TSR frame at depth d, minor angle α:
+            tx = R + (r + fl − d) · cos α   (radial offset from torus axis)
+            tz =     (r + fl − d) · sin α   (height above equatorial plane)
+        z_EE = (−cos α, 0, −sin α)   (points toward tube center)
+
+        Args:
+            n_minor:   Discrete approach angles around the tube cross-section
+                       (default 5: evenly spaced in [−π/2, +π/2]).
+            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+
+        Returns 2*k*n_minor TSRTemplates. Returns [] if preshape ≤ tube
+        diameter. Raises ValueError for invalid geometry.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
@@ -720,19 +743,20 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Torus Side Grasp"
 
-        T_ref_tsr = np.eye(4)  # origin at torus center (equatorial plane z=0)
+        T_ref_tsr = np.eye(4)  # origin at torus center
 
         Bw = np.array([
             [0.,             0.            ],  # x: no freedom
             [0.,             0.            ],  # y: no freedom
-            [0.,             0.            ],  # z: fixed at torus equator
-            [0.,             0.            ],  # roll: fixed (encoded in Tw_e)
-            [0.,             0.            ],  # pitch: equatorial approach
+            [0.,             0.            ],  # z: baked into Tw_e
+            [0.,             0.            ],  # roll: baked into Tw_e
+            [0.,             0.            ],  # pitch: baked into Tw_e
             [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
         ])
 
         approach_max = min(self.finger_length, tube_radius) - clearance
         depths = np.linspace(clearance, approach_max, max(k, 1))
+        minor_angles = np.linspace(-np.pi / 2, np.pi / 2, max(n_minor, 1))
 
         common = dict(
             T_ref_tsr=T_ref_tsr, Bw=Bw,
@@ -740,34 +764,43 @@ class ParallelJawGripper(GripperBase):
             preshape=np.array([preshape]),
         )
         templates = []
-        for i, d in enumerate(depths):
-            # Standoff from torus axis: tube outer surface is at R+r, palm at R+r+fl-d
-            ro = torus_radius + tube_radius + self.finger_length - d
-            dlabel = _depth_label(k, i)
-            Tw_e_0 = np.array([
-                [ 0.,  0., -1., ro],
-                [ 0.,  1.,  0., 0.],
-                [ 1.,  0.,  0., 0.],
-                [ 0.,  0.,  0., 1.],
-            ])
-            Tw_e_pi = np.array([
-                [ 0.,  0., -1., ro],
-                [ 0., -1.,  0., 0.],
-                [-1.,  0.,  0., 0.],
-                [ 0.,  0.,  0., 1.],
-            ])
-            for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
-                t_desc = description or (
-                    f"{dlabel.capitalize()} torus side grasp on {reference}: "
-                    f"standoff {ro*1000:.0f}mm from axis, {roll_label}, "
-                    f"preshape {preshape*1000:.0f}mm"
-                )
-                templates.append(TSRTemplate(
-                    Tw_e=Tw_e,
-                    name=f"{name} — {dlabel}, {roll_label}",
-                    description=t_desc,
-                    **common,
-                ))
+        for alpha in minor_angles:
+            ca, sa = np.cos(alpha), np.sin(alpha)
+            a_label = f"α={np.degrees(alpha):.0f}°"
+            for i, d in enumerate(depths):
+                # Distance from tube center to palm
+                ro_minor = tube_radius + self.finger_length - d
+                # Gripper position in TSR frame (before yaw rotation)
+                tx = torus_radius + ro_minor * ca
+                tz = ro_minor * sa
+                dlabel = _depth_label(k, i)
+                # z_EE = (−cosα, 0, −sinα); y_EE = (0, ±1, 0); x_EE = y_EE × z_EE
+                # Flip 0:  y_EE=(0,+1,0) → x_EE=(−sinα, 0, cosα)
+                # Flip π:  y_EE=(0,−1,0) → x_EE=(+sinα, 0, −cosα)
+                Tw_e_0 = np.array([
+                    [-sa,  0., -ca,  tx],
+                    [ 0.,  1.,  0.,  0.],
+                    [ ca,  0., -sa,  tz],
+                    [ 0.,  0.,  0.,  1.],
+                ])
+                Tw_e_pi = np.array([
+                    [ sa,  0., -ca,  tx],
+                    [ 0., -1.,  0.,  0.],
+                    [-ca,  0., -sa,  tz],
+                    [ 0.,  0.,  0.,  1.],
+                ])
+                for Tw_e, flip_label in ((Tw_e_0, "flip 0°"), (Tw_e_pi, "flip 180°")):
+                    t_desc = description or (
+                        f"{dlabel.capitalize()} torus side grasp on {reference}: "
+                        f"{a_label}, ro={ro_minor*1000:.0f}mm from tube center, "
+                        f"{flip_label}, preshape {preshape*1000:.0f}mm"
+                    )
+                    templates.append(TSRTemplate(
+                        Tw_e=Tw_e,
+                        name=f"{name} — {a_label}, {dlabel}, {flip_label}",
+                        description=t_desc,
+                        **common,
+                    ))
         return templates
 
     def grasp_torus_span(

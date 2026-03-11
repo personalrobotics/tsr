@@ -33,12 +33,22 @@ class TestGraspTorusSide(unittest.TestCase):
 
     # ── Template count ─────────────────────────────────────────────────────
 
-    def test_default_k3_returns_6_templates(self):
-        self.assertEqual(len(self.templates), 6)   # 2 rolls × 3 depths
+    def test_default_k3_n5_returns_30_templates(self):
+        # 5 minor angles × 3 depths × 2 hand flips = 30
+        self.assertEqual(len(self.templates), 30)
 
-    def test_k1_returns_2_templates(self):
-        ts = self.gripper.grasp_torus_side(SR, Sr, k=1)
+    def test_k1_n1_returns_2_templates(self):
+        # equatorial only (n_minor=1), single depth, 2 hand flips
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=1)
         self.assertEqual(len(ts), 2)
+
+    def test_k1_n3_returns_6_templates(self):
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=3)
+        self.assertEqual(len(ts), 6)   # 3 angles × 1 depth × 2 flips
+
+    def test_k3_n1_returns_6_templates(self):
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=3, n_minor=1)
+        self.assertEqual(len(ts), 6)   # 1 angle × 3 depths × 2 flips
 
     # ── Geometry: Tw_e ────────────────────────────────────────────────────
 
@@ -46,17 +56,46 @@ class TestGraspTorusSide(unittest.TestCase):
         for t in self.templates:
             _check_se3(self, t.Tw_e[:3, :3])
 
-    def test_z_ee_points_inward(self):
-        """z_EE should be (-1,0,0) in TSR frame (radially inward)."""
+    def test_z_ee_in_xz_plane_of_tsr_frame(self):
+        """z_EE = (−cosα, 0, −sinα): y-component always zero."""
         for t in self.templates:
+            self.assertAlmostEqual(t.Tw_e[1, 2], 0.,
+                                   msg=f"z_EE y-component nonzero in {t.name}")
+
+    def test_z_ee_equatorial_is_minus_x(self):
+        """Middle minor angle of n_minor=3 is α=0: z_EE = (−1, 0, 0)."""
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=3)
+        # Templates order: α=−π/2 (idx 0,1), α=0 (idx 2,3), α=+π/2 (idx 4,5)
+        for t in ts[2:4]:
             np.testing.assert_allclose(t.Tw_e[:3, 2], [-1., 0., 0.], atol=1e-10)
 
-    def test_standoff_includes_major_radius(self):
-        """Standoff = R + r + fl - d; must be > R+r (outside tube surface)."""
+    def test_z_ee_at_alpha_pos_pi2_points_down(self):
+        """Last minor angle is +π/2: z_EE = (0, 0, −1) (approach from above)."""
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=5)
+        for t in ts[-2:]:   # last 2 = α=+π/2, both hand flips
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., 0., -1.], atol=1e-10)
+
+    def test_z_ee_at_alpha_neg_pi2_points_up(self):
+        """First minor angle is −π/2: z_EE = (0, 0, +1) (approach from below)."""
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=5)
+        for t in ts[:2]:    # first 2 = α=−π/2, both hand flips
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., 0., 1.], atol=1e-10)
+
+    def test_gripper_outside_tube_surface(self):
+        """Distance from tube center to gripper must exceed tube_radius."""
         for t in self.templates:
-            ro = t.Tw_e[0, 3]   # x-translation = standoff from torus axis
-            self.assertGreater(ro, SR + Sr,
-                               msg=f"standoff {ro} not > R+r in {t.name}")
+            tx, tz = t.Tw_e[0, 3], t.Tw_e[2, 3]
+            # Tube center in TSR frame is at (R, 0, 0)
+            dist_from_tube_center = np.sqrt((tx - SR) ** 2 + tz ** 2)
+            self.assertGreater(dist_from_tube_center, Sr,
+                               msg=f"Gripper inside tube surface in {t.name}")
+
+    def test_y_ee_is_tangential(self):
+        """y_EE (finger opening) is always ±z-axis of torus tangent: (0, ±1, 0)."""
+        for t in self.templates:
+            self.assertAlmostEqual(t.Tw_e[0, 1], 0.)
+            self.assertAlmostEqual(t.Tw_e[2, 1], 0.)
+            self.assertAlmostEqual(abs(t.Tw_e[1, 1]), 1.)
 
     # ── Geometry: Bw ─────────────────────────────────────────────────────
 

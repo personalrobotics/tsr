@@ -469,6 +469,7 @@ class GripperBase(ABC):
         tube_radius: float,
         preshape: Optional[float] = None,
         k: int = 3,
+        n_minor: int = 5,
         clearance: Optional[float] = None,
         angle_range: Tuple[float, float] = (0., 2 * np.pi),
         subject: str = "gripper",
@@ -483,10 +484,12 @@ class GripperBase(ABC):
             torus_radius R: distance from center to tube center.
             tube_radius  r: cross-section radius of the tube.
 
-        Side mode (2*k templates):
-            Approach radially from outside; fingers straddle the tube
-            cross-section (preshape = 2*r + clearance). k depths × 2 roll
-            orientations. Full yaw covers all azimuth positions.
+        Side mode (2 * k * n_minor templates):
+            Approach from n_minor discrete angles α ∈ [−π/2, +π/2] in the
+            tube cross-section plane. α=0 is a pure equatorial radial approach;
+            α=±π/2 approaches from below/above (matching span geometry).
+            k depths × 2 hand flips per angle. Full yaw covers all azimuth
+            positions around the ring.
 
         Span mode (up to 2*k templates, silently omitted if too large):
             Approach from above and below; fingers span the full outer diameter
@@ -499,19 +502,22 @@ class GripperBase(ABC):
             preshape:      Jaw opening for side grasps [m]. Defaults to
                            2*r + clearance.
             k:             Number of discrete depths per mode (default 3).
+            n_minor:       Discrete approach angles around the tube
+                           cross-section (default 5).
             clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
             angle_range:   Yaw freedom for side grasps (default full 360°).
             subject:       Label for the end-effector entity.
             reference:     Label for the reference object.
 
         Returns:
-            List of 2*k to 4*k TSRTemplates depending on span feasibility.
+            List of 2*k*n_minor + up to 2*k TSRTemplates.
         """
         shared = dict(preshape=preshape, k=k, clearance=clearance,
                       subject=subject, reference=reference)
         return (
             self.grasp_torus_side(torus_radius, tube_radius,
-                                  angle_range=angle_range, **shared)
+                                  n_minor=n_minor, angle_range=angle_range,
+                                  **shared)
             + self.grasp_torus_span(torus_radius, tube_radius, **shared)
         )
 
@@ -521,6 +527,7 @@ class GripperBase(ABC):
         tube_radius: float,
         preshape: Optional[float] = None,
         k: int = 3,
+        n_minor: int = 5,
         clearance: Optional[float] = None,
         angle_range: Tuple[float, float] = (0., 2 * np.pi),
         subject: str = "gripper",
@@ -528,22 +535,24 @@ class GripperBase(ABC):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Radial side grasp templates for a torus — 2*k templates.
+        """Side grasp templates for a torus tube — 2 * k * n_minor templates.
 
-        Approach from outside radially; fingers straddle the tube cross-section.
-        TSR origin at torus center. Full yaw freedom covers all azimuth positions.
-        k depths × 2 roll orientations.
+        The gripper approaches from n_minor discrete angles in the tube
+        cross-section plane (α ∈ [−π/2, +π/2]), with full azimuthal yaw
+        freedom around the torus ring. Two hand flip variants per (α, depth).
 
         Args:
             torus_radius:  Major radius R [m].
             tube_radius:   Minor radius r [m].
             preshape:      Jaw opening [m]. Defaults to 2*r + clearance.
             k:             Number of discrete approach depths (default 3).
+            n_minor:       Discrete approach angles in the tube cross-section
+                           (default 5: −π/2, −π/4, 0, +π/4, +π/2).
             clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
             angle_range:   Yaw freedom (default full 360°).
 
         Returns:
-            List of 2*k TSRTemplates. Empty list if preshape cannot span tube.
+            List of 2*k*n_minor TSRTemplates. Empty if preshape cannot span tube.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement grasp_torus_side"
