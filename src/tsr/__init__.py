@@ -58,6 +58,9 @@ from .sampling import (
     sample_from_templates,
 )
 
+# Placement
+from .placement import TablePlacer
+
 # Template I/O
 from .io import (
     save_template,
