@@ -720,13 +720,18 @@ class ParallelJawGripper(GripperBase):
             tz =     (r + fl − d) · sin α   (height above equatorial plane)
         z_EE = (−cos α, 0, −sin α)   (points toward tube center)
 
+        Depth range (fingertip distance from tube center = |ro_minor − fl|):
+            depth 1/k : fingertips at the tube center
+            depth k/k : fingertips at the inner tube surface (or palm at outer surface)
+
         Args:
             n_minor:   Discrete approach angles around the tube cross-section
                        (default 5: evenly spaced in [−π/2, +π/2]).
             clearance: Safety buffer [m]. Defaults to 10% of finger_length.
 
         Returns 2*k*n_minor TSRTemplates. Returns [] if preshape ≤ tube
-        diameter. Raises ValueError for invalid geometry.
+        diameter or finger_length ≤ tube_radius (finger too short to reach
+        tube centerline). Raises ValueError for invalid geometry.
         """
         if clearance is None:
             clearance = 0.1 * self.finger_length
@@ -754,8 +759,13 @@ class ParallelJawGripper(GripperBase):
             [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
         ])
 
-        approach_max = min(self.finger_length, tube_radius) - clearance
-        depths = np.linspace(clearance, approach_max, max(k, 1))
+        # Start: fingertips at the tube center (requires finger_length >= tube_radius).
+        # End:   fingertips at the inner tube surface, or palm at outer surface.
+        d_shallow = tube_radius
+        d_deep    = min(2 * tube_radius, self.finger_length)
+        if d_shallow >= d_deep:
+            return []   # finger too short to reach tube centerline
+        depths = np.linspace(d_shallow, d_deep, max(k, 1))
         minor_angles = np.linspace(-np.pi / 2, np.pi / 2, max(n_minor, 1))
 
         common = dict(

@@ -131,6 +131,28 @@ class TestGraspTorusSide(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.gripper.grasp_torus_side(SR, Sr, preshape=MA + 0.001)
 
+    def test_returns_empty_when_finger_too_short_to_reach_centerline(self):
+        # finger_length must be > tube_radius to reach the tube center from outside
+        short_gripper = ParallelJawGripper(finger_length=Sr - 0.001, max_aperture=MA)
+        ts = short_gripper.grasp_torus_side(SR, Sr)
+        self.assertEqual(ts, [])
+
+    def test_side_depth_shallow_fingertip_at_tube_center(self):
+        """Shallowest depth (d=tube_radius): fingertip exactly at tube center."""
+        # k=2, n_minor=3 → α=0 block at idx 4-7; shallow=4,5
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=2, n_minor=3)
+        for t in ts[4:6]:
+            ro_minor = t.Tw_e[0, 3] - SR
+            np.testing.assert_allclose(ro_minor - FL, 0., atol=1e-10)
+
+    def test_side_depth_deep_fingertip_at_inner_surface(self):
+        """Deepest depth (d=2*tube_radius): fingertip at inner tube surface."""
+        # k=2, n_minor=3 → α=0 block at idx 4-7; deep=6,7
+        ts = self.gripper.grasp_torus_side(SR, Sr, k=2, n_minor=3)
+        for t in ts[6:8]:
+            ro_minor = t.Tw_e[0, 3] - SR
+            np.testing.assert_allclose(ro_minor - FL, -Sr, atol=1e-10)
+
     def test_raises_for_invalid_torus(self):
         with self.assertRaises(ValueError):
             self.gripper.grasp_torus_side(0.01, 0.02)  # tube_r >= torus_r

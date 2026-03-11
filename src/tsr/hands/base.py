@@ -552,7 +552,8 @@ class GripperBase(ABC):
             angle_range:   Yaw freedom (default full 360°).
 
         Returns:
-            List of 2*k*n_minor TSRTemplates. Empty if preshape cannot span tube.
+            List of 2*k*n_minor TSRTemplates. Empty if preshape cannot span
+            the tube or finger_length ≤ tube_radius.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement grasp_torus_side"
