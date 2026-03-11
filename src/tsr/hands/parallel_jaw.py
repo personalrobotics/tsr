@@ -774,19 +774,20 @@ class ParallelJawGripper(GripperBase):
                 tx = torus_radius + ro_minor * ca
                 tz = ro_minor * sa
                 dlabel = _depth_label(k, i)
-                # z_EE = (−cosα, 0, −sinα); y_EE = (0, ±1, 0); x_EE = y_EE × z_EE
-                # Flip 0:  y_EE=(0,+1,0) → x_EE=(−sinα, 0, cosα)
-                # Flip π:  y_EE=(0,−1,0) → x_EE=(+sinα, 0, −cosα)
+                # z_EE = (−cosα, 0, −sinα); y_EE in radial-vertical plane ⊥ z_EE
+                # y_EE ⊥ z_EE in span{x̂,ẑ}: y_EE = (−sinα, 0, cosα)
+                # x_EE = y_EE × z_EE = (0, −1, 0)  [same for all α]
+                # Flip π: y_EE = (+sinα, 0, −cosα), x_EE = (0, +1, 0)
                 Tw_e_0 = np.array([
-                    [-sa,  0., -ca,  tx],
-                    [ 0.,  1.,  0.,  0.],
-                    [ ca,  0., -sa,  tz],
+                    [ 0., -sa, -ca,  tx],
+                    [-1.,  0.,  0.,  0.],
+                    [ 0.,  ca, -sa,  tz],
                     [ 0.,  0.,  0.,  1.],
                 ])
                 Tw_e_pi = np.array([
-                    [ sa,  0., -ca,  tx],
-                    [ 0., -1.,  0.,  0.],
-                    [-ca,  0., -sa,  tz],
+                    [ 0.,  sa, -ca,  tx],
+                    [ 1.,  0.,  0.,  0.],
+                    [ 0., -ca, -sa,  tz],
                     [ 0.,  0.,  0.,  1.],
                 ])
                 for Tw_e, flip_label in ((Tw_e_0, "flip 0°"), (Tw_e_pi, "flip 180°")):

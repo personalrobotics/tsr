@@ -90,12 +90,11 @@ class TestGraspTorusSide(unittest.TestCase):
             self.assertGreater(dist_from_tube_center, Sr,
                                msg=f"Gripper inside tube surface in {t.name}")
 
-    def test_y_ee_is_tangential(self):
-        """y_EE (finger opening) is always ±z-axis of torus tangent: (0, ±1, 0)."""
+    def test_y_ee_in_radial_vertical_plane(self):
+        """y_EE (finger opening) lies in the radial-vertical plane: y-component = 0."""
         for t in self.templates:
-            self.assertAlmostEqual(t.Tw_e[0, 1], 0.)
-            self.assertAlmostEqual(t.Tw_e[2, 1], 0.)
-            self.assertAlmostEqual(abs(t.Tw_e[1, 1]), 1.)
+            self.assertAlmostEqual(t.Tw_e[1, 1], 0.,
+                                   msg=f"y_EE y-component nonzero in {t.name}")
 
     # ── Geometry: Bw ─────────────────────────────────────────────────────
 
