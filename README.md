@@ -4,7 +4,7 @@ A Python library for pose-constrained manipulation planning using Task Space Reg
 
 Based on the IJRR paper ["Task Space Regions: A Framework for Pose-Constrained Manipulation Planning"](https://www.ri.cmu.edu/pub_files/2011/10/dmitry_ijrr10-1.pdf) by Berenson, Srinivasa, and Kuffner.
 
-![TSR Cylinder Side Grasp](assets/tsr_viz.png)
+![TSR Grasp Templates](assets/tsr_viz.png)
 
 ## Installation
 
@@ -64,37 +64,6 @@ mug_pose = np.eye(4)
 mug_pose[:3, 3] = [0.5, 0.0, 0.0]   # mug at x=0.5m
 
 grasp_poses = [t.instantiate(mug_pose).sample() for t in templates]
-```
-
-### Torus grasps in detail
-
-The torus primitive covers handles, rings, and rotary knobs with two complementary modes:
-
-**Side grasps** (`grasp_torus_side`) — approach from `n_minor` discrete angles α around
-the tube cross-section, with full azimuthal yaw freedom around the ring:
-
-```
-α = −π/2  from below      α = −π/4  from below-outside
-α =  0    from outside     α = +π/4  from above-outside
-α = +π/2  from above
-```
-
-Depth range: fingertips sweep from the tube centerline (shallowest) to the
-inner tube surface (deepest), or stop when the palm reaches the outer surface.
-Returns `[]` if `finger_length ≤ tube_radius` (finger too short to reach centerline).
-
-**Span grasps** (`grasp_torus_span`) — approach from above/below with fingers spanning
-the full outer diameter `2*(R+r)`. Only generated when `2*(R+r) + clearance ≤ max_aperture`.
-
-```python
-# Side grasps: 5 angles × 3 depths × 2 flips = 30 templates
-side = gripper.grasp_torus_side(torus_radius=0.035, tube_radius=0.015, n_minor=5, k=3)
-
-# Span grasps: 3 top + 3 bottom = 6 templates (silently [] if torus too wide)
-span = gripper.grasp_torus_span(torus_radius=0.035, tube_radius=0.015, k=3)
-
-# Combined (recommended): side + span
-all_templates = gripper.grasp_torus(torus_radius=0.035, tube_radius=0.015)
 ```
 
 ### Work directly with TSRs
