@@ -1,8 +1,11 @@
-name: Plate on Stack
-description: Place plate centered on existing stack
-task: place
-subject: plate
-reference: plate_stack
+name: Drive Screw
+description: >
+  Screwdriver tip at screw head, free to rotate around the screw axis and
+  advance as the screw sinks. Reference frame: screw head, z pointing out
+  of surface (up). EE z points toward surface (down).
+task: actuate
+subject: screwdriver_tip
+reference: screw
 T_ref_tsr:
 - - 1.0
   - 0.0
@@ -15,7 +18,7 @@ T_ref_tsr:
 - - 0.0
   - 0.0
   - 1.0
-  - 0.02
+  - 0.0
 - - 0.0
   - 0.0
   - 0.0
@@ -42,7 +45,7 @@ Bw:
   - 0.0
 - - 0.0
   - 0.0
-- - 0.0
+- - -0.01
   - 0.0
 - - 0.0
   - 0.0

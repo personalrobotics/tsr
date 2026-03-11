@@ -1,8 +1,11 @@
-name: Table Wiping Constraint
-description: Keep sponge flat on table while wiping
-task: constrain
-subject: sponge
-reference: table
+name: Drive Screw
+description: >
+  Screwdriver tip at screw head, free to rotate around the screw axis and
+  advance as the screw sinks. Reference frame: screw head, z pointing out
+  of surface (up). EE z points toward surface (down).
+task: actuate
+subject: screwdriver_tip
+reference: screw
 T_ref_tsr:
 - - 1.0
   - 0.0
@@ -38,11 +41,11 @@ Tw_e:
   - 0.0
   - 1.0
 Bw:
-- - -0.3
-  - 0.3
-- - -0.2
-  - 0.2
 - - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - -0.01
   - 0.0
 - - 0.0
   - 0.0

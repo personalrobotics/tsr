@@ -1,0 +1,55 @@
+name: Mug Transport Upright
+description: >
+  Keep the mug upright while transporting. Reference frame: world origin.
+  Free xy translation and yaw; z constrained to transport height;
+  pitch and roll bounded to ±15° to prevent spilling.
+task: transport
+subject: mug
+reference: world
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - -2.0
+  - 2.0
+- - -2.0
+  - 2.0
+- - 0.5
+  - 1.5
+- - -0.2617993877991494
+  - 0.2617993877991494
+- - -0.2617993877991494
+  - 0.2617993877991494
+- - -3.141592653589793
+  - 3.141592653589793

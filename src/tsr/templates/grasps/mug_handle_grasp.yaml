@@ -1,5 +1,5 @@
-name: Mug Side Grasp (Avoiding Handle)
-description: Grasp mug body from the side, keeping clear of handle
+name: Mug Handle Grasp
+description: Grasp mug by the handle for carrying
 task: grasp
 subject: gripper
 reference: mug
@@ -7,7 +7,7 @@ T_ref_tsr:
 - - 1.0
   - 0.0
   - 0.0
-  - 0.0
+  - 0.06
 - - 0.0
   - 1.0
   - 0.0
@@ -15,22 +15,22 @@ T_ref_tsr:
 - - 0.0
   - 0.0
   - 1.0
-  - 0.0
+  - 0.05
 - - 0.0
   - 0.0
   - 0.0
   - 1.0
 Tw_e:
-- - 0.0
-  - 0.0
-  - -1.0
-  - 0.09
-- - 0.0
-  - 1.0
-  - 0.0
-  - 0.0
 - - 1.0
   - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - -0.03
+- - 0.0
+  - -1.0
   - 0.0
   - 0.0
 - - 0.0
@@ -42,13 +42,13 @@ Bw:
   - 0.0
 - - 0.0
   - 0.0
-- - 0.03
-  - 0.08
+- - 0.0
+  - 0.0
+- - -0.17453292519943295
+  - 0.17453292519943295
 - - 0.0
   - 0.0
 - - 0.0
   - 0.0
-- - 0.7853981633974483
-  - 5.497787143782138
 preshape:
-- 0.09
+- 0.025

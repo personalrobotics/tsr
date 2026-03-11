@@ -1,0 +1,55 @@
+name: Toolchest Drop
+description: >
+  Place screwdriver into open toolchest bin. Reference frame: center of the
+  chest opening, z pointing up. Wide xy footprint (chest interior), small z
+  range above the rim, generous tilt tolerance.
+task: place
+subject: screwdriver
+reference: toolchest
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - -0.15
+  - 0.15
+- - -0.10
+  - 0.10
+- - 0.0
+  - 0.05
+- - -0.5235987755982988
+  - 0.5235987755982988
+- - -0.5235987755982988
+  - 0.5235987755982988
+- - -3.141592653589793
+  - 3.141592653589793

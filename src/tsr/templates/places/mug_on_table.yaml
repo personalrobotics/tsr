@@ -1,17 +1,52 @@
-name: Mug Table Placement
-description: Place mug on table surface with 2cm clearance
+name: Mug on Table
+description: Place mug upright on table surface
 task: place
 subject: mug
 reference: table
-
-position:
-  type: plane
-  x: [-0.1, 0.1]
-  y: [-0.1, 0.1]
-  z: 0.02
-
-orientation:
-  approach: -z
-  yaw: [-45, 45]
-
-standoff: 0
+T_ref_tsr:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Tw_e:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - -1.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - -1.0
+  - 0.0
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+Bw:
+- - -0.15
+  - 0.15
+- - -0.15
+  - 0.15
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - -3.141592653589793
+  - 3.141592653589793
