@@ -1,94 +1,60 @@
-# TSR Templates
+# TSR Template Library
 
-This directory contains TSR template YAML files organized by task category.
+Hand-authored TSR templates for two manipulation narratives. Each template is a
+YAML file loadable via `load_template()` / `load_package_template()`.
 
-## Directory Structure
+## Narratives
 
-```
-templates/
-├── grasps/          # Grasping templates
-├── places/          # Placement templates
-├── tools/           # Tool manipulation templates
-└── README.md        # This file
-```
+### 1. Tool Use — Screwdriver
 
-## Template Organization
+Pick up a screwdriver, drive a screw, drop the tool into a toolchest.
 
-### Grasps (`grasps/`)
-Templates for grasping different objects:
-- `mug_side_grasp.yaml` - Side grasp for cylindrical objects
-- `mug_top_grasp.yaml` - Top grasp for open containers
-- `box_side_grasp.yaml` - Side grasp for rectangular objects
+| Step | File | task | subject | reference |
+|------|------|------|---------|-----------|
+| Grasp screwdriver | `grasps/screwdriver_grasp.yaml` | grasp | gripper | screwdriver |
+| Drive screw | `tasks/drive_screw.yaml` | actuate | screwdriver_tip | screw |
+| Drop in toolchest | `places/toolchest_drop.yaml` | place | screwdriver | toolchest |
 
-### Places (`places/`)
-Templates for placing objects:
-- `mug_on_table.yaml` - Place mug on flat surface
-- `bottle_in_shelf.yaml` - Place bottle in shelf compartment
+### 2. Everyday Manipulation — Mug of Water
 
-### Tools (`tools/`)
-Templates for tool manipulation:
-- `screwdriver_grasp.yaml` - Grasp screwdriver handle
-- `wrench_grasp.yaml` - Grasp wrench handle
+Pick up a full mug, carry it to the sink, pour it out, set it on the table.
+
+| Step | File | task | subject | reference |
+|------|------|------|---------|-----------|
+| Grasp mug by handle | `grasps/mug_handle_grasp.yaml` | grasp | gripper | mug |
+| Transport upright | `tasks/mug_transport_upright.yaml` | transport | mug | world |
+| Pour into sink | `tasks/mug_pour_into_sink.yaml` | pour | mug | sink |
+| Place on table | `places/mug_on_table.yaml` | place | mug | table |
 
 ## Usage
 
 ```python
-from tsr import TemplateIO
+from tsr import load_package_template, load_package_templates_by_category
+import numpy as np
 
-# Load a specific template
-template = TemplateIO.load_template("templates/grasps/mug_side_grasp.yaml")
+# Load a single template
+t = load_package_template("grasps/screwdriver_grasp.yaml")
 
-# Load all templates from a category
-grasp_templates = TemplateIO.load_templates_from_directory("templates/grasps/")
+# Bind to an object pose and sample
+screwdriver_pose = np.eye(4)
+screwdriver_pose[:3, 3] = [0.4, 0.0, 0.1]
+tsr = t.instantiate(screwdriver_pose)
+gripper_pose = tsr.sample()
 
-# Load templates by category
-templates_by_category = TemplateIO.load_templates_by_category("templates/")
+# Load all grasp templates
+grasps = load_package_templates_by_category("grasp")
 ```
 
-## Template Format
+## Coordinate Frame Convention
 
-Each template YAML file contains:
-- **Semantic context**: subject, reference, task category, variant
-- **Geometric parameters**: T_ref_tsr, Tw_e, Bw matrices
-- **Metadata**: name, description
-- **Optional preshape**: gripper configuration as DOF values
+All templates use a right-handed frame attached to the reference object:
 
-Example:
-```yaml
-name: Mug Side Grasp
-description: Grasp mug from the side with 5cm approach distance
-subject_entity: generic_gripper
-reference_entity: mug
-task_category: grasp
-variant: side
-T_ref_tsr: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-Tw_e: [[0, 0, 1, -0.05], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]]
-Bw: [[0, 0], [0, 0], [-0.01, 0.01], [0, 0], [0, 0], [-3.14159, 3.14159]]
-preshape: [0.08]  # Optional: 8cm aperture for parallel jaw gripper
-```
+- **x** — object's primary axis (handle axis for screwdriver, body axis for mug)
+- **y** — object's secondary axis
+- **z** — up / out-of-surface
 
-## Preshape Configuration
+End-effector frame convention (gripper):
 
-Templates can include optional `preshape` fields to specify gripper configurations:
-
-### Parallel Jaw Grippers
-```yaml
-preshape: [0.08]  # Single value: aperture in meters
-```
-
-### Multi-Finger Hands
-```yaml
-preshape: [0.0, 0.5, 0.5, 0.0, 0.5, 0.5]  # Multiple values: joint angles
-```
-
-### No Preshape
-Omit the `preshape` field or set to `null` for templates that don't require specific gripper configuration.
-
-## Contributing
-
-When adding new templates:
-1. Use descriptive filenames
-2. Include comprehensive descriptions
-3. Add preshape configuration when gripper state is important
-4. Test the template with the library
-5. Update this README if adding new categories
+- **z** — approach direction (toward object)
+- **y** — finger opening direction
+- **x** — palm normal (right-hand rule: x = y × z)

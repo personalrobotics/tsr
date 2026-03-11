@@ -1,8 +1,8 @@
-name: Pen Writing Grasp
-description: Grasp pen for writing tasks, fingers perpendicular to pen axis
+name: Screwdriver Handle Grasp
+description: Power grasp on screwdriver handle for driving screws
 task: grasp
 subject: gripper
-reference: pen
+reference: screwdriver
 T_ref_tsr:
 - - 1.0
   - 0.0
@@ -28,7 +28,7 @@ Tw_e:
 - - 0.0
   - 0.0
   - -1.0
-  - 0.026000000000000002
+  - 0.04
 - - 0.0
   - 1.0
   - 0.0
@@ -51,4 +51,4 @@ Bw:
 - - 0.0
   - 0.0
 preshape:
-- 0.015
+- 0.04

@@ -1,8 +1,11 @@
-name: Jar Lid Twist Grasp
-description: Grasp jar lid rim for unscrewing
-task: grasp
-subject: gripper
-reference: jar_lid
+name: Mug Pour Into Sink
+description: >
+  Tilt mug over the sink to pour. Reference frame: sink center, z pointing up,
+  offset 0.15m above surface. Mug is tilted 30–60° (pitch) toward the sink;
+  yaw is free to approach from any side.
+task: pour
+subject: mug
+reference: sink
 T_ref_tsr:
 - - 1.0
   - 0.0
@@ -15,7 +18,7 @@ T_ref_tsr:
 - - 0.0
   - 0.0
   - 1.0
-  - 0.0
+  - 0.15
 - - 0.0
   - 0.0
   - 0.0
@@ -32,23 +35,21 @@ Tw_e:
 - - 0.0
   - 0.0
   - -1.0
-  - 0.052500000000000005
+  - 0.0
 - - 0.0
   - 0.0
   - 0.0
   - 1.0
 Bw:
-- - -0.0025000000000000022
-  - 0.0025000000000000022
-- - 0.0
-  - 0.0
-- - 0.0
-  - 0.015
 - - 0.0
   - 0.0
 - - 0.0
   - 0.0
+- - 0.0
+  - 0.0
+- - 0.0
+  - 0.0
+- - 0.5235987755982988
+  - 1.0471975511965976
 - - -3.141592653589793
   - 3.141592653589793
-preshape:
-- 0.075
