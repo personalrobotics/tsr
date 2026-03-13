@@ -8,7 +8,21 @@ to get valid end-effector poses satisfying the constraint.
 
 Based on the IJRR paper ["Task Space Regions: A Framework for Pose-Constrained Manipulation Planning"](https://www.ri.cmu.edu/pub_files/2011/10/dmitry_ijrr10-1.pdf) by Berenson, Srinivasa, and Kuffner.
 
-![TSR Manipulation Templates](assets/tsr_viz.png)
+## Gallery
+
+### Grasps
+
+![TSR Grasp Templates](assets/tsr_grasps.png)
+
+### Stable placements
+
+![Stable Placements — primitives](assets/stable_placements.png)
+
+*Cylinder, box, sphere, and torus in every stable pose on a table surface.*
+
+![Stable Placements — non-convex meshes](assets/mesh_placements.png)
+
+*L-shape, T-shape, and a mug (cylinder + handle) — `place_mesh` applied to arbitrary vertex clouds. Each object is shown in all stable orientations above the 5° margin threshold.*
 
 ## Installation
 
@@ -58,7 +72,9 @@ place     = load_package_template("places", "mug_on_table.yaml")
 
 ### Generate templates from object geometry
 
-For grasping, `ParallelJawGripper` generates TSR templates directly from shape parameters:
+#### Grasping
+
+`ParallelJawGripper` generates TSR templates directly from shape parameters:
 
 ```python
 import numpy as np
@@ -92,6 +108,41 @@ mug_pose[:3, 3] = [0.5, 0.0, 0.0]   # mug at x=0.5m
 
 grasp_poses = [t.instantiate(mug_pose).sample() for t in templates]
 ```
+
+#### Placing
+
+`TablePlacer` generates one TSR template per stable resting pose on a flat surface:
+
+```python
+import numpy as np
+from tsr.placement import TablePlacer
+
+placer = TablePlacer(table_x=0.60, table_y=0.40)
+
+# Analytic primitives
+templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, subject="mug")
+templates = placer.place_box(lx=0.08, ly=0.06, lz=0.18, subject="box")   # up to 3 poses
+templates = placer.place_sphere(radius=0.040, subject="ball")
+templates = placer.place_torus(major_radius=0.035, minor_radius=0.015, subject="ring")
+
+# Arbitrary mesh — pass any (N, 3) vertex cloud + centre of mass
+vertices = np.array([...])   # (N, 3) points
+com      = np.array([cx, cy, cz])
+templates = placer.place_mesh(vertices, com, subject="widget")
+
+# Each template encodes one stable orientation; sample a table pose for it
+table_pose = np.eye(4)
+table_pose[2, 3] = 0.75   # table surface at z = 0.75 m
+
+for t in templates:
+    pose = t.instantiate(table_pose).sample()
+    print(t.name, "→ COM z =", pose[2, 3])
+```
+
+Stability is determined by the COM-projection criterion: a face is stable if the
+centre of mass projects inside the support polygon formed by that face's contact
+region. The stability margin is `arctan(d_min / h_com)` where `d_min` is the
+minimum distance from the COM projection to any edge of the polygon.
 
 ### Work directly with TSRs
 

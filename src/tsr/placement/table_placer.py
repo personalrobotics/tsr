@@ -88,9 +88,10 @@ class TablePlacer:
         cylinder_height: float,
         subject: str = "object",
     ) -> List[TSRTemplate]:
-        """Return one placement template: cylinder upright on its base.
+        """Return 2 placement templates: cylinder on each circular face.
 
         Object frame: origin at center, z = cylinder axis pointing up.
+        Sideways (on the curved surface) is not stable and not returned.
 
         Args:
             cylinder_radius: Cylinder radius (m).
@@ -102,17 +103,25 @@ class TablePlacer:
         if cylinder_height <= 0:
             raise ValueError("cylinder_height must be positive")
 
-        return [self._template(
-            name=f"Place cylinder upright ({subject} on {self.reference})",
-            description=(
-                f"Cylinder (r={cylinder_radius:.3f} m, h={cylinder_height:.3f} m) "
-                f"upright on {self.reference}. Yaw free."
-            ),
-            variant="upright",
-            Tw_e=self._tw_e(np.eye(3), cylinder_height / 2.0),
-            Bw=self._bw(),
-            subject=subject,
-        )]
+        _neg_z = np.array([0.0, 0.0, -1.0])
+        candidates = [
+            (np.array([0.0, 0.0, -1.0]), "-z"),
+            (np.array([0.0, 0.0, +1.0]), "+z"),
+        ]
+        return [
+            self._template(
+                name=f"Place cylinder {label}-face down ({subject} on {self.reference})",
+                description=(
+                    f"Cylinder (r={cylinder_radius:.3f} m, h={cylinder_height:.3f} m) "
+                    f"resting on {label} face on {self.reference}. Yaw free."
+                ),
+                variant=label,
+                Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), cylinder_height / 2.0),
+                Bw=self._bw(),
+                subject=subject,
+            )
+            for n, label in candidates
+        ]
 
     def place_box(
         self,
@@ -121,11 +130,11 @@ class TablePlacer:
         lz: float,
         subject: str = "object",
     ) -> List[TSRTemplate]:
-        """Return up to 3 placement templates: one per unique stable face.
+        """Return 6 placement templates: one for each face of the box.
 
         Object frame: origin at center, axes aligned with box extents.
-        Faces with equal half-extents yield identical templates and are
-        deduplicated.
+        All 6 faces are returned because opposite faces are semantically
+        distinct (e.g. front vs back of a cereal box).
 
         Args:
             lx: Box x-extent (m).
@@ -138,32 +147,31 @@ class TablePlacer:
                 raise ValueError(f"{name} must be positive")
 
         _neg_z = np.array([0.0, 0.0, -1.0])
-        # (outward normal of resting face, COM height, label)
+        # (outward normal of the resting face, COM height, variant label)
+        # Each face is listed with its outward normal pointing toward the table.
         candidates = [
-            (np.array([0.0, 0.0, -1.0]), lz / 2.0, "z-face"),
-            (np.array([0.0, -1.0, 0.0]), ly / 2.0, "y-face"),
-            (np.array([-1.0, 0.0, 0.0]), lx / 2.0, "x-face"),
+            (np.array([ 0.0,  0.0, -1.0]), lz / 2.0, "-z"),
+            (np.array([ 0.0,  0.0, +1.0]), lz / 2.0, "+z"),
+            (np.array([ 0.0, -1.0,  0.0]), ly / 2.0, "-y"),
+            (np.array([ 0.0, +1.0,  0.0]), ly / 2.0, "+y"),
+            (np.array([-1.0,  0.0,  0.0]), lx / 2.0, "-x"),
+            (np.array([+1.0,  0.0,  0.0]), lx / 2.0, "+x"),
         ]
 
-        seen: set = set()
-        templates: List[TSRTemplate] = []
-        for n, com_h, label in candidates:
-            key = round(com_h, 10)
-            if key in seen:
-                continue
-            seen.add(key)
-            templates.append(self._template(
-                name=f"Place box on {label} ({subject} on {self.reference})",
+        return [
+            self._template(
+                name=f"Place box {label}-face down ({subject} on {self.reference})",
                 description=(
-                    f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} "
+                    f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} face "
                     f"on {self.reference}. Yaw free."
                 ),
                 variant=label,
                 Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), com_h),
                 Bw=self._bw(),
                 subject=subject,
-            ))
-        return templates
+            )
+            for n, com_h, label in candidates
+        ]
 
     def place_sphere(
         self,
@@ -219,17 +227,25 @@ class TablePlacer:
         if minor_radius >= major_radius:
             raise ValueError("minor_radius must be less than major_radius")
 
-        return [self._template(
-            name=f"Place torus flat ({subject} on {self.reference})",
-            description=(
-                f"Torus (R={major_radius:.3f} m, r={minor_radius:.3f} m) "
-                f"flat on {self.reference}. Yaw free."
-            ),
-            variant="flat",
-            Tw_e=self._tw_e(np.eye(3), float(minor_radius)),
-            Bw=self._bw(),
-            subject=subject,
-        )]
+        _neg_z = np.array([0.0, 0.0, -1.0])
+        candidates = [
+            (np.array([0.0, 0.0, -1.0]), "-z"),
+            (np.array([0.0, 0.0, +1.0]), "+z"),
+        ]
+        return [
+            self._template(
+                name=f"Place torus {label}-face down ({subject} on {self.reference})",
+                description=(
+                    f"Torus (R={major_radius:.3f} m, r={minor_radius:.3f} m) "
+                    f"flat, {label} face down on {self.reference}. Yaw free."
+                ),
+                variant=label,
+                Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), float(minor_radius)),
+                Bw=self._bw(),
+                subject=subject,
+            )
+            for n, label in candidates
+        ]
 
     def place_mesh(
         self,

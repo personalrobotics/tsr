@@ -12,7 +12,7 @@ Gripper frame convention:
     y = finger opening direction
     x = palm normal  (right-hand rule: x = y × z)
 
-Saves: assets/tsr_viz.png
+Saves: assets/tsr_grasps.png
 
 Usage:
     uv run python examples/parallel_jaw_grasp.py
@@ -63,7 +63,7 @@ def _collect(templates, object_pose, n):
 def main() -> None:
     from pathlib import Path
 
-    out = Path(__file__).parent.parent / "assets" / "tsr_viz.png"
+    out = Path(__file__).parent.parent / "assets" / "tsr_grasps.png"
 
     gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 

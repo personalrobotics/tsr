@@ -45,8 +45,8 @@ class TestTablePlacerCylinder(unittest.TestCase):
     def setUp(self):
         self.placer = TablePlacer(table_x=TX, table_y=TY)
 
-    def test_returns_one_template(self):
-        _check_common(self, self.placer.place_cylinder(0.04, 0.12), "object", "table", 1)
+    def test_returns_two_templates(self):
+        _check_common(self, self.placer.place_cylinder(0.04, 0.12), "object", "table", 2)
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
@@ -63,15 +63,17 @@ class TestTablePlacerCylinder(unittest.TestCase):
 
     def test_com_height_is_half_height(self):
         H = 0.12
-        t = self.placer.place_cylinder(0.04, H)[0]
-        np.testing.assert_allclose(t.Tw_e[2, 3], H / 2)
+        for t in self.placer.place_cylinder(0.04, H):
+            np.testing.assert_allclose(t.Tw_e[2, 3], H / 2)
 
-    def test_tw_e_identity_rotation(self):
+    def test_neg_z_face_has_identity_rotation(self):
         t = self.placer.place_cylinder(0.04, 0.12)[0]
+        self.assertEqual(t.variant, "-z")
         np.testing.assert_allclose(t.Tw_e[:3, :3], np.eye(3), atol=1e-10)
 
-    def test_bw_standard(self):
-        _check_bw_standard(self, self.placer.place_cylinder(0.04, 0.12)[0])
+    def test_bw_standard_all_templates(self):
+        for t in self.placer.place_cylinder(0.04, 0.12):
+            _check_bw_standard(self, t)
 
     def test_instantiate_and_sample(self):
         table_pose = np.eye(4)
@@ -92,24 +94,26 @@ class TestTablePlacerBox(unittest.TestCase):
     def setUp(self):
         self.placer = TablePlacer(table_x=TX, table_y=TY)
 
-    def test_distinct_dims_returns_three_templates(self):
-        _check_common(self, self.placer.place_box(0.10, 0.08, 0.06), "object", "table", 3)
+    def test_always_returns_six_templates(self):
+        # All 6 faces are returned regardless of dimension symmetry.
+        _check_common(self, self.placer.place_box(0.10, 0.08, 0.06), "object", "table", 6)
 
-    def test_two_equal_dims_deduplicates(self):
-        # lx == ly → only 2 unique heights (lx/2 = ly/2 and lz/2)
-        _check_common(self, self.placer.place_box(0.10, 0.10, 0.06), "object", "table", 2)
+    def test_equal_dims_still_six_templates(self):
+        _check_common(self, self.placer.place_box(0.10, 0.10, 0.06), "object", "table", 6)
 
-    def test_cube_deduplicates_to_one(self):
-        _check_common(self, self.placer.place_box(0.10, 0.10, 0.10), "object", "table", 1)
+    def test_cube_still_six_templates(self):
+        _check_common(self, self.placer.place_box(0.10, 0.10, 0.10), "object", "table", 6)
 
     def test_zero_dim_raises(self):
         with self.assertRaises(ValueError):
             self.placer.place_box(0.0, 0.08, 0.06)
 
     def test_com_heights_match_half_extents(self):
+        # Each unique height appears twice (once per face in each opposing pair).
         LX, LY, LZ = 0.10, 0.08, 0.06
         heights = sorted(t.Tw_e[2, 3] for t in self.placer.place_box(LX, LY, LZ))
-        np.testing.assert_allclose(heights, sorted([LX / 2, LY / 2, LZ / 2]), atol=1e-10)
+        expected = sorted([LX/2, LX/2, LY/2, LY/2, LZ/2, LZ/2])
+        np.testing.assert_allclose(heights, expected, atol=1e-10)
 
     def test_bw_standard_all_templates(self):
         for t in self.placer.place_box(0.10, 0.08, 0.06):
@@ -161,13 +165,13 @@ class TestTablePlacerTorus(unittest.TestCase):
     def setUp(self):
         self.placer = TablePlacer(table_x=TX, table_y=TY)
 
-    def test_returns_one_template(self):
-        _check_common(self, self.placer.place_torus(0.05, 0.01), "object", "table", 1)
+    def test_returns_two_templates(self):
+        _check_common(self, self.placer.place_torus(0.05, 0.01), "object", "table", 2)
 
     def test_com_height_equals_minor_radius(self):
         r = 0.015
-        t = self.placer.place_torus(0.05, r)[0]
-        np.testing.assert_allclose(t.Tw_e[2, 3], r)
+        for t in self.placer.place_torus(0.05, r):
+            np.testing.assert_allclose(t.Tw_e[2, 3], r)
 
     def test_minor_geq_major_raises(self):
         with self.assertRaises(ValueError):
@@ -177,12 +181,14 @@ class TestTablePlacerTorus(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.placer.place_torus(0.0, 0.01)
 
-    def test_tw_e_identity_rotation(self):
+    def test_neg_z_face_has_identity_rotation(self):
         t = self.placer.place_torus(0.05, 0.01)[0]
+        self.assertEqual(t.variant, "-z")
         np.testing.assert_allclose(t.Tw_e[:3, :3], np.eye(3), atol=1e-10)
 
-    def test_bw_standard(self):
-        _check_bw_standard(self, self.placer.place_torus(0.05, 0.01)[0])
+    def test_bw_standard_all_templates(self):
+        for t in self.placer.place_torus(0.05, 0.01):
+            _check_bw_standard(self, t)
 
 
 class TestTablePlacerMesh(unittest.TestCase):

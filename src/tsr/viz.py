@@ -28,6 +28,7 @@ import numpy as np
 try:
     import pyvista as pv
     import matplotlib.cm as cm
+    from matplotlib.colors import ListedColormap
     from PIL import Image
 except ImportError as e:
     raise ImportError(
@@ -66,15 +67,17 @@ class TSRVisualizer:
         title: str = "",
         focus: tuple = (0., 0., 0.),
         crop_pad: int = 24,
+        parallel_projection: bool = False,
     ):
-        self.window_size = window_size
-        self.background  = background
-        self.camera_dist = camera_dist
-        self.camera_az   = camera_az
-        self.camera_el   = camera_el
-        self.title       = title
-        self.focus       = focus
-        self.crop_pad    = crop_pad
+        self.window_size         = window_size
+        self.background          = background
+        self.camera_dist         = camera_dist
+        self.camera_az           = camera_az
+        self.camera_el           = camera_el
+        self.title               = title
+        self.focus               = focus
+        self.crop_pad            = crop_pad
+        self.parallel_projection = parallel_projection
 
     def render(
         self,
@@ -84,31 +87,39 @@ class TSRVisualizer:
         out: str | Path,
         colors: Sequence[tuple] | None = None,
     ) -> None:
-        """Render reference + subjects and save to out.
+        """Render one subject renderer at multiple poses and save to out."""
+        if colors is None:
+            colors = _plasma_colors(len(poses))
+        subjects = [(subject_renderer, pose, col)
+                    for pose, col in zip(poses, colors)]
+        self.render_multi(reference_renderer, subjects, out)
+
+    def render_multi(
+        self,
+        reference_renderer: ReferenceRenderer,
+        subjects: Sequence[tuple],
+        out: str | Path,
+    ) -> None:
+        """Render multiple (renderer, pose, color) subjects and save to out.
 
         Args:
             reference_renderer: Callable (pl) -> None. Draws the reference
-                object (e.g. a mug cylinder) into the plotter.
-            subject_renderer:   Callable (pl, pose_4x4, color) -> None. Draws
-                one subject (e.g. a gripper) at the given pose.
-            poses:  Sequence of 4x4 SE(3) subject poses to visualize.
-            out:    Output PNG path.
-            colors: Optional per-pose RGB colors. If None, colors are sampled
-                uniformly from the plasma colormap. Pass a list of repeated
-                colors to give all poses from the same TSR the same color.
+                object (e.g. a table surface) into the plotter.
+            subjects: Sequence of (subject_renderer, pose_4x4, color) triples.
+                Each triple draws one object at its pose with the given color.
+            out: Output PNG path.
         """
         out = Path(out)
         out.parent.mkdir(exist_ok=True)
 
         pl = pv.Plotter(off_screen=True, window_size=self.window_size)
         pl.set_background(self.background)
+        pl.hide_axes()
 
         reference_renderer(pl)
 
-        if colors is None:
-            colors = _plasma_colors(len(poses))
-        for pose, col in zip(poses, colors):
-            subject_renderer(pl, pose, col)
+        for renderer, pose, color in subjects:
+            renderer(pl, pose, color)
 
         D  = self.camera_dist
         az = np.radians(self.camera_az)
@@ -120,6 +131,9 @@ class TSRVisualizer:
             self.focus,
             (0., 0., 1.),
         ]
+
+        if self.parallel_projection:
+            pl.enable_parallel_projection()
 
         if self.title:
             pl.add_title(self.title, font_size=11, color="#c9d1d9", font="courier")
@@ -289,28 +303,46 @@ def torus_renderer(
 def table_surface_renderer(
     table_x: float,
     table_y: float,
-    thickness: float = 0.015,
     color: str = "#2d333b",
-    edge_color: str = "#3d4755",
+    grid_color: str = "#3d4755",
+    grid_spacing: float = 0.05,
 ) -> ReferenceRenderer:
-    """Renderer for a flat table surface (reference for placement TSRs).
+    """Renderer for a flat table surface with a subtle grid (reference for placement TSRs).
 
     table_x, table_y: half-extents of the table surface [m].
+    grid_spacing: distance between grid lines [m].
     """
     def render(pl: pv.Plotter) -> None:
-        slab = pv.Box(bounds=(
-            -table_x, table_x, -table_y, table_y, -thickness, 0.
-        ))
-        pl.add_mesh(slab, color=color, opacity=1.0, smooth_shading=True,
-                    lighting=True, specular=0.1, diffuse=0.8, ambient=0.25)
-        corners = [
-            (-table_x, -table_y), (table_x, -table_y),
-            (table_x,  table_y), (-table_x,  table_y),
-            (-table_x, -table_y),
-        ]
-        pts = np.array([(x, y, 0.) for x, y in corners])
+        # Flat plane at z=0 — no slab, avoids bottom/side face artifacts.
+        top = pv.Plane(
+            center=(0., 0., 0.), direction=(0., 0., 1.),
+            i_size=2 * table_x, j_size=2 * table_y,
+            i_resolution=1, j_resolution=1,
+        )
+        pl.add_mesh(top, color=color, opacity=1.0,
+                    lighting=True, specular=0.05, diffuse=0.8, ambient=0.3)
+
+        EPS = 0.0001  # lift grid lines above surface to avoid z-fighting
+
+        # Grid lines along x (constant y)
+        for y in np.arange(-table_y, table_y + 1e-9, grid_spacing):
+            pts = np.array([(-table_x, y, EPS), (table_x, y, EPS)])
+            pl.add_mesh(pv.Spline(pts, n_points=2).tube(radius=0.0005),
+                        color=grid_color, opacity=0.6, lighting=False)
+
+        # Grid lines along y (constant x)
+        for x in np.arange(-table_x, table_x + 1e-9, grid_spacing):
+            pts = np.array([(x, -table_y, EPS), (x, table_y, EPS)])
+            pl.add_mesh(pv.Spline(pts, n_points=2).tube(radius=0.0005),
+                        color=grid_color, opacity=0.6, lighting=False)
+
+        # Border
+        corners = [(-table_x, -table_y), (table_x, -table_y),
+                   (table_x,  table_y),  (-table_x,  table_y),
+                   (-table_x, -table_y)]
+        pts = np.array([(x, y, EPS) for x, y in corners])
         pl.add_mesh(pv.Spline(pts, n_points=len(corners)).tube(radius=0.002),
-                    color=edge_color, opacity=0.55, lighting=False)
+                    color=grid_color, opacity=0.8, lighting=False)
 
     return render
 
@@ -320,17 +352,41 @@ def placed_box_renderer(
     ly: float,
     lz: float,
 ) -> SubjectRenderer:
-    """Subject renderer for a placed box.
+    """Subject renderer for a placed box with per-face coloring.
 
-    Box frame: origin at geometric center, axes aligned with extents (lx, ly, lz).
+    Each of the 6 faces renders in a distinct color; the ``color`` argument is
+    unused (the palette is fixed).  Face order: -z, +z, -y, +y, -x, +x.
     """
-    def render(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple,
-               opacity: float = 0.90) -> None:
-        box = pv.Box(bounds=(-lx / 2, lx / 2, -ly / 2, ly / 2, -lz / 2, lz / 2))
+    _FACE_COLORS = [
+        (0.122, 0.467, 0.706),  # blue   – -z (bottom)
+        (1.000, 0.498, 0.055),  # orange – +z (top)
+        (0.173, 0.627, 0.173),  # green  – -y
+        (0.839, 0.153, 0.157),  # red    – +y
+        (0.580, 0.404, 0.741),  # purple – -x
+        (0.549, 0.337, 0.294),  # brown  – +x
+    ]
+    _cmap = ListedColormap(_FACE_COLORS)
+
+    # Pre-compute which cell → which face ID (stable across equal-bounds boxes).
+    _box0 = pv.Box(bounds=(-lx/2, lx/2, -ly/2, ly/2, -lz/2, lz/2))
+    _normals = _box0.compute_normals(cell_normals=True,
+                                     point_normals=False).cell_data["Normals"]
+    _AX_OFFSET = {2: 0, 1: 2, 0: 4}  # axis → base face-id  (-=+0, +=+1)
+    _fids = np.array([
+        _AX_OFFSET[int(np.argmax(np.abs(n)))] + (1 if n[int(np.argmax(np.abs(n)))] > 0 else 0)
+        for n in _normals
+    ], dtype=float)
+
+    def render(pl: pv.Plotter, pose_4x4: np.ndarray, _color: tuple) -> None:
         R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
+        box = pv.Box(bounds=(-lx/2, lx/2, -ly/2, ly/2, -lz/2, lz/2))
         box.points = (R @ box.points.T).T + t
-        pl.add_mesh(box, color=color, opacity=opacity, smooth_shading=True,
-                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+        box.cell_data["face_id"] = _fids
+        pl.add_mesh(box, scalars="face_id", cmap=_cmap, clim=(-0.5, 5.5),
+                    n_colors=6, show_scalar_bar=False,
+                    smooth_shading=True, lighting=True,
+                    specular=0.4, diffuse=0.8, ambient=0.15,
+                    show_edges=True, edge_color="#e0e0e0", line_width=1.2)
 
     return render
 
@@ -339,18 +395,87 @@ def placed_cylinder_renderer(
     radius: float,
     height: float,
 ) -> SubjectRenderer:
-    """Subject renderer for a placed cylinder.
+    """Subject renderer for a placed cylinder with per-region coloring.
 
-    Cylinder frame: origin at geometric center, z = cylinder axis.
+    Bottom cap, curved body, and top cap each render in a distinct color.
+    The ``color`` argument is unused (the palette is fixed).
     """
-    def render(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple,
-               opacity: float = 0.90) -> None:
+    _COLORS = [
+        (0.620, 0.620, 0.620),  # gray   – curved body
+        (1.000, 0.498, 0.055),  # orange – top cap  (+z)
+        (0.122, 0.467, 0.706),  # blue   – bottom cap (-z)
+    ]
+    _cmap = ListedColormap(_COLORS)
+
+    def render(pl: pv.Plotter, pose_4x4: np.ndarray, _color: tuple) -> None:
         R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
-        direction = R @ np.array([0., 0., 1.])
-        cyl = pv.Cylinder(center=t, direction=direction,
+        axis = R @ np.array([0., 0., 1.])
+        cyl = pv.Cylinder(center=t, direction=axis,
                           radius=radius, height=height, resolution=60, capping=True)
-        pl.add_mesh(cyl, color=color, opacity=opacity, smooth_shading=True,
-                    lighting=True, specular=0.4, diffuse=0.8, ambient=0.15)
+        cyl = cyl.compute_normals(cell_normals=True, point_normals=False)
+        dot = cyl.cell_data["Normals"] @ axis
+        cyl.cell_data["region"] = np.where(dot > 0.8, 1.0,
+                                           np.where(dot < -0.8, 2.0, 0.0))
+        pl.add_mesh(cyl, scalars="region", cmap=_cmap, clim=(-0.5, 2.5),
+                    n_colors=3, show_scalar_bar=False,
+                    smooth_shading=True, lighting=True,
+                    specular=0.4, diffuse=0.8, ambient=0.15,
+                    show_edges=True, edge_color="#e0e0e0", line_width=0.8)
+
+    return render
+
+
+def placed_sphere_renderer(radius: float) -> SubjectRenderer:
+    """Subject renderer for a placed sphere.
+
+    Sphere frame: origin at center.
+    """
+    def render(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple) -> None:
+        t = pose_4x4[:3, 3]
+        sph = pv.Sphere(radius=radius, center=t,
+                        theta_resolution=40, phi_resolution=40)
+        pl.add_mesh(sph, color=color, opacity=1.0, smooth_shading=True,
+                    lighting=True, specular=0.5, diffuse=0.8, ambient=0.15)
+
+    return render
+
+
+def placed_torus_renderer(major_radius: float, minor_radius: float) -> SubjectRenderer:
+    """Subject renderer for a placed torus with per-half coloring.
+
+    The upper half (local z ≥ 0) and lower half (local z < 0) render in
+    distinct colors.  The ``color`` argument is unused (the palette is fixed).
+    """
+    N_phi, N_theta = 60, 24
+    _COLORS = [
+        (0.839, 0.153, 0.157),  # red   – bottom half (z < 0)
+        (0.173, 0.627, 0.173),  # green – top half    (z ≥ 0)
+    ]
+    _cmap = ListedColormap(_COLORS)
+
+    def render(pl: pv.Plotter, pose_4x4: np.ndarray, _color: tuple) -> None:
+        R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
+        phi   = np.linspace(0., 2. * np.pi, N_phi,   endpoint=False)
+        theta = np.linspace(0., 2. * np.pi, N_theta, endpoint=False)
+        PHI, THETA = np.meshgrid(phi, theta, indexing='ij')
+        X = (major_radius + minor_radius * np.cos(THETA)) * np.cos(PHI)
+        Y = (major_radius + minor_radius * np.cos(THETA)) * np.sin(PHI)
+        Z = minor_radius * np.sin(THETA)
+
+        # Build surface in local frame to classify top/bottom half by z.
+        grid = pv.StructuredGrid()
+        grid.points = np.column_stack([X.ravel(), Y.ravel(), Z.ravel()])
+        grid.dimensions = (N_phi, N_theta, 1)
+        surface = grid.extract_surface()
+        centers_z = surface.cell_centers().points[:, 2]
+        surface.cell_data["half"] = (centers_z >= 0).astype(float)
+
+        # Apply pose transform to points only (cell data stays valid).
+        surface.points = (R @ surface.points.T).T + t
+        pl.add_mesh(surface, scalars="half", cmap=_cmap, clim=(-0.5, 1.5),
+                    n_colors=2, show_scalar_bar=False,
+                    smooth_shading=True, lighting=True,
+                    specular=0.4, diffuse=0.8, ambient=0.15)
 
     return render
 
@@ -402,6 +527,7 @@ def plasma_colors(n: int, lo: float = 0.05, hi: float = 0.92) -> List[tuple]:
 
 # Keep private alias for internal use
 _plasma_colors = plasma_colors
+
 
 
 def _crop_margins(path: Path, background_hex: str, pad: int) -> None:
