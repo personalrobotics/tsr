@@ -10,9 +10,11 @@ A comprehensive guide to understanding and using Task Space Regions for robotic 
 4. [The Bounds Matrix](#the-bounds-matrix)
 5. [TSR Chains](#tsr-chains)
 6. [TSR Templates](#tsr-templates)
-7. [Generating Grasp Templates](#generating-grasp-templates)
-8. [Visualization](#visualization)
-9. [Practical Examples](#practical-examples)
+7. [Naming Conventions](#naming-conventions)
+8. [Generating Grasp Templates](#generating-grasp-templates)
+9. [Generating Placement Templates](#generating-placement-templates)
+10. [Visualization](#visualization)
+11. [Practical Examples](#practical-examples)
 
 ---
 
@@ -37,7 +39,12 @@ Because TSRs are continuous regions, motion planners can sample from them, check
 
 ## What is a TSR?
 
-A **Task Space Region** defines a continuous set of valid end-effector poses relative to some reference frame. Instead of "grasp the mug at exactly this pose," a TSR says "grasp the mug anywhere around its cylindrical body, at any height, approaching radially."
+A **Task Space Region** constrains where one thing (the **subject**) can be, relative to another thing (the **reference**).
+
+- A grasp TSR says: "given where the mug (reference) is, where can the gripper (subject) go?"
+- A placement TSR says: "given where the table (reference) is, where can the mug (subject) go?"
+
+Same math, different roles.
 
 TSRs are useful for:
 
@@ -54,7 +61,7 @@ A TSR is defined by three components:
 
 ### 1. World-to-TSR Transform: $T_0^w$
 
-This 4×4 homogeneous transformation matrix positions the TSR frame in the world. It represents where the constraint region is located.
+This 4×4 homogeneous transformation matrix positions the TSR frame in the world. It represents the reference entity's pose — where the constraint region is located.
 
 $$T_0^w = \begin{bmatrix} R_{3\times3} & t_{3\times1} \\ 0_{1\times3} & 1 \end{bmatrix}$$
 
@@ -62,7 +69,7 @@ $$T_0^w = \begin{bmatrix} R_{3\times3} & t_{3\times1} \\ 0_{1\times3} & 1 \end{b
 
 ### 2. TSR-to-End-Effector Transform: $T_w^e$
 
-This 4×4 matrix defines the nominal (center) pose of the end-effector relative to the TSR frame when all Bw displacements are zero.
+This 4×4 matrix defines the nominal (center) pose of the subject relative to the TSR frame when all Bw displacements are zero. It encodes the canonical geometry of the constraint: standoff distance, approach orientation, grasp depth, etc.
 
 **Example**: For a side grasp on a cylinder, $T_w^e$ encodes the gripper's standoff distance and approach orientation.
 
@@ -81,9 +88,14 @@ yaw_{min} & yaw_{max}
 
 ### Sampling from a TSR
 
-1. Sample a displacement $\Delta = (\Delta x, \Delta y, \Delta z, \Delta roll, \Delta pitch, \Delta yaw)$ uniformly from $B_w$
-2. Convert $\Delta$ to a 4×4 matrix $T_\Delta$
-3. Compute the end-effector pose: $T_{ee} = T_0^w \cdot T_\Delta \cdot T_w^e$
+To get a concrete subject pose, sample $s = (\Delta x, \Delta y, \Delta z, \Delta roll, \Delta pitch, \Delta yaw)$ from within $B_w$, then:
+
+```
+subject_pose = T0_w  ×  xyzrpy_to_transform(s)  ×  Tw_e
+               ─────    ──────────────────────────    ────
+               reference    deviation from canonical    canonical
+               pose         (within bounds)             subject pose
+```
 
 ### Checking if a Pose is Valid
 
@@ -229,7 +241,7 @@ import numpy as np
 
 # Build a template (reference object frame as origin)
 template = TSRTemplate(
-    T_ref_tsr=np.eye(4),    # TSR frame relative to object
+    T_ref_tsr=np.eye(4),    # TSR frame relative to reference object
     Tw_e=Tw_e,
     Bw=Bw,
     task="place",
@@ -245,19 +257,86 @@ save_template(template, "templates/mug_on_table.yaml")
 # Load later
 template = load_template("templates/mug_on_table.yaml")
 
-# Bind to the actual table pose at runtime → TSR
+# Bind to the actual table pose at runtime and sample
 table_pose = perception.get_table_pose()
+pose = template.sample(table_pose)
+
+# Or get the TSR first if you need distance/contains
 tsr  = template.instantiate(table_pose)
 pose = tsr.sample()
 ```
 
 Templates separate **constraint design** (done offline, per object type) from **constraint binding** (done at runtime, per scene instance). A library of templates can be reused across any scene where those objects appear.
 
+### Serialized Format
+
+Templates are stored as YAML with raw TSR matrices plus semantic metadata.
+
+**Required fields:** `name`, `description`, `task`, `subject`, `reference`, `T_ref_tsr`, `Tw_e`, `Bw`
+
+**Optional fields:** `variant`, `preshape`, `stability_margin`
+
+```yaml
+name: Mug Side Grasp
+description: Side grasp avoiding handle
+task: grasp
+subject: gripper
+reference: mug
+
+T_ref_tsr:           # 4×4 reference-to-TSR-frame transform (usually identity)
+- [1.0, 0.0, 0.0, 0.0]
+- [0.0, 1.0, 0.0, 0.0]
+- [0.0, 0.0, 1.0, 0.0]
+- [0.0, 0.0, 0.0, 1.0]
+Tw_e:                # 4×4 canonical subject pose in TSR frame (at Bw = 0)
+- [0.0,  0.0, -1.0,  0.09]   # EE x-axis = cylinder axis; EE origin 9 cm out
+- [0.0,  1.0,  0.0,  0.0 ]   # EE y-axis = tangential (finger opening)
+- [1.0,  0.0,  0.0,  0.0 ]   # EE z-axis = -radial (approach toward mug)
+- [0.0,  0.0,  0.0,  1.0 ]
+Bw:                  # (6,2) bounds over [x, y, z, roll, pitch, yaw]
+- [0.0,  0.0 ]       # x: fixed (radius is in Tw_e)
+- [0.0,  0.0 ]       # y: fixed
+- [0.02, 0.08]       # z: height on mug body
+- [0.0,  0.0 ]       # roll: fixed
+- [0.0,  0.0 ]       # pitch: fixed
+- [0.79, 5.50]       # yaw: 45°–315° (avoids handle at 0°)
+
+# optional
+preshape: [0.08]     # gripper aperture in meters
+```
+
+`T_ref_tsr` is usually identity (TSR frame = reference frame). It is non-identity when the canonical grasp point is offset from the object origin — for example, a mug handle grasp where the TSR frame is at the handle center, not the mug center.
+
+`task`, `subject`, and `reference` are plain strings with no enum validation. Use any values meaningful to your application.
+
+### Loading and saving
+
+```python
+from tsr.io import load_template, save_template, load_templates_from_directory
+
+template = load_template("templates/grasps/mug_side_grasp.yaml")
+tsr = template.instantiate(mug_pose_in_world)
+
+templates = load_templates_from_directory("templates/grasps/")
+```
+
+---
+
+## Naming Conventions
+
+The original TSR paper uses `T0_w` (world-to-TSR), `Tw_e` (TSR-to-end-effector), and `Bw` (bounds in TSR frame). The "end-effector" language comes from the grasp case where the subject is always a gripper. In placement TSRs, the "end-effector" is actually the object being placed.
+
+In this library:
+
+- **reference** — the entity whose pose defines `T0_w` (mug for grasps, table for placements)
+- **subject** — the entity whose pose is being constrained (gripper for grasps, mug for placements)
+- `task`, `subject`, and `reference` are plain strings in the template format — no enum enforcement
+
 ---
 
 ## Generating Grasp Templates
 
-For common geometries, grasp templates can be generated programmatically from object dimensions rather than hand-authored. The `ParallelJawGripper` class in `examples/parallel_jaw_grasp.py` demonstrates the pattern.
+For common geometries, grasp templates can be generated programmatically from object dimensions rather than hand-authored. The `ParallelJawGripper` class in `tsr.hands` demonstrates the pattern.
 
 ### Gripper Frame Convention
 
@@ -274,45 +353,123 @@ AnyGrasp / GraspNet uses `x = approach` — convert with:
 R_convert = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]])
 ```
 
+### Why Radius Goes into Tw_e
+
+The composition formula:
+
+```
+subject_pose = T0_w  ×  xyzrpy_to_transform(bw)  ×  Tw_e
+```
+
+`xyzrpy_to_transform` builds `[R | t]` where `R` comes from the angular components and `t` from the translational components. `R` rotates `Tw_e`'s translation — but `t` is **not** rotated by `R`.
+
+- A translation in **Tw_e** sweeps a circle/sphere as angles in Bw vary ✓
+- A translation in **Bw** stays fixed regardless of angles ✗
+
+So radius (and standoff) go in `Tw_e`, not `Bw`:
+
+```
+Ring grasp (radius = 0.08, yaw varies):
+  Tw_e translation = [0.08, 0, 0]     ← radius here
+
+  yaw=0°   → R_z(0°)  @ [0.08,0,0] = [0.08,  0,    0]  ✓
+  yaw=90°  → R_z(90°) @ [0.08,0,0] = [0,     0.08, 0]  ✓
+  yaw=180° → R_z(180°)@ [0.08,0,0] = [-0.08, 0,    0]  ✓
+```
+
 ### Side Grasp on a Cylinder
 
 The fundamental challenge for cylinder side grasps: **the radial approach direction couples with yaw** in $B_w$ and cannot be encoded as a free DOF directly. Instead, `grasp_cylinder` generates `2*k` templates — `k` discrete approach depths × 2 roll orientations — each with the radial standoff baked into $T_w^e$.
 
 ```python
-from examples.parallel_jaw_grasp import ParallelJawGripper
+from tsr.hands import ParallelJawGripper
 
 # Robotiq 2F-140: 140mm max aperture, 55mm finger length
 gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
-# Returns 6 TSRTemplates: 3 depth levels × 2 roll orientations
+# Returns TSRTemplates: depth levels × 2 roll orientations
 templates = gripper.grasp_cylinder(
-    object_radius=0.040,          # 4 cm mug radius
-    height_range=(0.02, 0.10),    # graspable height band on mug
+    cylinder_radius=0.040,        # 4 cm mug radius
+    cylinder_height=0.120,        # total height of cylinder
     reference="mug",
 )
 
-for t in templates:
-    print(t.name)
-    # "Mug Cylinder Side Grasp — shallow, roll 0°"
-    # "Mug Cylinder Side Grasp — shallow, roll 180°"
-    # "Mug Cylinder Side Grasp — mid, roll 0°"
-    # ...
-
 # Bind to detected mug pose and sample
 mug_pose = perception.get_object_pose("mug")
-grasp_poses = [t.instantiate(mug_pose).sample() for t in templates]
+grasp_poses = [t.sample(mug_pose) for t in templates]
 ```
 
-**What `grasp_cylinder` produces:**
+`ParallelJawGripper` also supports `grasp_box`, `grasp_sphere`, and `grasp_torus`.
 
-| Parameter | Effect |
-|-----------|--------|
-| `k` (default 3) | Number of discrete approach depths: shallow (fingertips near surface) → deep (palm near surface) |
-| `clearance` (default 10% of `finger_length`) | Safety buffer at height ends and both depth limits |
-| `preshape` (default `2 * r + clearance`) | Jaw opening — minimum viable to span the cylinder |
-| `angle_range` (default `[0, 2π]`) | Yaw freedom (restrict to front hemisphere for wall-mounted objects) |
+---
 
-The two roll orientations (0° and 180° around the approach axis) are needed for asymmetric hands. For a symmetric hand they produce identical contact geometry but different palm normals.
+## Generating Placement Templates
+
+`TablePlacer` generates one `TSRTemplate` per stable resting pose for objects placed on a flat surface. It uses the same TSR math as grasp templates — `Tw_e` encodes the stable orientation and COM height, `Bw` covers the table's xy footprint.
+
+```python
+from tsr.placement import TablePlacer
+
+placer = TablePlacer(table_x=0.60, table_y=0.40)
+```
+
+### Analytic Primitives
+
+For standard shapes, stable poses are computed analytically:
+
+```python
+# Cylinder: 2 templates (top face down, bottom face down)
+templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, subject="mug")
+
+# Box: 6 templates (one per face — opposite faces are semantically distinct)
+templates = placer.place_box(lx=0.08, ly=0.06, lz=0.18, subject="box")
+
+# Sphere: 1 template; roll and pitch also free since all orientations are stable
+templates = placer.place_sphere(radius=0.040, subject="ball")
+
+# Torus: 2 templates (flat on each face, axis = z)
+templates = placer.place_torus(major_radius=0.035, minor_radius=0.015, subject="ring")
+```
+
+Bw structure for all placement templates:
+- `[±table_x, ±table_y]` — object slides anywhere on the table
+- `z = [0, 0]` — exactly on the surface
+- `roll = pitch = [0, 0]` — fixed by the stable orientation (Tw_e)
+- `yaw = [-π, π]` — free rotation about the vertical axis
+
+### Arbitrary Mesh
+
+`place_mesh` handles any shape by computing the convex hull and finding which faces produce stable resting poses using the COM-projection criterion.
+
+```python
+import numpy as np
+from tsr.placement import TablePlacer
+
+placer = TablePlacer(table_x=0.60, table_y=0.40)
+
+vertices = np.array([...])   # (N, 3) vertex cloud in object frame
+com      = np.array([cx, cy, cz])
+
+templates = placer.place_mesh(
+    vertices, com,
+    subject="widget",
+    min_margin_deg=5.0,   # discard unstable faces (margin < 5°)
+)
+```
+
+Results are sorted by descending stability margin (most stable face first). Each template carries `stability_margin` (in radians) — the minimum tipping angle before the object falls:
+
+```python
+table_pose = np.eye(4)
+table_pose[2, 3] = 0.75   # table surface at z = 0.75 m
+
+for t in templates:
+    pose = t.sample(table_pose)
+    print(t, "→ COM z =", round(pose[2, 3], 4))
+    # TSRTemplate(task='place', subject='widget', variant='face-1', margin=31.9°)
+```
+
+**Stability criterion**: a face is stable if the COM projects inside the support polygon. The margin is `arctan(d_min / h_com)` where `d_min` is the minimum distance from the COM projection to any edge of the support polygon.
 
 ---
 
@@ -324,10 +481,9 @@ The `tsr.viz` module provides a PyVista-based renderer. Unlike matplotlib's pain
 from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
 
 mug_pose = np.eye(4)
-poses  = [t.instantiate(mug_pose).sample() for t in templates]
 
-# One color per TSR template (groups visually)
 colors = []
+poses  = []
 n_per  = 3
 tsr_colors = plasma_colors(len(templates))
 for i, t in enumerate(templates):
@@ -345,7 +501,7 @@ TSRVisualizer(
     subject_renderer=parallel_jaw_renderer(finger_length=0.055, half_aperture=0.07),
     poses=poses,
     colors=colors,
-    out="assets/tsr_viz.png",
+    out="assets/tsr_grasps.png",
 )
 ```
 
@@ -368,17 +524,58 @@ def my_ee_renderer(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple) -> None: 
 ### Example 1: Grasp a Mug with a Parallel Jaw Gripper
 
 ```python
-from examples.parallel_jaw_grasp import ParallelJawGripper
+from tsr.hands import ParallelJawGripper
 import numpy as np
 
 gripper   = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
-templates = gripper.grasp_cylinder(object_radius=0.040, height_range=(0.02, 0.10), reference="mug")
+templates = gripper.grasp_cylinder(cylinder_radius=0.040, cylinder_height=0.120, reference="mug")
 
-mug_pose  = perception.get_object_pose("mug")
-candidates = [t.instantiate(mug_pose).sample() for t in templates]
+mug_pose   = perception.get_object_pose("mug")
+candidates = [t.sample(mug_pose) for t in templates]
 ```
 
-### Example 2: Place Mug on Table (Placement Constraint)
+### Example 2: Generate All Stable Placements for a Mug
+
+```python
+from tsr.placement import TablePlacer
+import numpy as np
+
+placer    = TablePlacer(table_x=0.60, table_y=0.40)
+templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, subject="mug")
+
+table_pose = perception.get_table_pose()
+for t in templates:
+    pose = t.sample(table_pose)
+    print(t, "→ COM z =", round(pose[2, 3], 4))
+```
+
+### Example 3: Stable Placements for Arbitrary Shape (Mesh)
+
+```python
+from tsr.placement import TablePlacer
+import numpy as np
+
+# L-shaped object: 12 vertices
+vertices = np.array([
+    [0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.1, 0.05, 0.0], [0.05, 0.05, 0.0],
+    [0.05, 0.1, 0.0], [0.0, 0.1, 0.0],
+    [0.0, 0.0, 0.02], [0.1, 0.0, 0.02], [0.1, 0.05, 0.02], [0.05, 0.05, 0.02],
+    [0.05, 0.1, 0.02], [0.0, 0.1, 0.02],
+])
+com = vertices.mean(axis=0)
+
+placer    = TablePlacer(table_x=0.5, table_y=0.5)
+templates = placer.place_mesh(vertices, com, subject="L-shape", min_margin_deg=5.0)
+
+table_pose = np.eye(4)
+table_pose[2, 3] = 0.75
+
+for t in templates:
+    pose = t.sample(table_pose)
+    print(t)
+```
+
+### Example 4: Place Mug on Table (Direct TSR)
 
 ```python
 from tsr import TSR
@@ -399,11 +596,11 @@ place_tsr = TSR(
     ])
 )
 
-placement = place_tsr.sample()
-distance, _ = place_tsr.distance(proposed_pose)   # 0 if valid
+placement    = place_tsr.sample()
+distance, _  = place_tsr.distance(proposed_pose)   # 0 if valid
 ```
 
-### Example 3: Pour from Bottle (Trajectory-Wide Constraint)
+### Example 5: Pour from Bottle (Trajectory-Wide Constraint)
 
 A TSR used as a trajectory constraint keeps every waypoint in the valid region:
 
@@ -429,58 +626,24 @@ pour_tsr = TSR(
 plan = cbirrt.plan(start=q_start, goal=q_goal, constraints=[pour_tsr])
 ```
 
-### Example 4: Place in a Bin (Flexible Placement)
-
-Objects can be dropped anywhere inside a bin's opening:
-
-```python
-from tsr import TSRTemplate, save_template
-import numpy as np
-
-# Template authored relative to the bin's opening frame
-Bw = np.array([
-    [-0.10, 0.10],    # x: 20 cm bin width
-    [-0.07, 0.07],    # y: 14 cm bin depth
-    [0.0,   0.0 ],    # z: at opening plane
-    [0.0,   0.0 ],    # roll: upright
-    [0.0,   0.0 ],    # pitch
-    [-np.pi, np.pi],  # yaw: any
-])
-
-template = TSRTemplate(
-    T_ref_tsr=np.eye(4),
-    Tw_e=np.eye(4),
-    Bw=Bw,
-    task="place",
-    subject="can",
-    reference="bin",
-    name="Can in Bin",
-)
-save_template(template, "templates/can_in_bin.yaml")
-
-# At runtime
-bin_pose = perception.get_object_pose("bin")
-tsr  = template.instantiate(bin_pose)
-pose = tsr.sample()
-```
-
 ---
 
 ## Summary
 
 | Concept | Purpose |
 |---------|---------|
-| **$T_0^w$** | Positions the constraint in the world (object/surface pose) |
-| **$T_w^e$** | Nominal end-effector offset from TSR origin |
+| **$T_0^w$** | Positions the constraint in the world (reference entity's pose) |
+| **$T_w^e$** | Nominal subject offset from TSR origin (encode radius/standoff here) |
 | **$B_w$** | Allowed deviations — the actual constraint region |
 | **TSR Chains** | Constraints on articulated objects (doors, drawers) |
 | **TSRTemplate** | Serializable, reusable constraint bound at runtime |
-| **Grasp generators** | Programmatic templates from object geometry (e.g., `grasp_cylinder`) |
+| **ParallelJawGripper** | Programmatic grasp templates from object geometry |
+| **TablePlacer** | Programmatic placement templates; one per stable pose |
 | **TSRVisualizer** | 3D visualization with correct occlusion via PyVista |
 
 TSRs are a single abstraction that covers grasping, placement, and trajectory constraints — the difference lies only in what $T_0^w$ refers to and how $B_w$ shapes the valid region.
 
-For more details, see the [examples](../examples/) directory.
+For runnable scripts, see the [examples](../examples/) directory.
 
 ---
 
