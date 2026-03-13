@@ -41,6 +41,7 @@ test = [
 viz = [
     "pyvista>=0.43.0",
     "matplotlib>=3.5.0",
+    "Pillow>=9.0.0",
 ]
 
 [project.urls]
