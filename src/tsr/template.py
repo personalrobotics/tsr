@@ -16,7 +16,7 @@ class TSRTemplate:
     This makes templates reusable across different scenes and object poses.
 
     Required fields: T_ref_tsr, Tw_e, Bw, name, description, task, subject, reference
-    Optional fields: variant, preshape, any user-defined metadata
+    Optional fields: variant, preshape, stability_margin, any user-defined metadata
 
     Gripper frame convention (for grasp templates):
         z = approach direction (toward object surface)
@@ -34,6 +34,8 @@ class TSRTemplate:
         description: Detailed description of the template.
         variant: Optional variant identifier (e.g., "side", "top").
         preshape: Optional gripper configuration as DOF values.
+        stability_margin: For placement templates, the stability margin in radians
+            (arctan(d_min / h_com)). None for grasp templates or analytic primitives.
     """
 
     T_ref_tsr: np.ndarray
@@ -46,6 +48,15 @@ class TSRTemplate:
     description: str = ""
     variant: str = ""
     preshape: Optional[np.ndarray] = None
+    stability_margin: Optional[float] = None
+
+    def __repr__(self) -> str:
+        parts = [f"task={self.task!r}", f"subject={self.subject!r}"]
+        if self.variant:
+            parts.append(f"variant={self.variant!r}")
+        if self.stability_margin is not None:
+            parts.append(f"margin={np.degrees(self.stability_margin):.1f}°")
+        return f"TSRTemplate({', '.join(parts)})"
 
     def instantiate(self, T_ref_world: np.ndarray) -> TSR:
         """Bind this template to a concrete reference pose in world.
@@ -58,6 +69,19 @@ class TSRTemplate:
         """
         T0_w = T_ref_world @ self.T_ref_tsr
         return TSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+
+    def sample(self, T_ref_world: np.ndarray) -> np.ndarray:
+        """Bind to a reference pose and sample one end-effector pose.
+
+        Shorthand for ``self.instantiate(T_ref_world).sample()``.
+
+        Args:
+            T_ref_world: 4×4 pose of the reference entity in world frame.
+
+        Returns:
+            4×4 sampled end-effector pose in world frame.
+        """
+        return self.instantiate(T_ref_world).sample()
 
     def to_dict(self):
         """Convert this TSRTemplate to a python dict for serialization."""
@@ -75,6 +99,8 @@ class TSRTemplate:
             result['variant'] = self.variant
         if self.preshape is not None:
             result['preshape'] = self.preshape.tolist()
+        if self.stability_margin is not None:
+            result['stability_margin'] = float(self.stability_margin)
         return result
 
     @staticmethod
@@ -95,6 +121,7 @@ class TSRTemplate:
             Tw_e=np.array(x['Tw_e']),
             Bw=np.array(x['Bw']),
             preshape=preshape,
+            stability_margin=x.get('stability_margin', None),
         )
 
     def to_json(self):

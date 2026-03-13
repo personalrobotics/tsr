@@ -286,5 +286,119 @@ class TestTablePlacerInit(unittest.TestCase):
         self.assertAlmostEqual(placer.table_y, 0.2)
 
 
+class TestNewAPI(unittest.TestCase):
+    """Tests for stability_margin, sample(), min_margin_deg, and __repr__."""
+
+    def setUp(self):
+        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        L = 0.05
+        verts = np.array([
+            [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],
+            [-L, -L,  L], [L, -L,  L], [L, L,  L], [-L, L,  L],
+        ])
+        self.cube_verts = verts
+        self.cube_com = np.zeros(3)
+
+    # -- stability_margin --------------------------------------------------
+
+    def test_place_mesh_stability_margin_set(self):
+        tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com)
+        for t in tmpls:
+            self.assertIsNotNone(t.stability_margin)
+            self.assertGreater(t.stability_margin, 0.0)
+
+    def test_place_mesh_sorted_descending(self):
+        tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com)
+        margins = [t.stability_margin for t in tmpls]
+        self.assertEqual(margins, sorted(margins, reverse=True))
+
+    def test_primitive_stability_margin_none(self):
+        for t in self.placer.place_cylinder(0.04, 0.12):
+            self.assertIsNone(t.stability_margin)
+        for t in self.placer.place_box(0.08, 0.06, 0.18):
+            self.assertIsNone(t.stability_margin)
+        for t in self.placer.place_sphere(0.04):
+            self.assertIsNone(t.stability_margin)
+        for t in self.placer.place_torus(0.05, 0.01):
+            self.assertIsNone(t.stability_margin)
+
+    # -- min_margin_deg ----------------------------------------------------
+
+    def test_min_margin_deg_filters(self):
+        all_tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com)
+        best = all_tmpls[0]
+        threshold_deg = np.degrees(best.stability_margin) - 1.0
+        filtered = self.placer.place_mesh(self.cube_verts, self.cube_com,
+                                          min_margin_deg=threshold_deg)
+        self.assertLessEqual(len(filtered), len(all_tmpls))
+        for t in filtered:
+            self.assertGreaterEqual(np.degrees(t.stability_margin), threshold_deg - 1e-9)
+
+    def test_min_margin_deg_zero_returns_all(self):
+        all_tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com)
+        filtered  = self.placer.place_mesh(self.cube_verts, self.cube_com,
+                                           min_margin_deg=0.0)
+        self.assertEqual(len(filtered), len(all_tmpls))
+
+    def test_min_margin_deg_high_returns_empty(self):
+        tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com,
+                                       min_margin_deg=90.0)
+        self.assertEqual(len(tmpls), 0)
+
+    # -- sample() shorthand ------------------------------------------------
+
+    def test_sample_returns_valid_se3(self):
+        table_pose = np.eye(4)
+        table_pose[2, 3] = 0.75
+        for t in self.placer.place_mesh(self.cube_verts, self.cube_com):
+            pose = t.sample(table_pose)
+            _valid_se3(pose)
+
+    def test_sample_matches_instantiate_sample(self):
+        table_pose = np.eye(4)
+        table_pose[2, 3] = 0.75
+        t = self.placer.place_cylinder(0.04, 0.12)[0]
+        # Both paths should produce valid SE(3) poses (values differ due to sampling)
+        _valid_se3(t.sample(table_pose))
+        _valid_se3(t.instantiate(table_pose).sample())
+
+    # -- __repr__ ----------------------------------------------------------
+
+    def test_template_repr_contains_task_and_subject(self):
+        t = self.placer.place_cylinder(0.04, 0.12, subject="mug")[0]
+        r = repr(t)
+        self.assertIn("task='place'", r)
+        self.assertIn("subject='mug'", r)
+
+    def test_template_repr_shows_margin_for_mesh(self):
+        t = self.placer.place_mesh(self.cube_verts, self.cube_com)[0]
+        r = repr(t)
+        self.assertIn("margin=", r)
+        self.assertIn("°", r)
+
+    def test_tsr_repr_shows_free_dofs(self):
+        from tsr.tsr import TSR
+        tsr = TSR()
+        tsr.Bw[0] = [-1.0, 1.0]  # x free
+        tsr.Bw[5] = [-np.pi, np.pi]  # yaw free
+        r = repr(tsr)
+        self.assertIn("x", r)
+        self.assertIn("yaw", r)
+
+    # -- stability_margin round-trips through serialization ----------------
+
+    def test_stability_margin_survives_json_roundtrip(self):
+        import json
+        t = self.placer.place_mesh(self.cube_verts, self.cube_com)[0]
+        t2 = TSRTemplate.from_json(t.to_json())
+        self.assertAlmostEqual(t.stability_margin, t2.stability_margin)
+
+    def test_stability_margin_none_survives_json_roundtrip(self):
+        import json
+        t = self.placer.place_cylinder(0.04, 0.12)[0]
+        t2 = TSRTemplate.from_json(t.to_json())
+        self.assertIsNone(t2.stability_margin)
+
+
 if __name__ == "__main__":
     unittest.main()

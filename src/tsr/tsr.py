@@ -53,6 +53,15 @@ class TSR:
 
         self._Bw_cont = Bw_cont
 
+    def __repr__(self) -> str:
+        _DOF = ("x", "y", "z", "roll", "pitch", "yaw")
+        free = [_DOF[i] for i in range(6)
+                if not numpy.isclose(self.Bw[i, 0], self.Bw[i, 1])]
+        t0 = self.T0_w[:3, 3].round(3)
+        te = self.Tw_e[:3, 3].round(3)
+        free_str = ",".join(free) if free else "fixed"
+        return f"TSR(free=[{free_str}], T0_w.t={t0}, Tw_e.t={te})"
+
     @staticmethod
     def rot_to_rpy(rot):
         """

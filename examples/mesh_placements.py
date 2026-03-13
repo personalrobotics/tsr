@@ -34,9 +34,6 @@ def _weighted_com(*parts):
     return sum(c * v for c, v in parts) / total
 
 
-def _margin(tmpl):
-    return tmpl.name.split("margin ")[1].rstrip(")")
-
 
 # ── L-shape ──────────────────────────────────────────────────────────────────
 #
@@ -68,8 +65,8 @@ l_tmpls = placer.place_mesh(l_verts, l_com, subject="L-shape")
 print(f"L-shape  → {len(l_tmpls)} stable pose(s)  "
       f"(COM in natural frame: {l_com.round(3)})")
 for t in l_tmpls:
-    pose = t.instantiate(table_pose).sample()
-    print(f"  [{t.variant:6s}]  COM z = {pose[2,3]:.3f} m  margin = {_margin(t)}")
+    pose = t.sample(table_pose)
+    print(f"  [{t.variant:6s}]  COM z = {pose[2,3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 print()
 
 
@@ -106,8 +103,8 @@ t_tmpls = placer.place_mesh(t_verts, t_com, subject="T-shape")
 print(f"T-shape  → {len(t_tmpls)} stable pose(s)  "
       f"(COM in natural frame: {t_com.round(3)})")
 for t in t_tmpls:
-    pose = t.instantiate(table_pose).sample()
-    print(f"  [{t.variant:6s}]  COM z = {pose[2,3]:.3f} m  margin = {_margin(t)}")
+    pose = t.sample(table_pose)
+    print(f"  [{t.variant:6s}]  COM z = {pose[2,3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 print()
 
 
@@ -138,16 +135,17 @@ mug_com = _weighted_com(
     (np.array([MUG_R + HDL_LX / 2, 0., 0.]), HDL_LX * HDL_LY * HDL_LZ),
 )
 
+# The cylinder discretisation creates many tiny hull facets on the curved side
+# (sub-5° margins).  Filter to physically meaningful poses for visualisation.
+_MIN_MARGIN_DEG = 5.0
 mug_tmpls = placer.place_mesh(mug_verts, mug_com, subject="mug")
 print(f"Mug      → {len(mug_tmpls)} stable pose(s)  "
       f"(COM in natural frame: {mug_com.round(4)})")
 for t in mug_tmpls:
-    pose = t.instantiate(table_pose).sample()
-    print(f"  [{t.variant:6s}]  COM z = {pose[2,3]:.3f} m  margin = {_margin(t)}")
-# The cylinder discretisation creates many tiny hull facets on the curved side
-# (sub-3° margins).  Filter to physically meaningful poses for visualisation.
-_MIN_MARGIN_DEG = 5.0
-mug_tmpls_viz = [t for t in mug_tmpls if float(_margin(t).rstrip("°")) >= _MIN_MARGIN_DEG]
+    pose = t.sample(table_pose)
+    print(f"  [{t.variant:6s}]  COM z = {pose[2,3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+mug_tmpls_viz = placer.place_mesh(mug_verts, mug_com, subject="mug",
+                                  min_margin_deg=_MIN_MARGIN_DEG)
 print(f"         → {len(mug_tmpls_viz)} pose(s) with margin ≥ {_MIN_MARGIN_DEG}° "
       f"shown in visualisation")
 
