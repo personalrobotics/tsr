@@ -61,7 +61,7 @@ drop  = load_package_template("places", "toolchest_drop.yaml")
 screwdriver_pose = np.eye(4)
 screwdriver_pose[:3, 3] = [0.4, 0.1, 0.02]
 
-gripper_poses = grasp.instantiate(screwdriver_pose).sample()
+gripper_poses = grasp.sample(screwdriver_pose)
 
 # --- Everyday manipulation: mug of water ---
 pick      = load_package_template("grasps", "mug_handle_grasp.yaml")
@@ -106,7 +106,7 @@ templates = gripper.grasp_torus(
 mug_pose = np.eye(4)
 mug_pose[:3, 3] = [0.5, 0.0, 0.0]   # mug at x=0.5m
 
-grasp_poses = [t.instantiate(mug_pose).sample() for t in templates]
+grasp_poses = [t.sample(mug_pose) for t in templates]
 ```
 
 #### Placing
@@ -128,15 +128,16 @@ templates = placer.place_torus(major_radius=0.035, minor_radius=0.015, subject="
 # Arbitrary mesh — pass any (N, 3) vertex cloud + centre of mass
 vertices = np.array([...])   # (N, 3) points
 com      = np.array([cx, cy, cz])
-templates = placer.place_mesh(vertices, com, subject="widget")
+templates = placer.place_mesh(vertices, com, subject="widget",
+                              min_margin_deg=5.0)  # discard marginal poses
 
 # Each template encodes one stable orientation; sample a table pose for it
 table_pose = np.eye(4)
 table_pose[2, 3] = 0.75   # table surface at z = 0.75 m
 
 for t in templates:
-    pose = t.instantiate(table_pose).sample()
-    print(t.name, "→ COM z =", pose[2, 3])
+    pose = t.sample(table_pose)
+    print(t, "→ COM z =", pose[2, 3])
 ```
 
 Stability is determined by the COM-projection criterion: a face is stable if the
@@ -228,7 +229,7 @@ pose  = chain.sample()
 ```python
 from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
 
-poses  = [t.instantiate(mug_pose).sample() for t in templates]
+poses  = [t.sample(mug_pose) for t in templates]
 colors = plasma_colors(len(templates))
 
 TSRVisualizer(

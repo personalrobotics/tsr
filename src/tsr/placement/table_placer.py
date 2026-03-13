@@ -65,7 +65,8 @@ class TablePlacer:
         T[2, 3] = float(com_height)
         return T
 
-    def _template(self, name, description, variant, Tw_e, Bw, subject) -> TSRTemplate:
+    def _template(self, name, description, variant, Tw_e, Bw, subject,
+                  stability_margin=None) -> TSRTemplate:
         return TSRTemplate(
             T_ref_tsr=np.eye(4),
             Tw_e=Tw_e,
@@ -76,6 +77,7 @@ class TablePlacer:
             name=name,
             description=description,
             variant=variant,
+            stability_margin=stability_margin,
         )
 
     # ------------------------------------------------------------------
@@ -252,6 +254,7 @@ class TablePlacer:
         vertices: np.ndarray,
         com: np.ndarray,
         subject: str = "object",
+        min_margin_deg: float = 0.0,
     ) -> List[TSRTemplate]:
         """Return one template per stable resting face of the mesh.
 
@@ -261,9 +264,11 @@ class TablePlacer:
         stability margin (most stable face first).
 
         Args:
-            vertices: (N, 3) array of object vertices in the object frame.
-            com:      (3,) center of mass in the same frame.
-            subject:  Name of the object frame.
+            vertices:       (N, 3) array of object vertices in the object frame.
+            com:            (3,) center of mass in the same frame.
+            subject:        Name of the object frame.
+            min_margin_deg: Discard faces whose stability margin is below this
+                            threshold (degrees). Default 0 returns all stable faces.
         """
         vertices = np.asarray(vertices, dtype=float)
         com = np.asarray(com, dtype=float)
@@ -272,12 +277,14 @@ class TablePlacer:
         if com.shape != (3,):
             raise ValueError("com must be a length-3 array")
 
+        min_margin_rad = float(np.radians(min_margin_deg))
         poses = sorted(stable_poses_mesh(vertices, com),
                        key=lambda x: -x[2])  # descending stability margin
+        poses = [p for p in poses if p[2] >= min_margin_rad]
 
         templates = []
-        for idx, (R, com_height, stability_margin) in enumerate(poses):
-            deg = float(np.degrees(stability_margin))
+        for idx, (R, com_height, margin_rad) in enumerate(poses):
+            deg = float(np.degrees(margin_rad))
             templates.append(self._template(
                 name=(
                     f"Place mesh face {idx + 1}/{len(poses)} "
@@ -291,5 +298,6 @@ class TablePlacer:
                 Tw_e=self._tw_e(R, com_height),
                 Bw=self._bw(),
                 subject=subject,
+                stability_margin=float(margin_rad),
             ))
         return templates

@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
+import logging
 import numpy
 from functools import reduce
 
 from .tsr import NANBW, TSR
 from .utils import EPSILON, geodesic_distance
+
+logger = logging.getLogger(__name__)
 
 
 class TSRChain:
@@ -121,12 +124,18 @@ class TSRChain:
                 f'number of TSRs ({len(self.TSRs)})'
             )
 
-        # For optimization, clamp values to bounds instead of raising errors
+        # Clamp values to bounds (required by the L-BFGS-B optimiser that drives
+        # distance(); values slightly outside bounds are normal during line search).
         xyzrpy_list_clamped = []
         for idx in range(len(self.TSRs)):
             xyzrpy = numpy.array(xyzrpy_list[idx])
             Bw = self.TSRs[idx]._Bw_cont
             xyzrpy_clamped = numpy.clip(xyzrpy, Bw[:, 0], Bw[:, 1])
+            if not numpy.allclose(xyzrpy, xyzrpy_clamped):
+                logger.debug(
+                    "TSRChain.to_transform: xyzrpy[%d] clamped to Bw "
+                    "(delta=%s)", idx, xyzrpy - xyzrpy_clamped
+                )
             xyzrpy_list_clamped.append(xyzrpy_clamped)
 
         # Compute the chained transform WITHOUT modifying original TSR objects

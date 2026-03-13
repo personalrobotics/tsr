@@ -542,6 +542,8 @@ def _crop_margins(path: Path, background_hex: str, pad: int) -> None:
     mask = np.any(np.abs(arr.astype(int) - bg) > 12, axis=2)
     rows = np.where(mask.any(axis=1))[0]
     cols = np.where(mask.any(axis=0))[0]
+    if rows.size == 0 or cols.size == 0:
+        return  # nothing to crop — image is uniform background
     r0, r1 = max(rows[0] - pad, 0), min(rows[-1] + pad, arr.shape[0])
     c0, c1 = max(cols[0] - pad, 0), min(cols[-1] + pad, arr.shape[1])
     img.crop((c0, r0, c1, r1)).save(path)

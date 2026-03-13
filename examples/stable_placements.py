@@ -39,7 +39,7 @@ print(f"  COM z    : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.06:.3f} m)\n")
 templates = placer.place_box(lx=0.20, ly=0.08, lz=0.28, subject="box")
 print(f"Box ({len(templates)} templates, one per stable face)")
 for t in templates:
-    pose = t.instantiate(table_pose).sample()
+    pose = t.sample(table_pose)
     print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m")
 print()
 
@@ -56,7 +56,7 @@ print(f"  roll/pitch Bw  : {t.Bw[3].tolist()}  (all orientations free)\n")
 templates = placer.place_torus(major_radius=0.05, minor_radius=0.012,
                                subject="ring")
 t = templates[0]
-pose = t.instantiate(table_pose).sample()
+pose = t.sample(table_pose)
 print(f"Torus ({len(templates)} template)")
 print(f"  variant  : {t.variant}")
 print(f"  COM z    : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.012:.3f} m)\n")
@@ -72,9 +72,8 @@ cube_com = np.zeros(3)
 templates = placer.place_mesh(cube_verts, cube_com, subject="cube")
 print(f"Mesh/cube ({len(templates)} stable faces, sorted by stability margin)")
 for t in templates:
-    pose = t.instantiate(table_pose).sample()
-    margin_str = t.name.split("margin ")[1].rstrip(")")
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {margin_str}")
+    pose = t.sample(table_pose)
+    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 
 
 # ── Visualization ────────────────────────────────────────────────────────────
