@@ -74,12 +74,23 @@ place     = load_package_template("places", "mug_on_table.yaml")
 
 #### Grasping
 
-`ParallelJawGripper` generates TSR templates directly from shape parameters:
+`ParallelJawGripper` generates TSR templates directly from shape parameters.
+Pre-configured subclasses are provided for common grippers:
+
+| Class | `finger_length` | `max_aperture` | Notes |
+|---|---|---|---|
+| `Robotiq2F140` | 55 mm | 140 mm | Robotiq 2F-140 parallel gripper |
+| `FrankaHand` | 44.5 mm | 80 mm | Franka Emika Panda hand |
 
 ```python
 import numpy as np
-from tsr.hands import ParallelJawGripper
+from tsr.hands import ParallelJawGripper, Robotiq2F140, FrankaHand
 
+# Use a pre-configured gripper for a known hardware platform
+gripper = Robotiq2F140()
+gripper = FrankaHand()
+
+# Or configure manually for custom hardware
 gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
 # Cylinder — side + top + bottom: 4*k templates (default k=3: 12 total)

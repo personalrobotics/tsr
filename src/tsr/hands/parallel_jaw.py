@@ -1,7 +1,6 @@
 """Parallel jaw gripper hand models."""
 from __future__ import annotations
 
-import dataclasses
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -914,33 +913,16 @@ class ParallelJawGripper(GripperBase):
         )
 
 
-# −90° z-rotation: corrects Robotiq wrist frame to canonical TSR EE frame.
-# The Robotiq 2F-140 physical flange zero-pose is rotated −90° around z
-# relative to the canonical frame (z=approach, y=opening, x=palm).
-_R_z_neg90 = np.array([
-    [ 0.,  1.,  0.,  0.],
-    [-1.,  0.,  0.,  0.],
-    [ 0.,  0.,  1.,  0.],
-    [ 0.,  0.,  0.,  1.],
-])
-
-
 class Robotiq2F140(ParallelJawGripper):
     """Robotiq 2F-140 parallel gripper.
 
     Fixed hardware parameters: finger_length=55 mm, max_aperture=140 mm.
 
-    Applies a −90° z-rotation correction to Tw_e so sampled poses are in
-    the Robotiq physical wrist frame rather than the canonical TSR EE frame.
-
-    Usage::
-
-        gripper   = Robotiq2F140()
-        templates = gripper.grasp_cylinder(cylinder_radius=0.04,
-                                           cylinder_height=0.10,
-                                           reference="mug")
-        tsr  = templates[0].instantiate(mug_pose)
-        pose = tsr.sample()   # pose in Robotiq wrist frame
+    Outputs poses in the canonical TSR EE frame (z=approach, y=finger-opening,
+    x=palm normal). The corresponding MuJoCo model (geodude_assets 2f140.xml)
+    defines a ``grasp_site`` at the palm with this orientation baked in — use
+    that site as the arm's ``ee_site`` so IK targets the canonical frame
+    directly.
     """
 
     FINGER_LENGTH = 0.055
@@ -952,35 +934,26 @@ class Robotiq2F140(ParallelJawGripper):
             max_aperture=self.MAX_APERTURE,
         )
 
-    def _apply_frame_correction(self, templates: List[TSRTemplate]) -> List[TSRTemplate]:
-        return [dataclasses.replace(t, Tw_e=t.Tw_e @ _R_z_neg90) for t in templates]
 
-    def grasp_cylinder_side(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_cylinder_side(*args, **kwargs))
+class FrankaHand(ParallelJawGripper):
+    """Franka Emika Panda hand (parallel jaw gripper).
 
-    def grasp_cylinder_top(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_cylinder_top(*args, **kwargs))
+    Fixed hardware parameters derived from the menagerie hand.xml model:
+      finger_length = 44.5 mm  (fingertip pad centre from finger-joint origin)
+      max_aperture  =  80 mm   (2 × 40 mm joint range)
 
-    def grasp_cylinder_bottom(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_cylinder_bottom(*args, **kwargs))
+    The canonical EE frame (z=approach, y=finger-opening, x=palm normal)
+    matches the Franka hand body axes directly — the ``add_franka_ee_site``
+    helper in ``mj_manipulator.arms.franka`` places a ``grasp_site`` at the
+    finger-joint origin (palm) with identity orientation. Use that site as the
+    arm's ``ee_site`` so IK targets the canonical frame directly.
+    """
 
-    def grasp_box_top(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_box_top(*args, **kwargs))
+    FINGER_LENGTH = 0.0445   # fingertip pad centre from finger-joint origin [m]
+    MAX_APERTURE  = 0.080    # 2 × 40 mm joint range [m]
 
-    def grasp_box_bottom(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_box_bottom(*args, **kwargs))
-
-    def grasp_box_face_x(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_box_face_x(*args, **kwargs))
-
-    def grasp_box_face_y(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_box_face_y(*args, **kwargs))
-
-    def grasp_sphere(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_sphere(*args, **kwargs))
-
-    def grasp_torus_side(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_torus_side(*args, **kwargs))
-
-    def grasp_torus_span(self, *args, **kwargs) -> List[TSRTemplate]:
-        return self._apply_frame_correction(super().grasp_torus_span(*args, **kwargs))
+    def __init__(self):
+        super().__init__(
+            finger_length=self.FINGER_LENGTH,
+            max_aperture=self.MAX_APERTURE,
+        )
