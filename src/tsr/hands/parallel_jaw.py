@@ -949,7 +949,7 @@ class FrankaHand(ParallelJawGripper):
     arm's ``ee_site`` so IK targets the canonical frame directly.
     """
 
-    FINGER_LENGTH = 0.0445   # fingertip pad centre from finger-joint origin [m]
+    FINGER_LENGTH = 0.054    # fingertip (pad tip) from finger-joint origin [m]
     MAX_APERTURE  = 0.080    # 2 × 40 mm joint range [m]
 
     def __init__(self):
