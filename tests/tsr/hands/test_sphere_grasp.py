@@ -47,7 +47,7 @@ class TestGraspSphere(unittest.TestCase):
                                        err_msg=f"z_EE not inward in {t.name}")
 
     def test_standoff_within_expected_range(self):
-        clearance = 0.1 * FL
+        clearance = 0.3 * min(FL, RADIUS)
         ro_max = RADIUS + FL - clearance
         ro_min = RADIUS + FL - (min(FL, RADIUS) - clearance)
         for t in self.templates:
@@ -82,7 +82,7 @@ class TestGraspSphere(unittest.TestCase):
     # ── Preshape ──────────────────────────────────────────────────────────
 
     def test_default_preshape_is_diameter_plus_clearance(self):
-        clearance = 0.1 * FL
+        clearance = 0.3 * min(FL, RADIUS)
         expected = 2 * RADIUS + clearance
         for t in self.templates:
             self.assertAlmostEqual(t.preshape[0], expected)

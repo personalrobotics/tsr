@@ -42,7 +42,7 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
             self.gripper.grasp_cylinder_side(R, 0.001)
 
     def test_default_preshape_is_2r_plus_clearance(self):
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * min(self.gripper.finger_length, R)
         expected  = 2 * R + clearance
         templates = self.gripper.grasp_cylinder_side(R, H)
         np.testing.assert_allclose(templates[0].preshape[0], expected)

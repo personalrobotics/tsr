@@ -41,6 +41,20 @@ class ParallelJawGripper(GripperBase):
         self.finger_length = finger_length
         self.max_aperture  = max_aperture
 
+    def _default_clearance(self, graspable_depth: float) -> float:
+        """Compute default clearance from graspable depth.
+
+        Clearance is 30% of the graspable depth — the distance fingers
+        can wrap around the object. This ensures the shallowest grasp
+        has enough contact area for friction to hold.
+
+        Args:
+            graspable_depth: max penetration depth for this grasp geometry,
+                typically min(finger_length, object_radius) for side grasps
+                or finger_length for top/bottom grasps.
+        """
+        return 0.3 * graspable_depth
+
     def _validate(self, cylinder_radius: float, preshape: float) -> None:
         if cylinder_radius <= 0:
             raise ValueError("cylinder_radius must be > 0")
@@ -81,13 +95,14 @@ class ParallelJawGripper(GripperBase):
 
         Args:
             clearance:  Safety buffer [m] applied to: height ends, fingertip
-                        start depth, and palm stop depth. Default: 10% of finger_length.
+                        start depth, and palm stop depth. Default: 30% of
+                        graspable depth (ensures stable contact).
 
         Returns [] if preshape <= cylinder diameter. Raises ValueError for
         invalid geometry.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(min(self.finger_length, cylinder_radius))
         if preshape is None:
             preshape = 2. * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
@@ -172,7 +187,7 @@ class ParallelJawGripper(GripperBase):
         Full yaw covers all finger orientations.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         if preshape is None:
             preshape = 2. * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
@@ -244,7 +259,7 @@ class ParallelJawGripper(GripperBase):
         Full yaw covers all finger orientations.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         if preshape is None:
             preshape = 2. * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
@@ -388,7 +403,7 @@ class ParallelJawGripper(GripperBase):
         Each orientation generates k depth templates if max_aperture allows.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
             raise ValueError(
@@ -439,7 +454,7 @@ class ParallelJawGripper(GripperBase):
         Each orientation generates k depth templates if max_aperture allows.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
             raise ValueError(
@@ -489,7 +504,7 @@ class ParallelJawGripper(GripperBase):
         Each valid orientation (max_aperture allows the span) generates k templates.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
             raise ValueError(
@@ -545,7 +560,7 @@ class ParallelJawGripper(GripperBase):
         Each valid orientation (max_aperture allows the span) generates k templates.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
             raise ValueError(
@@ -610,7 +625,7 @@ class ParallelJawGripper(GripperBase):
         invalid geometry.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(min(self.finger_length, object_radius))
         if preshape is None:
             preshape = 2. * object_radius + clearance
         if object_radius <= 0:
@@ -733,7 +748,7 @@ class ParallelJawGripper(GripperBase):
         tube centerline). Raises ValueError for invalid geometry.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(min(self.finger_length, tube_radius))
         if preshape is None:
             preshape = 2. * tube_radius + clearance
         self._validate_torus(torus_radius, tube_radius)
@@ -832,7 +847,7 @@ class ParallelJawGripper(GripperBase):
         returns [] if the outer diameter + clearance exceeds max_aperture.
         """
         if clearance is None:
-            clearance = 0.1 * self.finger_length
+            clearance = self._default_clearance(self.finger_length)
         if preshape is None:
             preshape = 2. * (torus_radius + tube_radius) + clearance
             if preshape > self.max_aperture:

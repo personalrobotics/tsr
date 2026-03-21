@@ -63,7 +63,7 @@ class TestBoxFaceTemplatesHelper(unittest.TestCase):
 
     def test_preshape_matches_span_dim(self):
         """Auto-computed preshape = span_dim + clearance for each orientation."""
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * self.gripper.finger_length
         for t in self.gripper.grasp_box(SX, SY, SZ):
             ps = t.preshape[0]
             # preshape should be close to one of the box face dimensions + clearance
@@ -121,7 +121,7 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
         self.assertTrue(any("span-y" in n for n in names))
 
     def test_span_x_slides_in_y(self):
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * self.gripper.finger_length
         span_x_templates = [t for t in self.gripper.grasp_box_top(SX, SY, SZ)
                              if "span-x" in t.name]
         for t in span_x_templates:
@@ -130,7 +130,7 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
             self.assertAlmostEqual(t.Bw[1, 1],  (SY / 2 - clearance))
 
     def test_span_y_slides_in_x(self):
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * self.gripper.finger_length
         span_y_templates = [t for t in self.gripper.grasp_box_top(SX, SY, SZ)
                              if "span-y" in t.name]
         for t in span_y_templates:
@@ -212,7 +212,7 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
             _check_se3(self, t.Tw_e[:3, :3])
 
     def test_span_y_slides_in_z_only(self):
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * self.gripper.finger_length
         span_y = [t for t in self.gripper.grasp_box_face_x(SX, SY, SZ)
                   if "span-y" in t.name]
         for t in span_y:
@@ -222,7 +222,7 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
             self.assertAlmostEqual(t.Bw[2, 1],  (SZ / 2 - clearance))
 
     def test_span_z_slides_in_y_only(self):
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * self.gripper.finger_length
         span_z = [t for t in self.gripper.grasp_box_face_x(SX, SY, SZ)
                   if "span-z" in t.name]
         for t in span_z:
@@ -270,7 +270,7 @@ class TestParallelJawGripperBoxFaceY(unittest.TestCase):
             _check_se3(self, t.Tw_e[:3, :3])
 
     def test_span_x_slides_in_z_only(self):
-        clearance = 0.1 * self.gripper.finger_length
+        clearance = 0.3 * self.gripper.finger_length
         span_x = [t for t in self.gripper.grasp_box_face_y(SX, SY, SZ)
                   if "span-x" in t.name]
         for t in span_x:

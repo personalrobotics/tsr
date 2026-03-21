@@ -12,10 +12,10 @@ from tsr.hands import ParallelJawGripper
 FL = 0.055   # finger length
 MA = 0.140   # max aperture
 
-# Small torus: span fits (2*(R+r)+clearance = 2*0.055+0.0055 = 0.1155 < 0.14)
+# Small torus: span fits (2*(R+r)+clearance = 2*0.055+0.0165 = 0.1265 < 0.14)
 SR, Sr = 0.040, 0.015
 
-# Large torus: span doesn't fit (2*(R+r)+clearance = 2*0.085+0.0055 = 0.1755 > 0.14)
+# Large torus: span doesn't fit (2*(R+r)+clearance = 2*0.085+0.0165 = 0.1865 > 0.14)
 LR, Lr = 0.060, 0.025
 
 
@@ -116,7 +116,7 @@ class TestGraspTorusSide(unittest.TestCase):
     # ── Preshape ──────────────────────────────────────────────────────────
 
     def test_default_preshape_is_tube_diameter_plus_clearance(self):
-        clearance = 0.1 * FL
+        clearance = 0.3 * min(FL, Sr)
         expected = 2 * Sr + clearance
         for t in self.templates:
             self.assertAlmostEqual(t.preshape[0], expected)
@@ -229,7 +229,7 @@ class TestGraspTorusSpan(unittest.TestCase):
             self.assertEqual(t.Bw[4, 0], t.Bw[4, 1])
 
     def test_preshape_spans_outer_diameter(self):
-        clearance = 0.1 * FL
+        clearance = 0.3 * FL
         expected = 2 * (SR + Sr) + clearance
         for t in self.gripper.grasp_torus_span(SR, Sr):
             self.assertAlmostEqual(t.preshape[0], expected)
