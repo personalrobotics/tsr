@@ -48,8 +48,10 @@ class TestGraspSphere(unittest.TestCase):
 
     def test_standoff_within_expected_range(self):
         clearance = 0.3 * min(FL, RADIUS)
-        ro_max = RADIUS + FL - clearance
-        ro_min = RADIUS + FL - (min(FL, RADIUS) - clearance)
+        depth_min = RADIUS  # fingertips at center
+        depth_max = min(FL, 2 * RADIUS) - clearance
+        ro_max = RADIUS + FL - depth_min  # = FL
+        ro_min = RADIUS + FL - depth_max
         for t in self.templates:
             ro = np.linalg.norm(t.Tw_e[:3, 3])
             self.assertGreaterEqual(ro, ro_min - 1e-9)

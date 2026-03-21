@@ -128,8 +128,14 @@ class ParallelJawGripper(GripperBase):
             [angle_range[0], angle_range[1]],  # yaw: angular freedom
         ])
 
-        approach_max = min(self.finger_length, cylinder_radius) - clearance
-        depths = np.linspace(clearance, approach_max, max(k, 1))
+        # Shallowest: fingertips at cylinder center (depth = radius).
+        # Deepest: fingertips past center, limited by finger_length or far surface.
+        depth_min = cylinder_radius
+        depth_max = min(self.finger_length, 2 * cylinder_radius) - clearance
+        if depth_max <= depth_min:
+            depths = np.array([depth_min])
+        else:
+            depths = np.linspace(depth_min, depth_max, max(k, 1))
 
         common = dict(
             T_ref_tsr=T_ref_tsr, Bw=Bw,
@@ -651,8 +657,12 @@ class ParallelJawGripper(GripperBase):
             [angle_range[0],  angle_range[1]],  # yaw: azimuthal freedom
         ])
 
-        approach_max = min(self.finger_length, object_radius) - clearance
-        depths = np.linspace(clearance, approach_max, max(k, 1))
+        depth_min = object_radius
+        depth_max = min(self.finger_length, 2 * object_radius) - clearance
+        if depth_max <= depth_min:
+            depths = np.array([depth_min])
+        else:
+            depths = np.linspace(depth_min, depth_max, max(k, 1))
 
         common = dict(
             T_ref_tsr=T_ref_tsr, Bw=Bw,
