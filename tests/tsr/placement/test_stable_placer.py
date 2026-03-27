@@ -1,9 +1,9 @@
-"""Tests for TablePlacer."""
+"""Tests for StablePlacer."""
 import unittest
 import numpy as np
 from numpy import pi
 
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 from tsr.template import TSRTemplate
 
 TX = 0.30
@@ -40,10 +40,10 @@ def _check_bw_standard(test, t):
     np.testing.assert_allclose(t.Bw[5], [-pi, pi])
 
 
-class TestTablePlacerCylinder(unittest.TestCase):
+class TestStablePlacerCylinder(unittest.TestCase):
 
     def setUp(self):
-        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        self.placer = StablePlacer(table_x=TX, table_y=TY)
 
     def test_returns_two_templates(self):
         _check_common(self, self.placer.place_cylinder(0.04, 0.12), "object", "table", 2)
@@ -89,10 +89,10 @@ class TestTablePlacerCylinder(unittest.TestCase):
         self.assertGreater(pose_at_zero[2, 3], 0.75)  # above table
 
 
-class TestTablePlacerBox(unittest.TestCase):
+class TestStablePlacerBox(unittest.TestCase):
 
     def setUp(self):
-        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        self.placer = StablePlacer(table_x=TX, table_y=TY)
 
     def test_always_returns_six_templates(self):
         # All 6 faces are returned regardless of dimension symmetry.
@@ -132,10 +132,10 @@ class TestTablePlacerBox(unittest.TestCase):
             _valid_se3(pose)
 
 
-class TestTablePlacerSphere(unittest.TestCase):
+class TestStablePlacerSphere(unittest.TestCase):
 
     def setUp(self):
-        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        self.placer = StablePlacer(table_x=TX, table_y=TY)
 
     def test_returns_one_template(self):
         _check_common(self, self.placer.place_sphere(0.05), "object", "table", 1)
@@ -160,10 +160,10 @@ class TestTablePlacerSphere(unittest.TestCase):
         np.testing.assert_allclose(t.Tw_e[:3, :3], np.eye(3), atol=1e-10)
 
 
-class TestTablePlacerTorus(unittest.TestCase):
+class TestStablePlacerTorus(unittest.TestCase):
 
     def setUp(self):
-        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        self.placer = StablePlacer(table_x=TX, table_y=TY)
 
     def test_returns_two_templates(self):
         _check_common(self, self.placer.place_torus(0.05, 0.01), "object", "table", 2)
@@ -191,10 +191,10 @@ class TestTablePlacerTorus(unittest.TestCase):
             _check_bw_standard(self, t)
 
 
-class TestTablePlacerMesh(unittest.TestCase):
+class TestStablePlacerMesh(unittest.TestCase):
 
     def setUp(self):
-        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        self.placer = StablePlacer(table_x=TX, table_y=TY)
         L = 0.05
         self.cube_verts = np.array([
             [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],
@@ -265,23 +265,23 @@ class TestTablePlacerMesh(unittest.TestCase):
         self.assertLess(len(templates), 4)
 
 
-class TestTablePlacerInit(unittest.TestCase):
+class TestStablePlacerInit(unittest.TestCase):
 
     def test_negative_table_x_raises(self):
         with self.assertRaises(ValueError):
-            TablePlacer(table_x=-0.3, table_y=0.2)
+            StablePlacer(table_x=-0.3, table_y=0.2)
 
     def test_negative_table_y_raises(self):
         with self.assertRaises(ValueError):
-            TablePlacer(table_x=0.3, table_y=-0.2)
+            StablePlacer(table_x=0.3, table_y=-0.2)
 
     def test_custom_reference(self):
-        placer = TablePlacer(table_x=0.3, table_y=0.2, reference="countertop")
+        placer = StablePlacer(table_x=0.3, table_y=0.2, reference="countertop")
         t = placer.place_cylinder(0.04, 0.12)[0]
         self.assertEqual(t.reference, "countertop")
 
     def test_table_extents_stored(self):
-        placer = TablePlacer(table_x=0.3, table_y=0.2)
+        placer = StablePlacer(table_x=0.3, table_y=0.2)
         self.assertAlmostEqual(placer.table_x, 0.3)
         self.assertAlmostEqual(placer.table_y, 0.2)
 
@@ -290,7 +290,7 @@ class TestNewAPI(unittest.TestCase):
     """Tests for stability_margin, sample(), min_margin_deg, and __repr__."""
 
     def setUp(self):
-        self.placer = TablePlacer(table_x=TX, table_y=TY)
+        self.placer = StablePlacer(table_x=TX, table_y=TY)
         L = 0.05
         verts = np.array([
             [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],

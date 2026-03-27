@@ -405,12 +405,12 @@ grasp_poses = [t.sample(mug_pose) for t in templates]
 
 ## Generating Placement Templates
 
-`TablePlacer` generates one `TSRTemplate` per stable resting pose for objects placed on a flat surface. It uses the same TSR math as grasp templates — `Tw_e` encodes the stable orientation and COM height, `Bw` covers the table's xy footprint.
+`StablePlacer` generates one `TSRTemplate` per stable resting pose for objects placed on a flat surface. It uses the same TSR math as grasp templates — `Tw_e` encodes the stable orientation and COM height, `Bw` covers the table's xy footprint.
 
 ```python
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 
-placer = TablePlacer(table_x=0.60, table_y=0.40)
+placer = StablePlacer(table_x=0.60, table_y=0.40)
 ```
 
 ### Analytic Primitives
@@ -443,9 +443,9 @@ Bw structure for all placement templates:
 
 ```python
 import numpy as np
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 
-placer = TablePlacer(table_x=0.60, table_y=0.40)
+placer = StablePlacer(table_x=0.60, table_y=0.40)
 
 vertices = np.array([...])   # (N, 3) vertex cloud in object frame
 com      = np.array([cx, cy, cz])
@@ -537,10 +537,10 @@ candidates = [t.sample(mug_pose) for t in templates]
 ### Example 2: Generate All Stable Placements for a Mug
 
 ```python
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 import numpy as np
 
-placer    = TablePlacer(table_x=0.60, table_y=0.40)
+placer    = StablePlacer(table_x=0.60, table_y=0.40)
 templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, subject="mug")
 
 table_pose = perception.get_table_pose()
@@ -552,7 +552,7 @@ for t in templates:
 ### Example 3: Stable Placements for Arbitrary Shape (Mesh)
 
 ```python
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 import numpy as np
 
 # L-shaped object: 12 vertices
@@ -564,7 +564,7 @@ vertices = np.array([
 ])
 com = vertices.mean(axis=0)
 
-placer    = TablePlacer(table_x=0.5, table_y=0.5)
+placer    = StablePlacer(table_x=0.5, table_y=0.5)
 templates = placer.place_mesh(vertices, com, subject="L-shape", min_margin_deg=5.0)
 
 table_pose = np.eye(4)
@@ -638,7 +638,7 @@ plan = cbirrt.plan(start=q_start, goal=q_goal, constraints=[pour_tsr])
 | **TSR Chains** | Constraints on articulated objects (doors, drawers) |
 | **TSRTemplate** | Serializable, reusable constraint bound at runtime |
 | **ParallelJawGripper** | Programmatic grasp templates from object geometry |
-| **TablePlacer** | Programmatic placement templates; one per stable pose |
+| **StablePlacer** | Programmatic placement templates; one per stable pose |
 | **TSRVisualizer** | 3D visualization with correct occlusion via PyVista |
 
 TSRs are a single abstraction that covers grasping, placement, and trajectory constraints — the difference lies only in what $T_0^w$ refers to and how $B_w$ shapes the valid region.

@@ -59,7 +59,7 @@ from .sampling import (
 )
 
 # Placement
-from .placement import TablePlacer
+from .placement import StablePlacer
 
 # Template I/O
 from .io import (
