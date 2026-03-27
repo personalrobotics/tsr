@@ -13,7 +13,4 @@ Usage::
 """
 from .stable_placer import StablePlacer
 
-# Deprecated alias — will be removed in a future release.
-TablePlacer = StablePlacer
-
-__all__ = ["StablePlacer", "TablePlacer"]
+__all__ = ["StablePlacer"]
