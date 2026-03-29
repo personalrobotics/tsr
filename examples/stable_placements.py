@@ -1,4 +1,4 @@
-"""stable_placements.py — Stable placement TSR generation with TablePlacer.
+"""stable_placements.py — Stable placement TSR generation with StablePlacer.
 
 Demonstrates how to generate placement TSRs for geometric primitives and
 arbitrary meshes, then sample valid placement poses on a table surface.
@@ -12,16 +12,16 @@ Usage::
 """
 import numpy as np
 
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 
 # 60 × 40 cm table surface; z points up; table origin at surface center.
-placer = TablePlacer(table_x=0.30, table_y=0.20, reference="table")
+placer = StablePlacer(table_x=0.30, table_y=0.20, reference="table")
 
 # World pose of the table surface.
 table_pose = np.eye(4)
 table_pose[2, 3] = 0.75  # table at z = 0.75 m
 
-print("=== TablePlacer Demo ===\n")
+print("=== StablePlacer Demo ===\n")
 
 
 # ── Cylinder (mug) ──────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ try:
 
     TX, TY = 0.55, 0.38              # table half-extents (110 × 76 cm)
 
-    placer = TablePlacer(table_x=TX, table_y=TY)
+    placer = StablePlacer(table_x=TX, table_y=TY)
 
     CYL_R, CYL_H            = 0.04, 0.12
     BOX_LX, BOX_LY, BOX_LZ  = 0.10, 0.06, 0.18

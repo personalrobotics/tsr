@@ -2,15 +2,15 @@
 
 Usage::
 
-    from tsr.placement import TablePlacer
+    from tsr.placement import StablePlacer
 
-    placer    = TablePlacer(table_x=0.3, table_y=0.2)
+    placer    = StablePlacer(table_x=0.3, table_y=0.2)
     templates = placer.place_cylinder(cylinder_radius=0.04,
                                       cylinder_height=0.12,
                                       subject="mug")
-    tsr  = templates[0].instantiate(table_pose)
+    tsr  = templates[0].instantiate(surface_pose)
     pose = tsr.sample()
 """
-from .table_placer import TablePlacer
+from .stable_placer import StablePlacer
 
-__all__ = ["TablePlacer"]
+__all__ = ["StablePlacer"]

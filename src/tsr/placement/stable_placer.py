@@ -1,4 +1,4 @@
-"""TablePlacer: generate stable placement TSRs for objects on a flat surface."""
+"""StablePlacer: generate stable placement TSRs for objects on a flat surface."""
 from __future__ import annotations
 
 from typing import List
@@ -9,25 +9,25 @@ from ..template import TSRTemplate
 from ._stable_poses import _rotation_to_align, stable_poses_mesh
 
 
-class TablePlacer:
-    """Generate stable placement TSRs for objects placed on a flat table.
+class StablePlacer:
+    """Generate stable placement TSRs for objects on a flat surface.
 
     Frame convention:
-        Table z points up; table origin at the surface center.
+        Surface z points up; surface origin at the center.
         Object frame origin at geometric center (= COM for uniform density).
 
     Args:
-        table_x: Table half-extent along x (m). Sampled poses slide ±table_x.
-        table_y: Table half-extent along y (m). Sampled poses slide ±table_y.
+        table_x: Surface half-extent along x (m). Sampled poses slide ±table_x.
+        table_y: Surface half-extent along y (m). Sampled poses slide ±table_y.
         reference: Reference frame name (default ``"table"``).
 
     Example::
 
-        placer    = TablePlacer(table_x=0.3, table_y=0.2)
+        placer    = StablePlacer(table_x=0.3, table_y=0.2)
         templates = placer.place_cylinder(cylinder_radius=0.04,
                                           cylinder_height=0.12,
                                           subject="mug")
-        tsr  = templates[0].instantiate(table_pose)
+        tsr  = templates[0].instantiate(surface_pose)
         pose = tsr.sample()
     """
 
@@ -43,7 +43,7 @@ class TablePlacer:
     # ------------------------------------------------------------------
 
     def _bw(self, roll_range=None, pitch_range=None) -> np.ndarray:
-        """Build 6×2 Bw: table extents for xy, z/roll/pitch fixed, yaw free."""
+        """Build 6×2 Bw: surface extents for xy, z/roll/pitch fixed, yaw free."""
         bw = np.array([
             [-self.table_x,  self.table_x],
             [-self.table_y,  self.table_y],
@@ -59,7 +59,7 @@ class TablePlacer:
         return bw
 
     def _tw_e(self, R: np.ndarray, com_height: float) -> np.ndarray:
-        """Build 4×4 Tw_e from rotation R and COM height above table surface."""
+        """Build 4×4 Tw_e from rotation R and COM height above the surface."""
         T = np.eye(4)
         T[:3, :3] = R
         T[2, 3] = float(com_height)
@@ -180,7 +180,7 @@ class TablePlacer:
         radius: float,
         subject: str = "object",
     ) -> List[TSRTemplate]:
-        """Return one placement template: sphere on table.
+        """Return one placement template: sphere on a flat surface.
 
         Every orientation is equally stable so roll and pitch are also free.
 
@@ -212,7 +212,7 @@ class TablePlacer:
         minor_radius: float,
         subject: str = "object",
     ) -> List[TSRTemplate]:
-        """Return one placement template: torus flat on table (axis = z).
+        """Return one placement template: torus flat on surface (axis = z).
 
         Object frame: origin at center, z = torus symmetry axis pointing up.
         The torus rests on the bottom of the tube ring at z = -minor_radius.

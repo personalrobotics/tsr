@@ -12,9 +12,9 @@ Usage::
 """
 import numpy as np
 
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 
-placer     = TablePlacer(table_x=0.60, table_y=0.40)
+placer     = StablePlacer(table_x=0.60, table_y=0.40)
 table_pose = np.eye(4)
 table_pose[2, 3] = 0.75
 

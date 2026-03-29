@@ -122,13 +122,13 @@ grasp_poses = [t.sample(mug_pose) for t in templates]
 
 #### Placing
 
-`TablePlacer` generates one TSR template per stable resting pose on a flat surface:
+`StablePlacer` generates one TSR template per stable resting pose on a flat surface:
 
 ```python
 import numpy as np
-from tsr.placement import TablePlacer
+from tsr.placement import StablePlacer
 
-placer = TablePlacer(table_x=0.60, table_y=0.40)
+placer = StablePlacer(table_x=0.60, table_y=0.40)
 
 # Analytic primitives
 templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, subject="mug")
