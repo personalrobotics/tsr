@@ -371,3 +371,41 @@ class TsrTest(TestCase):
         distance, _ = tsr.distance(trans_in)
         self.assertEqual(distance, 0.0,
             "Distance should be 0 for contained transform in outer interval")
+
+    def test_rpy_roundtrip_near_singularity(self):
+        """Test rot_to_rpy / rpy_to_rot round-trip near pitch = ±pi/2.
+
+        The RPY decomposition has a gimbal lock singularity at pitch = ±pi/2.
+        The code has special-case logic for this; verify it produces a
+        consistent rotation matrix round-trip.
+        """
+        test_pitches = [
+            pi/2 - 1e-6,   # just below singularity
+            pi/2,           # exact singularity
+            pi/2 + 1e-6,   # just above singularity
+            -pi/2 - 1e-6,
+            -pi/2,
+            -pi/2 + 1e-6,
+        ]
+        for pitch in test_pitches:
+            R = TSR.rpy_to_rot([0.3, pitch, 0.5])
+            rpy = TSR.rot_to_rpy(R)
+            R2 = TSR.rpy_to_rot(rpy)
+            numpy.testing.assert_allclose(R, R2, atol=1e-6,
+                err_msg=f"RPY round-trip failed at pitch={pitch}")
+
+    def test_rpy_roundtrip_general(self):
+        """Test rot_to_rpy / rpy_to_rot round-trip for general rotations."""
+        test_rpys = [
+            [0, 0, 0],
+            [pi/4, pi/6, pi/3],
+            [-pi/3, pi/4, -pi/6],
+            [pi, 0, pi],
+            [0.1, -0.2, 0.3],
+        ]
+        for rpy in test_rpys:
+            R = TSR.rpy_to_rot(rpy)
+            rpy2 = TSR.rot_to_rpy(R)
+            R2 = TSR.rpy_to_rot(rpy2)
+            numpy.testing.assert_allclose(R, R2, atol=1e-10,
+                err_msg=f"RPY round-trip failed for rpy={rpy}")
