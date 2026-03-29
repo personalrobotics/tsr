@@ -213,27 +213,20 @@ class TSRChain:
 
     def contains(self, trans):
         """
-        Checks if the TSR chain contains the transform
+        Checks if the TSR chain contains the transform.
+
+        Uses the composed distance (consistent with ``distance()``).
+        For a single TSR this is equivalent to ``TSR.contains()``.
+        For multi-TSR chains, the transform must satisfy all constraints
+        simultaneously (AND semantics).
+
         @param  trans 4x4 transform
         @return       True if inside and False if not
         """
-        # For empty chains, return False
         if len(self.TSRs) == 0:
             return False
-            
-        # For single TSR, use the TSR's contains method
-        if len(self.TSRs) == 1:
-            return self.TSRs[0].contains(trans)
-            
-        # For multiple TSRs, check if the transform is within any individual TSR
-        # This is a more lenient interpretation that matches the test expectations
-        for tsr in self.TSRs:
-            if tsr.contains(trans):
-                return True
-                
-        # If not contained in any individual TSR, use distance-based approach
         dist, _ = self.distance(trans)
-        return (abs(dist) < EPSILON)
+        return abs(dist) < EPSILON
 
     def to_xyzrpy(self, trans):
         """
