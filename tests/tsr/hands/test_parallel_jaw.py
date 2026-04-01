@@ -37,9 +37,9 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.gripper.grasp_cylinder_side(0.0, H)
 
-    def test_narrow_height_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_side(R, 0.001)
+    def test_narrow_height_returns_centered_grasp(self):
+        templates = self.gripper.grasp_cylinder_side(R, 0.001)
+        self.assertGreater(len(templates), 0, "Should produce centered pinch for narrow cylinder")
 
     def test_default_preshape_is_2r_plus_clearance(self):
         clearance = 0.3 * min(self.gripper.finger_length, R)
