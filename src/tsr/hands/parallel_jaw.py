@@ -418,10 +418,10 @@ class ParallelJawGripper(GripperBase):
                 f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
             )
         hx, hy = box_x / 2. - clearance, box_y / 2. - clearance
-        if hx <= 0 or hy <= 0:
-            clearance = 0.0
-            hx = box_x / 2.
-            hy = box_y / 2.
+        if hx <= 0:
+            hx = 0.0
+        if hy <= 0:
+            hy = 0.0
 
         if not name:
             name = f"{reference.title()} Box Top Grasp"
@@ -471,10 +471,10 @@ class ParallelJawGripper(GripperBase):
                 f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
             )
         hx, hy = box_x / 2. - clearance, box_y / 2. - clearance
-        if hx <= 0 or hy <= 0:
-            clearance = 0.0
-            hx = box_x / 2.
-            hy = box_y / 2.
+        if hx <= 0:
+            hx = 0.0
+        if hy <= 0:
+            hy = 0.0
 
         if not name:
             name = f"{reference.title()} Box Bottom Grasp"
@@ -524,10 +524,11 @@ class ParallelJawGripper(GripperBase):
             )
         hy = box_y / 2. - clearance
         hz_half = box_z / 2. - clearance
-        if hy <= 0 or hz_half <= 0:
-            clearance = 0.0
-            hy = box_y / 2.
-            hz_half = box_z / 2.
+        # Clamp per-axis: too-small axis → centered, other keeps clearance
+        if hy <= 0:
+            hy = 0.0
+        if hz_half <= 0:
+            hz_half = 0.0
 
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
@@ -580,10 +581,10 @@ class ParallelJawGripper(GripperBase):
             )
         hx = box_x / 2. - clearance
         hz_half = box_z / 2. - clearance
-        if hx <= 0 or hz_half <= 0:
-            clearance = 0.0
-            hx = box_x / 2.
-            hz_half = box_z / 2.
+        if hx <= 0:
+            hx = 0.0
+        if hz_half <= 0:
+            hz_half = 0.0
 
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
