@@ -47,7 +47,7 @@ class TestGraspSphere(unittest.TestCase):
                                        err_msg=f"z_EE not inward in {t.name}")
 
     def test_standoff_within_expected_range(self):
-        clearance = 0.3 * min(FL, RADIUS)
+        clearance = self.gripper.clearance_fraction * min(FL, RADIUS)
         depth_min = RADIUS  # fingertips at center
         depth_max = min(FL, 2 * RADIUS) - clearance
         ro_max = RADIUS + FL - depth_min  # = FL
@@ -84,7 +84,7 @@ class TestGraspSphere(unittest.TestCase):
     # ── Preshape ──────────────────────────────────────────────────────────
 
     def test_default_preshape_is_diameter_plus_clearance(self):
-        clearance = 0.3 * min(FL, RADIUS)
+        clearance = self.gripper.clearance_fraction * min(FL, RADIUS)
         expected = 2 * RADIUS + clearance
         for t in self.templates:
             self.assertAlmostEqual(t.preshape[0], expected)
