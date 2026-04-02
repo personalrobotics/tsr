@@ -116,7 +116,7 @@ class TestGraspTorusSide(unittest.TestCase):
     # ── Preshape ──────────────────────────────────────────────────────────
 
     def test_default_preshape_is_tube_diameter_plus_clearance(self):
-        clearance = 0.3 * min(FL, Sr)
+        clearance = self.gripper.clearance_fraction * min(FL, Sr)
         expected = 2 * Sr + clearance
         for t in self.templates:
             self.assertAlmostEqual(t.preshape[0], expected)
@@ -229,7 +229,7 @@ class TestGraspTorusSpan(unittest.TestCase):
             self.assertEqual(t.Bw[4, 0], t.Bw[4, 1])
 
     def test_preshape_spans_outer_diameter(self):
-        clearance = 0.3 * FL
+        clearance = self.gripper.clearance_fraction * FL
         expected = 2 * (SR + Sr) + clearance
         for t in self.gripper.grasp_torus_span(SR, Sr):
             self.assertAlmostEqual(t.preshape[0], expected)

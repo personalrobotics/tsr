@@ -37,23 +37,28 @@ class ParallelJawGripper(GripperBase):
         max_aperture:  Maximum jaw opening [m].
     """
 
-    def __init__(self, finger_length: float, max_aperture: float):
+    def __init__(
+        self,
+        finger_length: float,
+        max_aperture: float,
+        clearance_fraction: float = 0.1,
+    ):
         self.finger_length = finger_length
         self.max_aperture  = max_aperture
+        self.clearance_fraction = clearance_fraction
 
     def _default_clearance(self, graspable_depth: float) -> float:
         """Compute default clearance from graspable depth.
 
-        Clearance is 30% of the graspable depth — the distance fingers
-        can wrap around the object. This ensures the shallowest grasp
-        has enough contact area for friction to hold.
+        Clearance is ``clearance_fraction`` of the graspable depth — the
+        distance fingers can wrap around the object.
 
         Args:
             graspable_depth: max penetration depth for this grasp geometry,
                 typically min(finger_length, object_radius) for side grasps
                 or finger_length for top/bottom grasps.
         """
-        return 0.3 * graspable_depth
+        return self.clearance_fraction * graspable_depth
 
     def _validate(self, cylinder_radius: float, preshape: float) -> None:
         if cylinder_radius <= 0:
@@ -941,7 +946,11 @@ class ParallelJawGripper(GripperBase):
 class Robotiq2F140(ParallelJawGripper):
     """Robotiq 2F-140 parallel gripper.
 
-    Fixed hardware parameters: finger_length=55 mm, max_aperture=140 mm.
+    Fixed hardware parameters: finger_length=82 mm, max_aperture=140 mm.
+
+    finger_length is the distance from the MuJoCo grasp_site to the finger
+    pad tip (measured along the approach axis). The grasp_site is at the
+    base_mount origin; the pad tip is 114 mm along the approach direction.
 
     Outputs poses in the canonical TSR EE frame (z=approach, y=finger-opening,
     x=palm normal). The corresponding MuJoCo model (geodude_assets 2f140.xml)
@@ -950,7 +959,7 @@ class Robotiq2F140(ParallelJawGripper):
     directly.
     """
 
-    FINGER_LENGTH = 0.055
+    FINGER_LENGTH = 0.114
     MAX_APERTURE  = 0.140
 
     def __init__(self):
