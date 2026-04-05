@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Stable-pose detection helpers for tsr.placement."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -17,9 +21,7 @@ def _rotation_to_align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     s = float(np.linalg.norm(v))
     if s < 1e-12:
         return np.eye(3) if c > 0 else _rotation_180_perp(a)
-    vx = np.array([[0, -v[2], v[1]],
-                   [v[2],  0, -v[0]],
-                   [-v[1], v[0],  0]])
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + vx + vx @ vx * (1.0 - c) / (s * s)
 
 
@@ -63,10 +65,7 @@ def _point_in_convex_polygon_2d(p: np.ndarray, poly: np.ndarray) -> bool:
 def _polygon_edge_dist_2d(p: np.ndarray, poly: np.ndarray) -> float:
     """Min distance from point p to any edge of polygon poly (2D)."""
     n = len(poly)
-    return min(
-        _dist_point_to_segment_2d(p, poly[i], poly[(i + 1) % n])
-        for i in range(n)
-    )
+    return min(_dist_point_to_segment_2d(p, poly[i], poly[(i + 1) % n]) for i in range(n))
 
 
 def stable_poses_mesh(
@@ -128,13 +127,12 @@ def stable_poses_mesh(
         # Project face and point onto the best 2D plane (drop dominant axis of n).
         i0 = int(np.argmax(np.abs(n)))
         ax = [i for i in range(3) if i != i0]
-        pts_2d = face_verts[:, ax]          # (M, 2)
+        pts_2d = face_verts[:, ax]  # (M, 2)
         p_2d = np.array([p3[ax[0]], p3[ax[1]]])
 
         # Sort polygon vertices by angle from centroid (face is convex).
         center_2d = pts_2d.mean(axis=0)
-        angles = np.arctan2(pts_2d[:, 1] - center_2d[1],
-                            pts_2d[:, 0] - center_2d[0])
+        angles = np.arctan2(pts_2d[:, 1] - center_2d[1], pts_2d[:, 0] - center_2d[0])
         poly = pts_2d[np.argsort(angles)]
 
         if not _point_in_convex_polygon_2d(p_2d, poly):

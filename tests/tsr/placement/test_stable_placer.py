@@ -1,5 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Tests for StablePlacer."""
+
 import unittest
+
 import numpy as np
 from numpy import pi
 
@@ -34,14 +39,13 @@ def _check_bw_standard(test, t):
     """xy = table extents, z/roll/pitch fixed, yaw = [-π, π]."""
     np.testing.assert_allclose(t.Bw[0], [-TX, TX])
     np.testing.assert_allclose(t.Bw[1], [-TY, TY])
-    test.assertEqual(t.Bw[2, 0], t.Bw[2, 1])   # z fixed
-    test.assertEqual(t.Bw[3, 0], t.Bw[3, 1])   # roll fixed
-    test.assertEqual(t.Bw[4, 0], t.Bw[4, 1])   # pitch fixed
+    test.assertEqual(t.Bw[2, 0], t.Bw[2, 1])  # z fixed
+    test.assertEqual(t.Bw[3, 0], t.Bw[3, 1])  # roll fixed
+    test.assertEqual(t.Bw[4, 0], t.Bw[4, 1])  # pitch fixed
     np.testing.assert_allclose(t.Bw[5], [-pi, pi])
 
 
 class TestStablePlacerCylinder(unittest.TestCase):
-
     def setUp(self):
         self.placer = StablePlacer(table_x=TX, table_y=TY)
 
@@ -90,7 +94,6 @@ class TestStablePlacerCylinder(unittest.TestCase):
 
 
 class TestStablePlacerBox(unittest.TestCase):
-
     def setUp(self):
         self.placer = StablePlacer(table_x=TX, table_y=TY)
 
@@ -112,7 +115,7 @@ class TestStablePlacerBox(unittest.TestCase):
         # Each unique height appears twice (once per face in each opposing pair).
         LX, LY, LZ = 0.10, 0.08, 0.06
         heights = sorted(t.Tw_e[2, 3] for t in self.placer.place_box(LX, LY, LZ))
-        expected = sorted([LX/2, LX/2, LY/2, LY/2, LZ/2, LZ/2])
+        expected = sorted([LX / 2, LX / 2, LY / 2, LY / 2, LZ / 2, LZ / 2])
         np.testing.assert_allclose(heights, expected, atol=1e-10)
 
     def test_bw_standard_all_templates(self):
@@ -133,7 +136,6 @@ class TestStablePlacerBox(unittest.TestCase):
 
 
 class TestStablePlacerSphere(unittest.TestCase):
-
     def setUp(self):
         self.placer = StablePlacer(table_x=TX, table_y=TY)
 
@@ -161,7 +163,6 @@ class TestStablePlacerSphere(unittest.TestCase):
 
 
 class TestStablePlacerTorus(unittest.TestCase):
-
     def setUp(self):
         self.placer = StablePlacer(table_x=TX, table_y=TY)
 
@@ -192,14 +193,21 @@ class TestStablePlacerTorus(unittest.TestCase):
 
 
 class TestStablePlacerMesh(unittest.TestCase):
-
     def setUp(self):
         self.placer = StablePlacer(table_x=TX, table_y=TY)
         L = 0.05
-        self.cube_verts = np.array([
-            [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],
-            [-L, -L,  L], [L, -L,  L], [L, L,  L], [-L, L,  L],
-        ])
+        self.cube_verts = np.array(
+            [
+                [-L, -L, -L],
+                [L, -L, -L],
+                [L, L, -L],
+                [-L, L, -L],
+                [-L, -L, L],
+                [L, -L, L],
+                [L, L, L],
+                [-L, L, L],
+            ]
+        )
         self.L = L
         self.cube_com = np.zeros(3)
 
@@ -211,7 +219,8 @@ class TestStablePlacerMesh(unittest.TestCase):
         _check_common(
             self,
             self.placer.place_mesh(self.cube_verts, self.cube_com, subject="box"),
-            "box", "table",
+            "box",
+            "table",
         )
 
     def test_cube_com_heights_equal_half_side(self):
@@ -242,10 +251,18 @@ class TestStablePlacerMesh(unittest.TestCase):
         # For a cube the face squares are large enough that any interior COM
         # projection lands inside every face (cube-specific, not a general rule).
         L = 0.05
-        verts = np.array([
-            [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],
-            [-L, -L,  L], [L, -L,  L], [L, L,  L], [-L, L,  L],
-        ])
+        verts = np.array(
+            [
+                [-L, -L, -L],
+                [L, -L, -L],
+                [L, L, -L],
+                [-L, L, -L],
+                [-L, -L, L],
+                [L, -L, L],
+                [L, L, L],
+                [-L, L, L],
+            ]
+        )
         com = np.array([L * 0.5, L * 0.5, L * 0.5])
         templates = self.placer.place_mesh(verts, com)
         self.assertEqual(len(templates), 6)
@@ -253,20 +270,21 @@ class TestStablePlacerMesh(unittest.TestCase):
     def test_unstable_face_filtered(self):
         # Elongated tetrahedron: tiny base triangle + apex very far in x.
         # The COM lands outside the tiny base, so that face is not returned.
-        verts = np.array([
-            [0.0,   0.0,  0.0],
-            [0.01,  0.0,  0.0],
-            [0.005, 0.01, 0.0],
-            [100.0, 0.0,  0.001],  # apex far in x
-        ])
-        com = verts.mean(axis=0)   # centroid ≈ (25, 0.0025, 0.00025)
+        verts = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.01, 0.0, 0.0],
+                [0.005, 0.01, 0.0],
+                [100.0, 0.0, 0.001],  # apex far in x
+            ]
+        )
+        com = verts.mean(axis=0)  # centroid ≈ (25, 0.0025, 0.00025)
         templates = self.placer.place_mesh(verts, com)
         # Base face (z≈0) has COM projection at x≈25, outside the 0.01-wide triangle.
         self.assertLess(len(templates), 4)
 
 
 class TestStablePlacerInit(unittest.TestCase):
-
     def test_negative_table_x_raises(self):
         with self.assertRaises(ValueError):
             StablePlacer(table_x=-0.3, table_y=0.2)
@@ -292,10 +310,18 @@ class TestNewAPI(unittest.TestCase):
     def setUp(self):
         self.placer = StablePlacer(table_x=TX, table_y=TY)
         L = 0.05
-        verts = np.array([
-            [-L, -L, -L], [L, -L, -L], [L, L, -L], [-L, L, -L],
-            [-L, -L,  L], [L, -L,  L], [L, L,  L], [-L, L,  L],
-        ])
+        verts = np.array(
+            [
+                [-L, -L, -L],
+                [L, -L, -L],
+                [L, L, -L],
+                [-L, L, -L],
+                [-L, -L, L],
+                [L, -L, L],
+                [L, L, L],
+                [-L, L, L],
+            ]
+        )
         self.cube_verts = verts
         self.cube_com = np.zeros(3)
 
@@ -328,21 +354,18 @@ class TestNewAPI(unittest.TestCase):
         all_tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com)
         best = all_tmpls[0]
         threshold_deg = np.degrees(best.stability_margin) - 1.0
-        filtered = self.placer.place_mesh(self.cube_verts, self.cube_com,
-                                          min_margin_deg=threshold_deg)
+        filtered = self.placer.place_mesh(self.cube_verts, self.cube_com, min_margin_deg=threshold_deg)
         self.assertLessEqual(len(filtered), len(all_tmpls))
         for t in filtered:
             self.assertGreaterEqual(np.degrees(t.stability_margin), threshold_deg - 1e-9)
 
     def test_min_margin_deg_zero_returns_all(self):
         all_tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com)
-        filtered  = self.placer.place_mesh(self.cube_verts, self.cube_com,
-                                           min_margin_deg=0.0)
+        filtered = self.placer.place_mesh(self.cube_verts, self.cube_com, min_margin_deg=0.0)
         self.assertEqual(len(filtered), len(all_tmpls))
 
     def test_min_margin_deg_high_returns_empty(self):
-        tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com,
-                                       min_margin_deg=90.0)
+        tmpls = self.placer.place_mesh(self.cube_verts, self.cube_com, min_margin_deg=90.0)
         self.assertEqual(len(tmpls), 0)
 
     # -- sample() shorthand ------------------------------------------------
@@ -378,6 +401,7 @@ class TestNewAPI(unittest.TestCase):
 
     def test_tsr_repr_shows_free_dofs(self):
         from tsr.tsr import TSR
+
         tsr = TSR()
         tsr.Bw[0] = [-1.0, 1.0]  # x free
         tsr.Bw[5] = [-np.pi, np.pi]  # yaw free
@@ -388,13 +412,11 @@ class TestNewAPI(unittest.TestCase):
     # -- stability_margin round-trips through serialization ----------------
 
     def test_stability_margin_survives_json_roundtrip(self):
-        import json
         t = self.placer.place_mesh(self.cube_verts, self.cube_com)[0]
         t2 = TSRTemplate.from_json(t.to_json())
         self.assertAlmostEqual(t.stability_margin, t2.stability_margin)
 
     def test_stability_margin_none_survives_json_roundtrip(self):
-        import json
         t = self.placer.place_cylinder(0.04, 0.12)[0]
         t2 = TSRTemplate.from_json(t.to_json())
         self.assertIsNone(t2.stability_margin)

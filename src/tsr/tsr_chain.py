@@ -2,8 +2,9 @@
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
 import logging
-import numpy
 from functools import reduce
+
+import numpy
 
 from .tsr import NANBW, TSR
 from .utils import EPSILON, geodesic_distance
@@ -44,19 +45,20 @@ class TSRChain:
     def to_dict(self):
         """Convert TSR chain to a python dict."""
         return {
-            'tsrs': [tsr.to_dict() for tsr in self.TSRs],
+            "tsrs": [tsr.to_dict() for tsr in self.TSRs],
         }
 
     @staticmethod
     def from_dict(x):
         """Construct a TSR chain from a python dict."""
         return TSRChain(
-            TSRs=[TSR.from_dict(tsr) for tsr in x['tsrs']],
+            TSRs=[TSR.from_dict(tsr) for tsr in x["tsrs"]],
         )
 
     def to_json(self):
-        """ Convert this TSR chain to a JSON string. """
+        """Convert this TSR chain to a JSON string."""
         import json
+
         return json.dumps(self.to_dict())
 
     @staticmethod
@@ -67,18 +69,21 @@ class TSRChain:
         This method internally forwards all arguments to `json.loads`.
         """
         import json
+
         x_dict = json.loads(x, *args, **kw_args)
         return TSRChain.from_dict(x_dict)
 
     def to_yaml(self):
-        """ Convert this TSR chain to a YAML string. """
+        """Convert this TSR chain to a YAML string."""
         import yaml
+
         return yaml.dump(self.to_dict())
 
     @staticmethod
     def from_yaml(x):
         """Construct a TSR chain from a YAML string."""
         import yaml
+
         x_dict = yaml.safe_load(x)
         return TSRChain.from_dict(x_dict)
 
@@ -91,10 +96,10 @@ class TSRChain:
         """
 
         if len(self.TSRs) == 0:
-            raise ValueError('Cannot validate against empty TSR chain!')
+            raise ValueError("Cannot validate against empty TSR chain!")
 
         if len(xyzrpy_list) != len(self.TSRs):
-            raise ValueError('Sample must be of equal length to TSR chain!')
+            raise ValueError("Sample must be of equal length to TSR chain!")
 
         check = []
         for idx in range(len(self.TSRs)):
@@ -116,13 +121,10 @@ class TSRChain:
         @return trans       4x4 transform
         """
         if len(self.TSRs) == 0:
-            raise ValueError('Cannot compute transform for empty TSR chain')
+            raise ValueError("Cannot compute transform for empty TSR chain")
 
         if len(xyzrpy_list) != len(self.TSRs):
-            raise ValueError(
-                f'xyzrpy_list length ({len(xyzrpy_list)}) must match '
-                f'number of TSRs ({len(self.TSRs)})'
-            )
+            raise ValueError(f"xyzrpy_list length ({len(xyzrpy_list)}) must match number of TSRs ({len(self.TSRs)})")
 
         # Clamp values to bounds (required by the L-BFGS-B optimiser that drives
         # distance(); values slightly outside bounds are normal during line search).
@@ -133,8 +135,9 @@ class TSRChain:
             xyzrpy_clamped = numpy.clip(xyzrpy, Bw[:, 0], Bw[:, 1])
             if not numpy.allclose(xyzrpy, xyzrpy_clamped):
                 logger.debug(
-                    "TSRChain.to_transform: xyzrpy[%d] clamped to Bw "
-                    "(delta=%s)", idx, xyzrpy - xyzrpy_clamped
+                    "TSRChain.to_transform: xyzrpy[%d] clamped to Bw (delta=%s)",
+                    idx,
+                    xyzrpy - xyzrpy_clamped,
                 )
             xyzrpy_list_clamped.append(xyzrpy_clamped)
 
@@ -165,7 +168,7 @@ class TSRChain:
         """
 
         if xyzrpy_list is None:
-            xyzrpy_list = [NANBW]*len(self.TSRs)
+            xyzrpy_list = [NANBW] * len(self.TSRs)
 
         sample = []
         for idx in range(len(self.TSRs)):
@@ -202,13 +205,12 @@ class TSRChain:
         bwbounds = []
         for idx in range(len(self.TSRs)):
             Bw = self.TSRs[idx].Bw
-            bwinit.extend((Bw[:, 0] + Bw[:, 1])/2)
+            bwinit.extend((Bw[:, 0] + Bw[:, 1]) / 2)
             bwbounds.extend([(Bw[i, 0], Bw[i, 1]) for i in range(6)])
 
         bwopt, dist, info = scipy.optimize.fmin_l_bfgs_b(
-                                objective, bwinit, fprime=None,
-                                args=(),
-                                bounds=bwbounds, approx_grad=True)
+            objective, bwinit, fprime=None, args=(), bounds=bwbounds, approx_grad=True
+        )
         return dist, bwopt.reshape(len(self.TSRs), 6)
 
     def contains(self, trans):

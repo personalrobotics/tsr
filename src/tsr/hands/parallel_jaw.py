@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Parallel jaw gripper hand models."""
+
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
@@ -6,13 +10,14 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from tsr.template import TSRTemplate
+
 from .base import GripperBase
 
 _DEPTH_LABELS = {1: ["mid"], 2: ["shallow", "deep"], 3: ["shallow", "mid", "deep"]}
 
 
 def _depth_label(k: int, i: int) -> str:
-    return (_DEPTH_LABELS.get(k) or [f"depth {j+1}/{k}" for j in range(k)])[i]
+    return (_DEPTH_LABELS.get(k) or [f"depth {j + 1}/{k}" for j in range(k)])[i]
 
 
 class ParallelJawGripper(GripperBase):
@@ -44,7 +49,7 @@ class ParallelJawGripper(GripperBase):
         clearance_fraction: float = 0.1,
     ):
         self.finger_length = finger_length
-        self.max_aperture  = max_aperture
+        self.max_aperture = max_aperture
         self.clearance_fraction = clearance_fraction
 
     def _default_clearance(self, graspable_depth: float) -> float:
@@ -64,9 +69,7 @@ class ParallelJawGripper(GripperBase):
         if cylinder_radius <= 0:
             raise ValueError("cylinder_radius must be > 0")
         if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
 
     def grasp_cylinder_side(
         self,
@@ -75,7 +78,7 @@ class ParallelJawGripper(GripperBase):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
         name: str = "",
@@ -109,9 +112,9 @@ class ParallelJawGripper(GripperBase):
         if clearance is None:
             clearance = self._default_clearance(min(self.finger_length, cylinder_radius))
         if preshape is None:
-            preshape = 2. * cylinder_radius + clearance
+            preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
-        if preshape <= 2. * cylinder_radius:
+        if preshape <= 2.0 * cylinder_radius:
             return []
         h0, h1 = clearance, cylinder_height - clearance
         if h1 <= h0:
@@ -120,18 +123,20 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Cylinder Side Grasp"
 
-        z_mid, z_half = (h0 + h1) / 2., (h1 - h0) / 2.
+        z_mid, z_half = (h0 + h1) / 2.0, (h1 - h0) / 2.0
         T_ref_tsr = np.eye(4)
         T_ref_tsr[2, 3] = z_mid
 
-        Bw = np.array([
-            [0.,             0.            ],  # x: no radial freedom
-            [0.,             0.            ],  # y: no tangential freedom
-            [-z_half,        z_half        ],  # z: height range (symmetric)
-            [0.,             0.            ],  # roll: fixed (encoded in Tw_e)
-            [0.,             0.            ],  # pitch
-            [angle_range[0], angle_range[1]],  # yaw: angular freedom
-        ])
+        Bw = np.array(
+            [
+                [0.0, 0.0],  # x: no radial freedom
+                [0.0, 0.0],  # y: no tangential freedom
+                [-z_half, z_half],  # z: height range (symmetric)
+                [0.0, 0.0],  # roll: fixed (encoded in Tw_e)
+                [0.0, 0.0],  # pitch
+                [angle_range[0], angle_range[1]],  # yaw: angular freedom
+            ]
+        )
 
         # Shallowest: fingertips at cylinder center (depth = radius).
         # Deepest: fingertips past center, limited by finger_length or far surface.
@@ -143,38 +148,47 @@ class ParallelJawGripper(GripperBase):
             depths = np.linspace(depth_min, depth_max, max(k, 1))
 
         common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
+            T_ref_tsr=T_ref_tsr,
+            Bw=Bw,
+            task="grasp",
+            subject=subject,
+            reference=reference,
             preshape=np.array([preshape]),
         )
         templates = []
         for i, d in enumerate(depths):
             ro = cylinder_radius + self.finger_length - d
             dlabel = _depth_label(k, i)
-            Tw_e_0 = np.array([
-                [ 0.,  0., -1., ro],
-                [ 0.,  1.,  0., 0.],
-                [ 1.,  0.,  0., 0.],
-                [ 0.,  0.,  0., 1.],
-            ])
-            Tw_e_pi = np.array([
-                [ 0.,  0., -1., ro],
-                [ 0., -1.,  0., 0.],
-                [-1.,  0.,  0., 0.],
-                [ 0.,  0.,  0., 1.],
-            ])
+            Tw_e_0 = np.array(
+                [
+                    [0.0, 0.0, -1.0, ro],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+            Tw_e_pi = np.array(
+                [
+                    [0.0, 0.0, -1.0, ro],
+                    [0.0, -1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
             for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
                 t_desc = description or (
                     f"{dlabel.capitalize()} side grasp on {reference}: "
-                    f"standoff {ro*1000:.0f}mm from axis, {roll_label}, "
-                    f"preshape {preshape*1000:.0f}mm"
+                    f"standoff {ro * 1000:.0f}mm from axis, {roll_label}, "
+                    f"preshape {preshape * 1000:.0f}mm"
                 )
-                templates.append(TSRTemplate(
-                    Tw_e=Tw_e,
-                    name=f"{name} — {dlabel}, {roll_label}",
-                    description=t_desc,
-                    **common,
-                ))
+                templates.append(
+                    TSRTemplate(
+                        Tw_e=Tw_e,
+                        name=f"{name} — {dlabel}, {roll_label}",
+                        description=t_desc,
+                        **common,
+                    )
+                )
         return templates
 
     def grasp_cylinder_top(
@@ -184,7 +198,7 @@ class ParallelJawGripper(GripperBase):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
         name: str = "",
@@ -200,9 +214,9 @@ class ParallelJawGripper(GripperBase):
         if clearance is None:
             clearance = self._default_clearance(self.finger_length)
         if preshape is None:
-            preshape = 2. * cylinder_radius + clearance
+            preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
-        if preshape <= 2. * cylinder_radius:
+        if preshape <= 2.0 * cylinder_radius:
             return []
 
         if not name:
@@ -211,19 +225,24 @@ class ParallelJawGripper(GripperBase):
         T_ref_tsr = np.eye(4)
         T_ref_tsr[2, 3] = cylinder_height
 
-        Bw = np.array([
-            [0.,             0.            ],  # x
-            [0.,             0.            ],  # y
-            [0.,             0.            ],  # z: fixed at top face
-            [0.,             0.            ],  # roll
-            [0.,             0.            ],  # pitch
-            [angle_range[0], angle_range[1]],  # yaw: full rotation
-        ])
+        Bw = np.array(
+            [
+                [0.0, 0.0],  # x
+                [0.0, 0.0],  # y
+                [0.0, 0.0],  # z: fixed at top face
+                [0.0, 0.0],  # roll
+                [0.0, 0.0],  # pitch
+                [angle_range[0], angle_range[1]],  # yaw: full rotation
+            ]
+        )
 
         depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
         common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
+            T_ref_tsr=T_ref_tsr,
+            Bw=Bw,
+            task="grasp",
+            subject=subject,
+            reference=reference,
             preshape=np.array([preshape]),
         )
         templates = []
@@ -232,21 +251,25 @@ class ParallelJawGripper(GripperBase):
             dlabel = _depth_label(k, i)
             t_desc = description or (
                 f"{dlabel.capitalize()} top grasp on {reference}: "
-                f"palm {h_palm*1000:.0f}mm above rim, preshape {preshape*1000:.0f}mm"
+                f"palm {h_palm * 1000:.0f}mm above rim, preshape {preshape * 1000:.0f}mm"
             )
             # z_EE = [0,0,-1] (approach down); x = y × z = [0,1,0]×[0,0,-1] = [-1,0,0]
-            Tw_e = np.array([
-                [-1.,  0.,  0.,  0.     ],
-                [ 0.,  1.,  0.,  0.     ],
-                [ 0.,  0., -1.,  h_palm ],
-                [ 0.,  0.,  0.,  1.     ],
-            ])
-            templates.append(TSRTemplate(
-                Tw_e=Tw_e,
-                name=f"{name} — {dlabel}",
-                description=t_desc,
-                **common,
-            ))
+            Tw_e = np.array(
+                [
+                    [-1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, -1.0, h_palm],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+            templates.append(
+                TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name} — {dlabel}",
+                    description=t_desc,
+                    **common,
+                )
+            )
         return templates
 
     def grasp_cylinder_bottom(
@@ -256,7 +279,7 @@ class ParallelJawGripper(GripperBase):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
         name: str = "",
@@ -272,9 +295,9 @@ class ParallelJawGripper(GripperBase):
         if clearance is None:
             clearance = self._default_clearance(self.finger_length)
         if preshape is None:
-            preshape = 2. * cylinder_radius + clearance
+            preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
-        if preshape <= 2. * cylinder_radius:
+        if preshape <= 2.0 * cylinder_radius:
             return []
 
         if not name:
@@ -283,19 +306,24 @@ class ParallelJawGripper(GripperBase):
         del cylinder_height  # bottom face is always at z=0; accepted for interface symmetry
         T_ref_tsr = np.eye(4)
 
-        Bw = np.array([
-            [0.,             0.            ],  # x
-            [0.,             0.            ],  # y
-            [0.,             0.            ],  # z: fixed at bottom face
-            [0.,             0.            ],  # roll
-            [0.,             0.            ],  # pitch
-            [angle_range[0], angle_range[1]],  # yaw: full rotation
-        ])
+        Bw = np.array(
+            [
+                [0.0, 0.0],  # x
+                [0.0, 0.0],  # y
+                [0.0, 0.0],  # z: fixed at bottom face
+                [0.0, 0.0],  # roll
+                [0.0, 0.0],  # pitch
+                [angle_range[0], angle_range[1]],  # yaw: full rotation
+            ]
+        )
 
         depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
         common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
+            T_ref_tsr=T_ref_tsr,
+            Bw=Bw,
+            task="grasp",
+            subject=subject,
+            reference=reference,
             preshape=np.array([preshape]),
         )
         templates = []
@@ -304,21 +332,25 @@ class ParallelJawGripper(GripperBase):
             dlabel = _depth_label(k, i)
             t_desc = description or (
                 f"{dlabel.capitalize()} bottom grasp on {reference}: "
-                f"palm {h_palm*1000:.0f}mm below bottom, preshape {preshape*1000:.0f}mm"
+                f"palm {h_palm * 1000:.0f}mm below bottom, preshape {preshape * 1000:.0f}mm"
             )
             # z_EE = [0,0,+1] (approach up); identity rotation
-            Tw_e = np.array([
-                [ 1.,  0.,  0.,  0.     ],
-                [ 0.,  1.,  0.,  0.     ],
-                [ 0.,  0.,  1., -h_palm ],
-                [ 0.,  0.,  0.,  1.     ],
-            ])
-            templates.append(TSRTemplate(
-                Tw_e=Tw_e,
-                name=f"{name} — {dlabel}",
-                description=t_desc,
-                **common,
-            ))
+            Tw_e = np.array(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, -h_palm],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+            templates.append(
+                TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name} — {dlabel}",
+                    description=t_desc,
+                    **common,
+                )
+            )
         return templates
 
     # ── Box primitives ────────────────────────────────────────────────────────
@@ -355,22 +387,25 @@ class ParallelJawGripper(GripperBase):
         if preshape_user is not None:
             preshape = preshape_user
             if preshape <= span_dim:
-                return []           # fingers can't straddle the object
+                return []  # fingers can't straddle the object
         else:
             preshape = span_dim + clearance
             if preshape > self.max_aperture:
-                return []           # geometry exceeds hardware — skip silently
+                return []  # geometry exceeds hardware — skip silently
 
         Bw = np.zeros((6, 2))
         Bw[slide_bw_row, 0] = -slide_half
-        Bw[slide_bw_row, 1] =  slide_half
+        Bw[slide_bw_row, 1] = slide_half
 
         R = np.column_stack([np.cross(y_ee, z_ee), y_ee, z_ee])
 
         depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
         common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
+            T_ref_tsr=T_ref_tsr,
+            Bw=Bw,
+            task="grasp",
+            subject=subject,
+            reference=reference,
             preshape=np.array([preshape]),
         )
         templates = []
@@ -379,17 +414,19 @@ class ParallelJawGripper(GripperBase):
             dlabel = _depth_label(k, i)
             Tw_e = np.eye(4)
             Tw_e[:3, :3] = R
-            Tw_e[:3, 3]  = -z_ee * h_palm   # palm is h_palm outside the face
+            Tw_e[:3, 3] = -z_ee * h_palm  # palm is h_palm outside the face
             t_desc = description or (
                 f"{dlabel.capitalize()} {face_label} grasp on {reference}: "
-                f"standoff {h_palm*1000:.0f}mm, preshape {preshape*1000:.0f}mm"
+                f"standoff {h_palm * 1000:.0f}mm, preshape {preshape * 1000:.0f}mm"
             )
-            templates.append(TSRTemplate(
-                Tw_e=Tw_e,
-                name=f"{name_prefix} {face_label} — {dlabel}",
-                description=t_desc,
-                **common,
-            ))
+            templates.append(
+                TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name_prefix} {face_label} — {dlabel}",
+                    description=t_desc,
+                    **common,
+                )
+            )
         return templates
 
     def grasp_box_top(
@@ -417,10 +454,8 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        hx, hy = box_x / 2. - clearance, box_y / 2. - clearance
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+        hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
         if hx <= 0 or hy <= 0:
             raise ValueError("box face too small for the given clearance")
 
@@ -429,18 +464,35 @@ class ParallelJawGripper(GripperBase):
 
         T = np.eye(4)
         T[2, 3] = box_z
-        z_ee = np.array([0., 0., -1.])
+        z_ee = np.array([0.0, 0.0, -1.0])
 
-        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
-                  subject=subject, reference=reference,
-                  name_prefix=name, description=description)
-        return (
-            self._box_face_templates(T, np.array([1., 0., 0.]), z_ee,
-                                     box_x, 1, hy, **kw,
-                                     face_label="+z (span-x)")
-            + self._box_face_templates(T, np.array([0., 1., 0.]), z_ee,
-                                       box_y, 0, hx, **kw,
-                                       face_label="+z (span-y)")
+        kw = dict(
+            preshape_user=preshape,
+            k=k,
+            clearance=clearance,
+            subject=subject,
+            reference=reference,
+            name_prefix=name,
+            description=description,
+        )
+        return self._box_face_templates(
+            T,
+            np.array([1.0, 0.0, 0.0]),
+            z_ee,
+            box_x,
+            1,
+            hy,
+            **kw,
+            face_label="+z (span-x)",
+        ) + self._box_face_templates(
+            T,
+            np.array([0.0, 1.0, 0.0]),
+            z_ee,
+            box_y,
+            0,
+            hx,
+            **kw,
+            face_label="+z (span-y)",
         )
 
     def grasp_box_bottom(
@@ -468,10 +520,8 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        hx, hy = box_x / 2. - clearance, box_y / 2. - clearance
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+        hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
         if hx <= 0 or hy <= 0:
             raise ValueError("box face too small for the given clearance")
 
@@ -480,18 +530,35 @@ class ParallelJawGripper(GripperBase):
 
         del box_z  # bottom face is always at z=0; accepted for API symmetry
         T = np.eye(4)
-        z_ee = np.array([0., 0., 1.])
+        z_ee = np.array([0.0, 0.0, 1.0])
 
-        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
-                  subject=subject, reference=reference,
-                  name_prefix=name, description=description)
-        return (
-            self._box_face_templates(T, np.array([1., 0., 0.]), z_ee,
-                                     box_x, 1, hy, **kw,
-                                     face_label="-z (span-x)")
-            + self._box_face_templates(T, np.array([0., 1., 0.]), z_ee,
-                                       box_y, 0, hx, **kw,
-                                       face_label="-z (span-y)")
+        kw = dict(
+            preshape_user=preshape,
+            k=k,
+            clearance=clearance,
+            subject=subject,
+            reference=reference,
+            name_prefix=name,
+            description=description,
+        )
+        return self._box_face_templates(
+            T,
+            np.array([1.0, 0.0, 0.0]),
+            z_ee,
+            box_x,
+            1,
+            hy,
+            **kw,
+            face_label="-z (span-x)",
+        ) + self._box_face_templates(
+            T,
+            np.array([0.0, 1.0, 0.0]),
+            z_ee,
+            box_y,
+            0,
+            hx,
+            **kw,
+            face_label="-z (span-y)",
         )
 
     def grasp_box_face_x(
@@ -518,11 +585,9 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        hy = box_y / 2. - clearance
-        hz_half = box_z / 2. - clearance
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+        hy = box_y / 2.0 - clearance
+        hz_half = box_z / 2.0 - clearance
         if hy <= 0:
             raise ValueError("box_y too small for the given clearance")
         if hz_half <= 0:
@@ -531,23 +596,47 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
 
-        T_pos = np.eye(4); T_pos[0, 3] =  box_x / 2.; T_pos[2, 3] = box_z / 2.
-        T_neg = np.eye(4); T_neg[0, 3] = -box_x / 2.; T_neg[2, 3] = box_z / 2.
+        T_pos = np.eye(4)
+        T_pos[0, 3] = box_x / 2.0
+        T_pos[2, 3] = box_z / 2.0
+        T_neg = np.eye(4)
+        T_neg[0, 3] = -box_x / 2.0
+        T_neg[2, 3] = box_z / 2.0
 
-        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
-                  subject=subject, reference=reference,
-                  name_prefix=name, description=description)
+        kw = dict(
+            preshape_user=preshape,
+            k=k,
+            clearance=clearance,
+            subject=subject,
+            reference=reference,
+            name_prefix=name,
+            description=description,
+        )
         templates = []
         for T_ref, z_ee, sign in (
-            (T_pos, np.array([-1., 0., 0.]), "+x"),
-            (T_neg, np.array([ 1., 0., 0.]), "-x"),
+            (T_pos, np.array([-1.0, 0.0, 0.0]), "+x"),
+            (T_neg, np.array([1.0, 0.0, 0.0]), "-x"),
         ):
             templates += self._box_face_templates(
-                T_ref, np.array([0., 1., 0.]), z_ee,
-                box_y, 2, hz_half, **kw, face_label=f"{sign} (span-y)")
+                T_ref,
+                np.array([0.0, 1.0, 0.0]),
+                z_ee,
+                box_y,
+                2,
+                hz_half,
+                **kw,
+                face_label=f"{sign} (span-y)",
+            )
             templates += self._box_face_templates(
-                T_ref, np.array([0., 0., 1.]), z_ee,
-                box_z, 1, hy,      **kw, face_label=f"{sign} (span-z)")
+                T_ref,
+                np.array([0.0, 0.0, 1.0]),
+                z_ee,
+                box_z,
+                1,
+                hy,
+                **kw,
+                face_label=f"{sign} (span-z)",
+            )
         return templates
 
     def grasp_box_face_y(
@@ -574,11 +663,9 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        hx = box_x / 2. - clearance
-        hz_half = box_z / 2. - clearance
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+        hx = box_x / 2.0 - clearance
+        hz_half = box_z / 2.0 - clearance
         if hx <= 0:
             raise ValueError("box_x too small for the given clearance")
         if hz_half <= 0:
@@ -587,23 +674,47 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
 
-        T_pos = np.eye(4); T_pos[1, 3] =  box_y / 2.; T_pos[2, 3] = box_z / 2.
-        T_neg = np.eye(4); T_neg[1, 3] = -box_y / 2.; T_neg[2, 3] = box_z / 2.
+        T_pos = np.eye(4)
+        T_pos[1, 3] = box_y / 2.0
+        T_pos[2, 3] = box_z / 2.0
+        T_neg = np.eye(4)
+        T_neg[1, 3] = -box_y / 2.0
+        T_neg[2, 3] = box_z / 2.0
 
-        kw = dict(preshape_user=preshape, k=k, clearance=clearance,
-                  subject=subject, reference=reference,
-                  name_prefix=name, description=description)
+        kw = dict(
+            preshape_user=preshape,
+            k=k,
+            clearance=clearance,
+            subject=subject,
+            reference=reference,
+            name_prefix=name,
+            description=description,
+        )
         templates = []
         for T_ref, z_ee, sign in (
-            (T_pos, np.array([0., -1., 0.]), "+y"),
-            (T_neg, np.array([0.,  1., 0.]), "-y"),
+            (T_pos, np.array([0.0, -1.0, 0.0]), "+y"),
+            (T_neg, np.array([0.0, 1.0, 0.0]), "-y"),
         ):
             templates += self._box_face_templates(
-                T_ref, np.array([1., 0., 0.]), z_ee,
-                box_x, 2, hz_half, **kw, face_label=f"{sign} (span-x)")
+                T_ref,
+                np.array([1.0, 0.0, 0.0]),
+                z_ee,
+                box_x,
+                2,
+                hz_half,
+                **kw,
+                face_label=f"{sign} (span-x)",
+            )
             templates += self._box_face_templates(
-                T_ref, np.array([0., 0., 1.]), z_ee,
-                box_z, 0, hx,      **kw, face_label=f"{sign} (span-z)")
+                T_ref,
+                np.array([0.0, 0.0, 1.0]),
+                z_ee,
+                box_z,
+                0,
+                hx,
+                **kw,
+                face_label=f"{sign} (span-z)",
+            )
         return templates
 
     # ── Sphere primitives ─────────────────────────────────────────────────────
@@ -614,7 +725,7 @@ class ParallelJawGripper(GripperBase):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "sphere",
         name: str = "",
@@ -638,29 +749,29 @@ class ParallelJawGripper(GripperBase):
         if clearance is None:
             clearance = self._default_clearance(min(self.finger_length, object_radius))
         if preshape is None:
-            preshape = 2. * object_radius + clearance
+            preshape = 2.0 * object_radius + clearance
         if object_radius <= 0:
             raise ValueError("object_radius must be > 0")
         if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        if preshape <= 2. * object_radius:
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+        if preshape <= 2.0 * object_radius:
             return []
 
         if not name:
             name = f"{reference.title()} Sphere Grasp"
 
-        T_ref_tsr = np.eye(4)   # origin at sphere center
+        T_ref_tsr = np.eye(4)  # origin at sphere center
 
-        Bw = np.array([
-            [0.,              0.           ],  # x: no translational freedom
-            [0.,              0.           ],  # y
-            [0.,              0.           ],  # z
-            [0.,              2 * np.pi    ],  # roll: full rotation around approach
-            [-np.pi / 2,      np.pi / 2    ],  # pitch: full elevation (no double-cover)
-            [angle_range[0],  angle_range[1]],  # yaw: azimuthal freedom
-        ])
+        Bw = np.array(
+            [
+                [0.0, 0.0],  # x: no translational freedom
+                [0.0, 0.0],  # y
+                [0.0, 0.0],  # z
+                [0.0, 2 * np.pi],  # roll: full rotation around approach
+                [-np.pi / 2, np.pi / 2],  # pitch: full elevation (no double-cover)
+                [angle_range[0], angle_range[1]],  # yaw: azimuthal freedom
+            ]
+        )
 
         depth_min = object_radius
         depth_max = min(self.finger_length, 2 * object_radius) - clearance
@@ -670,8 +781,11 @@ class ParallelJawGripper(GripperBase):
             depths = np.linspace(depth_min, depth_max, max(k, 1))
 
         common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
+            T_ref_tsr=T_ref_tsr,
+            Bw=Bw,
+            task="grasp",
+            subject=subject,
+            reference=reference,
             preshape=np.array([preshape]),
         )
         templates = []
@@ -680,23 +794,27 @@ class ParallelJawGripper(GripperBase):
             dlabel = _depth_label(k, i)
             # Approach along -x in TSR frame; standoff ro baked into Tw_e.
             # Bw roll/pitch/yaw rotates this to any direction on the sphere.
-            Tw_e = np.array([
-                [ 0.,  0., -1., ro],
-                [ 0.,  1.,  0., 0.],
-                [ 1.,  0.,  0., 0.],
-                [ 0.,  0.,  0., 1.],
-            ])
+            Tw_e = np.array(
+                [
+                    [0.0, 0.0, -1.0, ro],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
             t_desc = description or (
                 f"{dlabel.capitalize()} sphere grasp on {reference}: "
-                f"standoff {ro*1000:.0f}mm from center, full SO(3), "
-                f"preshape {preshape*1000:.0f}mm"
+                f"standoff {ro * 1000:.0f}mm from center, full SO(3), "
+                f"preshape {preshape * 1000:.0f}mm"
             )
-            templates.append(TSRTemplate(
-                Tw_e=Tw_e,
-                name=f"{name} — {dlabel}",
-                description=t_desc,
-                **common,
-            ))
+            templates.append(
+                TSRTemplate(
+                    Tw_e=Tw_e,
+                    name=f"{name} — {dlabel}",
+                    description=t_desc,
+                    **common,
+                )
+            )
         return templates
 
     # ── Torus primitives ─────────────────────────────────────────────────────
@@ -720,7 +838,7 @@ class ParallelJawGripper(GripperBase):
         k: int = 3,
         n_minor: int = 5,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "torus",
         name: str = "",
@@ -765,13 +883,11 @@ class ParallelJawGripper(GripperBase):
         if clearance is None:
             clearance = self._default_clearance(min(self.finger_length, tube_radius))
         if preshape is None:
-            preshape = 2. * tube_radius + clearance
+            preshape = 2.0 * tube_radius + clearance
         self._validate_torus(torus_radius, tube_radius)
         if preshape > self.max_aperture:
-            raise ValueError(
-                f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-            )
-        if preshape <= 2. * tube_radius:
+            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+        if preshape <= 2.0 * tube_radius:
             return []
 
         if not name:
@@ -779,27 +895,32 @@ class ParallelJawGripper(GripperBase):
 
         T_ref_tsr = np.eye(4)  # origin at torus center
 
-        Bw = np.array([
-            [0.,             0.            ],  # x: no freedom
-            [0.,             0.            ],  # y: no freedom
-            [0.,             0.            ],  # z: baked into Tw_e
-            [0.,             0.            ],  # roll: baked into Tw_e
-            [0.,             0.            ],  # pitch: baked into Tw_e
-            [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
-        ])
+        Bw = np.array(
+            [
+                [0.0, 0.0],  # x: no freedom
+                [0.0, 0.0],  # y: no freedom
+                [0.0, 0.0],  # z: baked into Tw_e
+                [0.0, 0.0],  # roll: baked into Tw_e
+                [0.0, 0.0],  # pitch: baked into Tw_e
+                [angle_range[0], angle_range[1]],  # yaw: full azimuthal freedom
+            ]
+        )
 
         # Start: fingertips at the tube center (requires finger_length >= tube_radius).
         # End:   fingertips at the inner tube surface, or palm at outer surface.
         d_shallow = tube_radius
-        d_deep    = min(2 * tube_radius, self.finger_length)
+        d_deep = min(2 * tube_radius, self.finger_length)
         if d_shallow >= d_deep:
-            return []   # finger too short to reach tube centerline
+            return []  # finger too short to reach tube centerline
         depths = np.linspace(d_shallow, d_deep, max(k, 1))
         minor_angles = np.linspace(-np.pi / 2, np.pi / 2, max(n_minor, 1))
 
         common = dict(
-            T_ref_tsr=T_ref_tsr, Bw=Bw,
-            task="grasp", subject=subject, reference=reference,
+            T_ref_tsr=T_ref_tsr,
+            Bw=Bw,
+            task="grasp",
+            subject=subject,
+            reference=reference,
             preshape=np.array([preshape]),
         )
         templates = []
@@ -817,30 +938,36 @@ class ParallelJawGripper(GripperBase):
                 # y_EE ⊥ z_EE in span{x̂,ẑ}: y_EE = (−sinα, 0, cosα)
                 # x_EE = y_EE × z_EE = (0, −1, 0)  [same for all α]
                 # Flip π: y_EE = (+sinα, 0, −cosα), x_EE = (0, +1, 0)
-                Tw_e_0 = np.array([
-                    [ 0., -sa, -ca,  tx],
-                    [-1.,  0.,  0.,  0.],
-                    [ 0.,  ca, -sa,  tz],
-                    [ 0.,  0.,  0.,  1.],
-                ])
-                Tw_e_pi = np.array([
-                    [ 0.,  sa, -ca,  tx],
-                    [ 1.,  0.,  0.,  0.],
-                    [ 0., -ca, -sa,  tz],
-                    [ 0.,  0.,  0.,  1.],
-                ])
+                Tw_e_0 = np.array(
+                    [
+                        [0.0, -sa, -ca, tx],
+                        [-1.0, 0.0, 0.0, 0.0],
+                        [0.0, ca, -sa, tz],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                )
+                Tw_e_pi = np.array(
+                    [
+                        [0.0, sa, -ca, tx],
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, -ca, -sa, tz],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                )
                 for Tw_e, flip_label in ((Tw_e_0, "flip 0°"), (Tw_e_pi, "flip 180°")):
                     t_desc = description or (
                         f"{dlabel.capitalize()} torus side grasp on {reference}: "
-                        f"{a_label}, ro={ro_minor*1000:.0f}mm from tube center, "
-                        f"{flip_label}, preshape {preshape*1000:.0f}mm"
+                        f"{a_label}, ro={ro_minor * 1000:.0f}mm from tube center, "
+                        f"{flip_label}, preshape {preshape * 1000:.0f}mm"
                     )
-                    templates.append(TSRTemplate(
-                        Tw_e=Tw_e,
-                        name=f"{name} — {a_label}, {dlabel}, {flip_label}",
-                        description=t_desc,
-                        **common,
-                    ))
+                    templates.append(
+                        TSRTemplate(
+                            Tw_e=Tw_e,
+                            name=f"{name} — {a_label}, {dlabel}, {flip_label}",
+                            description=t_desc,
+                            **common,
+                        )
+                    )
         return templates
 
     def grasp_torus_span(
@@ -864,16 +991,14 @@ class ParallelJawGripper(GripperBase):
         if clearance is None:
             clearance = self._default_clearance(self.finger_length)
         if preshape is None:
-            preshape = 2. * (torus_radius + tube_radius) + clearance
+            preshape = 2.0 * (torus_radius + tube_radius) + clearance
             if preshape > self.max_aperture:
-                return []       # torus too large for hardware — skip silently
+                return []  # torus too large for hardware — skip silently
         else:
-            if preshape <= 2. * (torus_radius + tube_radius):
-                return []       # user preshape can't straddle outer diameter
+            if preshape <= 2.0 * (torus_radius + tube_radius):
+                return []  # user preshape can't straddle outer diameter
             if preshape > self.max_aperture:
-                raise ValueError(
-                    f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m"
-                )
+                raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
         self._validate_torus(torus_radius, tube_radius)
 
         if not name:
@@ -890,44 +1015,62 @@ class ParallelJawGripper(GripperBase):
             dlabel = _depth_label(k, i)
 
             # Top: z_EE = [0,0,-1]; TSR origin at tube top (z = +tube_r)
-            T_top = np.eye(4); T_top[2, 3] = tube_radius
-            Tw_e_top = np.array([
-                [-1.,  0.,  0.,  0.     ],
-                [ 0.,  1.,  0.,  0.     ],
-                [ 0.,  0., -1.,  h_palm ],
-                [ 0.,  0.,  0.,  1.     ],
-            ])
+            T_top = np.eye(4)
+            T_top[2, 3] = tube_radius
+            Tw_e_top = np.array(
+                [
+                    [-1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, -1.0, h_palm],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
             t_desc = description or (
                 f"{dlabel.capitalize()} torus span top on {reference}: "
-                f"palm {h_palm*1000:.0f}mm above torus, preshape {preshape*1000:.0f}mm"
+                f"palm {h_palm * 1000:.0f}mm above torus, preshape {preshape * 1000:.0f}mm"
             )
-            templates.append(TSRTemplate(
-                T_ref_tsr=T_top, Bw=Bw, Tw_e=Tw_e_top,
-                task="grasp", subject=subject, reference=reference,
-                preshape=np.array([preshape]),
-                name=f"{name} top — {dlabel}",
-                description=t_desc,
-            ))
+            templates.append(
+                TSRTemplate(
+                    T_ref_tsr=T_top,
+                    Bw=Bw,
+                    Tw_e=Tw_e_top,
+                    task="grasp",
+                    subject=subject,
+                    reference=reference,
+                    preshape=np.array([preshape]),
+                    name=f"{name} top — {dlabel}",
+                    description=t_desc,
+                )
+            )
 
             # Bottom: z_EE = [0,0,+1]; TSR origin at tube bottom (z = -tube_r)
-            T_bot = np.eye(4); T_bot[2, 3] = -tube_radius
-            Tw_e_bot = np.array([
-                [ 1.,  0.,  0.,  0.     ],
-                [ 0.,  1.,  0.,  0.     ],
-                [ 0.,  0.,  1., -h_palm ],
-                [ 0.,  0.,  0.,  1.     ],
-            ])
+            T_bot = np.eye(4)
+            T_bot[2, 3] = -tube_radius
+            Tw_e_bot = np.array(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, -h_palm],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
             t_desc = description or (
                 f"{dlabel.capitalize()} torus span bottom on {reference}: "
-                f"palm {h_palm*1000:.0f}mm below torus, preshape {preshape*1000:.0f}mm"
+                f"palm {h_palm * 1000:.0f}mm below torus, preshape {preshape * 1000:.0f}mm"
             )
-            templates.append(TSRTemplate(
-                T_ref_tsr=T_bot, Bw=Bw, Tw_e=Tw_e_bot,
-                task="grasp", subject=subject, reference=reference,
-                preshape=np.array([preshape]),
-                name=f"{name} bottom — {dlabel}",
-                description=t_desc,
-            ))
+            templates.append(
+                TSRTemplate(
+                    T_ref_tsr=T_bot,
+                    Bw=Bw,
+                    Tw_e=Tw_e_bot,
+                    task="grasp",
+                    subject=subject,
+                    reference=reference,
+                    preshape=np.array([preshape]),
+                    name=f"{name} bottom — {dlabel}",
+                    description=t_desc,
+                )
+            )
         return templates
 
     def renderer(self):
@@ -937,6 +1080,7 @@ class ParallelJawGripper(GripperBase):
         required just for template generation.
         """
         from tsr.viz import parallel_jaw_renderer
+
         return parallel_jaw_renderer(
             finger_length=self.finger_length,
             half_aperture=self.max_aperture / 2,
@@ -960,7 +1104,7 @@ class Robotiq2F140(ParallelJawGripper):
     """
 
     FINGER_LENGTH = 0.114
-    MAX_APERTURE  = 0.140
+    MAX_APERTURE = 0.140
 
     def __init__(self):
         super().__init__(
@@ -983,8 +1127,8 @@ class FrankaHand(ParallelJawGripper):
     arm's ``ee_site`` so IK targets the canonical frame directly.
     """
 
-    FINGER_LENGTH = 0.054    # fingertip (pad tip) from finger-joint origin [m]
-    MAX_APERTURE  = 0.080    # 2 × 40 mm joint range [m]
+    FINGER_LENGTH = 0.054  # fingertip (pad tip) from finger-joint origin [m]
+    MAX_APERTURE = 0.080  # 2 × 40 mm joint range [m]
 
     def __init__(self):
         super().__init__(

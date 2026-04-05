@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """GripperBase: abstract base class for gripper hand models."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -98,7 +102,7 @@ class GripperBase(ABC):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
     ) -> List[TSRTemplate]:
@@ -122,8 +126,12 @@ class GripperBase(ABC):
             Empty list if preshape cannot span the cylinder.
         """
         shared = dict(
-            preshape=preshape, k=k, clearance=clearance,
-            angle_range=angle_range, subject=subject, reference=reference,
+            preshape=preshape,
+            k=k,
+            clearance=clearance,
+            angle_range=angle_range,
+            subject=subject,
+            reference=reference,
         )
         return (
             self.grasp_cylinder_side(cylinder_radius, cylinder_height, **shared)
@@ -139,7 +147,7 @@ class GripperBase(ABC):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
         name: str = "",
@@ -176,7 +184,7 @@ class GripperBase(ABC):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
         name: str = "",
@@ -199,9 +207,7 @@ class GripperBase(ABC):
         Returns:
             List of k TSRTemplates. Empty list if preshape cannot span the cylinder.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_cylinder_top"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_cylinder_top")
 
     def grasp_cylinder_bottom(
         self,
@@ -210,7 +216,7 @@ class GripperBase(ABC):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "cylinder",
         name: str = "",
@@ -234,9 +240,7 @@ class GripperBase(ABC):
         Returns:
             List of k TSRTemplates. Empty list if preshape cannot span the cylinder.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_cylinder_bottom"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_cylinder_bottom")
 
     def grasp_box(
         self,
@@ -275,8 +279,13 @@ class GripperBase(ABC):
         Returns:
             List of 6*k TSRTemplates.
         """
-        shared = dict(preshape=preshape, k=k, clearance=clearance,
-                      subject=subject, reference=reference)
+        shared = dict(
+            preshape=preshape,
+            k=k,
+            clearance=clearance,
+            subject=subject,
+            reference=reference,
+        )
         return (
             self.grasp_box_face_x(box_x, box_y, box_z, **shared)
             + self.grasp_box_face_y(box_x, box_y, box_z, **shared)
@@ -314,9 +323,7 @@ class GripperBase(ABC):
         Returns:
             List of k TSRTemplates.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_box_top"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_box_top")
 
     def grasp_box_bottom(
         self,
@@ -348,9 +355,7 @@ class GripperBase(ABC):
         Returns:
             List of k TSRTemplates.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_box_bottom"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_box_bottom")
 
     def grasp_box_face_x(
         self,
@@ -382,9 +387,7 @@ class GripperBase(ABC):
         Returns:
             List of 2*k TSRTemplates (k for +x face, k for -x face).
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_box_face_x"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_box_face_x")
 
     def grasp_box_face_y(
         self,
@@ -416,9 +419,7 @@ class GripperBase(ABC):
         Returns:
             List of 2*k TSRTemplates (k for +y face, k for -y face).
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_box_face_y"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_box_face_y")
 
     def grasp_sphere(
         self,
@@ -426,7 +427,7 @@ class GripperBase(ABC):
         preshape: Optional[float] = None,
         k: int = 3,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "sphere",
         name: str = "",
@@ -454,9 +455,7 @@ class GripperBase(ABC):
         Returns:
             List of k TSRTemplates. Empty list if preshape cannot span the sphere.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_sphere"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_sphere")
 
     def grasp_torus(
         self,
@@ -466,7 +465,7 @@ class GripperBase(ABC):
         k: int = 3,
         n_minor: int = 5,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "torus",
     ) -> List[TSRTemplate]:
@@ -507,14 +506,20 @@ class GripperBase(ABC):
         Returns:
             List of 2*k*n_minor + up to 2*k TSRTemplates.
         """
-        shared = dict(preshape=preshape, k=k, clearance=clearance,
-                      subject=subject, reference=reference)
-        return (
-            self.grasp_torus_side(torus_radius, tube_radius,
-                                  n_minor=n_minor, angle_range=angle_range,
-                                  **shared)
-            + self.grasp_torus_span(torus_radius, tube_radius, **shared)
+        shared = dict(
+            preshape=preshape,
+            k=k,
+            clearance=clearance,
+            subject=subject,
+            reference=reference,
         )
+        return self.grasp_torus_side(
+            torus_radius,
+            tube_radius,
+            n_minor=n_minor,
+            angle_range=angle_range,
+            **shared,
+        ) + self.grasp_torus_span(torus_radius, tube_radius, **shared)
 
     def grasp_torus_side(
         self,
@@ -524,7 +529,7 @@ class GripperBase(ABC):
         k: int = 3,
         n_minor: int = 5,
         clearance: Optional[float] = None,
-        angle_range: Tuple[float, float] = (0., 2 * np.pi),
+        angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "torus",
         name: str = "",
@@ -550,9 +555,7 @@ class GripperBase(ABC):
             List of 2*k*n_minor TSRTemplates. Empty if preshape cannot span
             the tube or finger_length ≤ tube_radius.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_torus_side"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_torus_side")
 
     def grasp_torus_span(
         self,
@@ -583,9 +586,7 @@ class GripperBase(ABC):
             List of up to 2*k TSRTemplates (k top + k bottom).
             Empty list if max_aperture cannot span the outer diameter.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement grasp_torus_span"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement grasp_torus_span")
 
     def renderer(self):
         """Return a SubjectRenderer for use with TSRVisualizer.
@@ -596,6 +597,4 @@ class GripperBase(ABC):
         Raises:
             NotImplementedError: if this hand has no registered renderer.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement renderer()"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement renderer()")

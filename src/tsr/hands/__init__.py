@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """tsr.hands — Gripper hand models with TSR template generation.
 
 Usage::
@@ -11,8 +14,9 @@ Usage::
     tsr  = templates[0].instantiate(mug_pose)
     pose = tsr.sample()
 """
+
 from .base import GripperBase
-from .parallel_jaw import ParallelJawGripper, Robotiq2F140, FrankaHand
+from .parallel_jaw import FrankaHand, ParallelJawGripper, Robotiq2F140
 from .registry import HandRegistry, default_registry
 
 __all__ = [

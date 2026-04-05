@@ -1,18 +1,22 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Tests for Robotiq2F140."""
+
 import unittest
+
 import numpy as np
 
 from tsr.hands import ParallelJawGripper, Robotiq2F140
 
 
 class TestRobotiq2F140(unittest.TestCase):
-
     def setUp(self):
         self.gripper = Robotiq2F140()
 
     def test_fixed_params(self):
         self.assertAlmostEqual(self.gripper.finger_length, 0.114)
-        self.assertAlmostEqual(self.gripper.max_aperture,  0.140)
+        self.assertAlmostEqual(self.gripper.max_aperture, 0.140)
 
     def test_is_subclass_of_parallel_jaw(self):
         self.assertIsInstance(self.gripper, ParallelJawGripper)
@@ -21,8 +25,8 @@ class TestRobotiq2F140(unittest.TestCase):
         # Robotiq2F140 now outputs canonical TSR EE poses (no frame correction).
         # It should produce identical Tw_e as a plain ParallelJawGripper with
         # the same hardware parameters.
-        base      = ParallelJawGripper(finger_length=0.114, max_aperture=0.140)
-        t_base    = base.grasp_cylinder_side(0.040, 0.10)
+        base = ParallelJawGripper(finger_length=0.114, max_aperture=0.140)
+        t_base = base.grasp_cylinder_side(0.040, 0.10)
         t_robotiq = self.gripper.grasp_cylinder_side(0.040, 0.10)
 
         self.assertEqual(len(t_base), len(t_robotiq))

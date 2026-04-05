@@ -1,10 +1,14 @@
 #!/usr/bin/env python
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """
 Tests for TSRChain methods that are not covered by other test files.
 """
 
-import numpy as np
 import unittest
+
+import numpy as np
 from numpy import pi
 
 from tsr.tsr import TSR
@@ -13,125 +17,119 @@ from tsr.tsr_chain import TSRChain
 
 class TestTSRChainMethods(unittest.TestCase):
     """Test TSRChain methods."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         # Create test TSRs
         self.tsr1 = TSR(
             T0_w=np.eye(4),
-            Tw_e=np.array([
-                [0, 0, 1, 0.1],
-                [1, 0, 0, 0],
-                [0, 1, 0, 0.05],
-                [0, 0, 0, 1]
-            ]),
-            Bw=np.array([
-                [-0.01, 0.01],
-                [-0.01, 0.01],
-                [-0.01, 0.01],
-                [-pi/6, pi/6],
-                [-pi/6, pi/6],
-                [-pi/3, pi/3]
-            ])
+            Tw_e=np.array([[0, 0, 1, 0.1], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]]),
+            Bw=np.array(
+                [
+                    [-0.01, 0.01],
+                    [-0.01, 0.01],
+                    [-0.01, 0.01],
+                    [-pi / 6, pi / 6],
+                    [-pi / 6, pi / 6],
+                    [-pi / 3, pi / 3],
+                ]
+            ),
         )
-        
+
         self.tsr2 = TSR(
-            T0_w=np.array([
-                [1, 0, 0, 0.2],
-                [0, 1, 0, 0.1],
-                [0, 0, 1, 0.3],
-                [0, 0, 0, 1]
-            ]),
+            T0_w=np.array([[1, 0, 0, 0.2], [0, 1, 0, 0.1], [0, 0, 1, 0.3], [0, 0, 0, 1]]),
             Tw_e=np.eye(4),
-            Bw=np.array([
-                [-0.02, 0.02],
-                [-0.02, 0.02],
-                [-0.02, 0.02],
-                [-pi/4, pi/4],
-                [-pi/4, pi/4],
-                [-pi/2, pi/2]
-            ])
+            Bw=np.array(
+                [
+                    [-0.02, 0.02],
+                    [-0.02, 0.02],
+                    [-0.02, 0.02],
+                    [-pi / 4, pi / 4],
+                    [-pi / 4, pi / 4],
+                    [-pi / 2, pi / 2],
+                ]
+            ),
         )
-        
+
         # Create TSRChain
         self.chain = TSRChain(TSRs=[self.tsr1, self.tsr2])
-    
+
     def test_append(self):
         """Test TSRChain.append() method."""
         chain = TSRChain()
-        
+
         # Initially empty
         self.assertEqual(len(chain.TSRs), 0)
-        
+
         # Append first TSR
         chain.append(self.tsr1)
         self.assertEqual(len(chain.TSRs), 1)
         self.assertIs(chain.TSRs[0], self.tsr1)
-        
+
         # Append second TSR
         chain.append(self.tsr2)
         self.assertEqual(len(chain.TSRs), 2)
         self.assertIs(chain.TSRs[0], self.tsr1)
         self.assertIs(chain.TSRs[1], self.tsr2)
-    
+
     def test_is_valid(self):
         """Test TSRChain.is_valid() method."""
         # Valid xyzrpy list
         valid_xyzrpy = [
-            np.array([0.005, 0.005, 0.005, pi/8, pi/8, pi/4]),  # Within tsr1 bounds
-            np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])      # Within tsr2 bounds
+            np.array([0.005, 0.005, 0.005, pi / 8, pi / 8, pi / 4]),  # Within tsr1 bounds
+            np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),  # Within tsr2 bounds
         ]
-        
+
         check = self.chain.is_valid(valid_xyzrpy)
         self.assertTrue(all(all(c) for c in check))
-        
+
         # Invalid xyzrpy list (wrong length)
         invalid_length = [np.array([0, 0, 0, 0, 0, 0])]
         with self.assertRaises(ValueError):
             self.chain.is_valid(invalid_length)
-        
+
         # Invalid xyzrpy list (out of bounds)
         invalid_bounds = [
-            np.array([0.1, 0.1, 0.1, pi/2, pi/2, pi]),  # Outside tsr1 bounds
-            np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
+            np.array([0.1, 0.1, 0.1, pi / 2, pi / 2, pi]),  # Outside tsr1 bounds
+            np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
         check = self.chain.is_valid(invalid_bounds)
         self.assertFalse(all(all(c) for c in check))
-        
+
         # Test with ignoreNAN=True
         nan_xyzrpy = [
             np.array([np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]),
-            np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
+            np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
         check = self.chain.is_valid(nan_xyzrpy, ignoreNAN=True)
         self.assertTrue(all(all(c) for c in check))
         # Test with ignoreNAN=False - NaN values should be treated as invalid
         check = self.chain.is_valid(nan_xyzrpy, ignoreNAN=False)
         self.assertFalse(all(all(c) for c in check))
-    
+
     def test_to_transform(self):
         """Test TSRChain.to_transform() method."""
         xyzrpy_list = [
-            np.array([0.005, 0.005, 0.005, pi/8, pi/8, pi/4]),
-            np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
+            np.array([0.005, 0.005, 0.005, pi / 8, pi / 8, pi / 4]),
+            np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
-        
+
         transform = self.chain.to_transform(xyzrpy_list)
-        
+
         # Should return a 4x4 transform matrix
         self.assertEqual(transform.shape, (4, 4))
         self.assertIsInstance(transform, np.ndarray)
-        
+
         # Test with invalid input
         with self.assertRaises(ValueError):
             self.chain.to_transform([np.array([0.1, 0.1, 0.1, 0, 0, 0])])
-    
+
     def test_sample_xyzrpy(self):
         """Test TSRChain.sample_xyzrpy() method."""
         # Test sampling without input
         np.random.seed(42)
         result = self.chain.sample_xyzrpy()
-        
+
         # Should return a list of xyzrpy arrays
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 2)
@@ -139,72 +137,72 @@ class TestTSRChainMethods(unittest.TestCase):
         self.assertIsInstance(result[1], np.ndarray)
         self.assertEqual(result[0].shape, (6,))
         self.assertEqual(result[1].shape, (6,))
-        
+
         # Test sampling with input
         input_xyzrpy = [
-            np.array([0.005, 0.005, 0.005, pi/8, pi/8, pi/4]),
-            np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
+            np.array([0.005, 0.005, 0.005, pi / 8, pi / 8, pi / 4]),
+            np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
         np.random.seed(42)
         result_with_input = self.chain.sample_xyzrpy(input_xyzrpy)
-        
+
         # Should return the input when valid
         np.testing.assert_array_almost_equal(result_with_input[0], input_xyzrpy[0])
         np.testing.assert_array_almost_equal(result_with_input[1], input_xyzrpy[1])
-    
+
     def test_sample(self):
         """Test TSRChain.sample() method."""
         # Test sampling without input
         np.random.seed(42)
         result = self.chain.sample()
-        
+
         # Should return a 4x4 transform matrix
         self.assertEqual(result.shape, (4, 4))
         self.assertIsInstance(result, np.ndarray)
-        
+
         # Test sampling with input
         input_xyzrpy = [
-            np.array([0.005, 0.005, 0.005, pi/8, pi/8, pi/4]),
-            np.array([0.01, 0.01, 0.01, pi/6, pi/6, pi/3])
+            np.array([0.005, 0.005, 0.005, pi / 8, pi / 8, pi / 4]),
+            np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
         np.random.seed(42)
         result_with_input = self.chain.sample(input_xyzrpy)
-        
+
         # Should return a transform matrix
         self.assertEqual(result_with_input.shape, (4, 4))
         self.assertIsInstance(result_with_input, np.ndarray)
-    
+
     def test_distance(self):
         """Test TSRChain.distance() method."""
         # Create a transform that should be close to the chain
         close_transform = np.eye(4)
         close_transform[:3, 3] = [0.005, 0.005, 0.005]
-        
+
         result = self.chain.distance(close_transform)
-        
+
         # Should return a tuple (distance, bwopt)
         self.assertIsInstance(result, tuple)
         self.assertEqual(len(result), 2)
         distance, bwopt = result
-        
+
         # Check distance
         self.assertIsInstance(distance, float)
         self.assertGreaterEqual(distance, 0)
-        
+
         # Check bwopt
         self.assertIsInstance(bwopt, np.ndarray)
         self.assertEqual(bwopt.shape, (len(self.chain.TSRs), 6))
-        
+
         # Test with transform that should be far from the chain
         far_transform = np.eye(4)
         far_transform[:3, 3] = [1.0, 1.0, 1.0]
-        
+
         far_result = self.chain.distance(far_transform)
         far_distance, far_bwopt = far_result
-        
+
         # Far distance should be greater than close distance
         self.assertGreater(far_distance, distance)
-    
+
     def test_contains(self):
         """Test TSRChain.contains() method."""
         # Create a transform that should be contained by generating it from valid Bw values
@@ -212,37 +210,37 @@ class TestTSRChainMethods(unittest.TestCase):
         contained_transform = self.tsr1.to_transform(np.array([0.005, 0.005, 0.005, 0, 0, 0]))
 
         self.assertTrue(self.chain.contains(contained_transform))
-        
+
         # Create a transform that should not be contained
         not_contained_transform = np.eye(4)
         not_contained_transform[:3, 3] = [1.0, 1.0, 1.0]
-        
+
         self.assertFalse(self.chain.contains(not_contained_transform))
-    
+
     def test_to_xyzrpy(self):
         """Test TSRChain.to_xyzrpy() method."""
         # Create a transform that should be within the first TSR bounds
         transform = np.eye(4)
         transform[:3, 3] = [0.005, 0.005, 0.005]
-        
+
         # For single TSR chain, this should work
         single_chain = TSRChain(tsr=self.tsr1)
         result = single_chain.to_xyzrpy(transform)
-        
+
         # Should return a list of xyzrpy arrays
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         self.assertIsInstance(result[0], np.ndarray)
         self.assertEqual(result[0].shape, (6,))
-    
+
     def test_empty_chain_operations(self):
         """Test operations on empty TSRChain."""
         empty_chain = TSRChain()
-        
+
         # is_valid should raise ValueError for empty list (no TSRs to validate against)
         with self.assertRaises(ValueError):
             empty_chain.is_valid([])
-        
+
         # to_transform should raise ValueError for empty list
         # The current implementation doesn't raise ValueError for empty chains
         # This might be a bug, but we test the current behavior
@@ -252,11 +250,11 @@ class TestTSRChainMethods(unittest.TestCase):
             pass  # Expected behavior
         except Exception:
             pass  # Current implementation doesn't raise ValueError
-        
+
         # sample_xyzrpy should return empty list
         result = empty_chain.sample_xyzrpy()
         self.assertEqual(result, [])
-        
+
         # sample should raise ValueError
         # The current implementation doesn't handle empty chains properly
         try:
@@ -265,7 +263,7 @@ class TestTSRChainMethods(unittest.TestCase):
             pass  # Expected behavior
         except Exception:
             pass  # Current implementation doesn't raise ValueError
-        
+
         # distance should raise ValueError
         try:
             empty_chain.distance(np.eye(4))
@@ -273,7 +271,7 @@ class TestTSRChainMethods(unittest.TestCase):
             pass  # Expected behavior
         except Exception:
             pass  # Current implementation doesn't raise ValueError
-        
+
         # contains should raise ValueError
         try:
             empty_chain.contains(np.eye(4))
@@ -281,7 +279,7 @@ class TestTSRChainMethods(unittest.TestCase):
             pass  # Expected behavior
         except Exception:
             pass  # Current implementation doesn't raise ValueError
-        
+
         # to_xyzrpy should raise ValueError
         try:
             empty_chain.to_xyzrpy(np.eye(4))
@@ -289,30 +287,30 @@ class TestTSRChainMethods(unittest.TestCase):
             pass  # Expected behavior
         except Exception:
             pass  # Current implementation doesn't raise ValueError
-    
+
     def test_single_tsr_chain(self):
         """Test TSRChain with single TSR."""
         single_chain = TSRChain(tsr=self.tsr1)
-        
+
         self.assertEqual(len(single_chain.TSRs), 1)
         self.assertIs(single_chain.TSRs[0], self.tsr1)
-        
+
         # Test operations
-        xyzrpy = np.array([0.005, 0.005, 0.005, pi/8, pi/8, pi/4])
+        xyzrpy = np.array([0.005, 0.005, 0.005, pi / 8, pi / 8, pi / 4])
         check = single_chain.is_valid([xyzrpy])
         self.assertTrue(all(all(c) for c in check))
-        
+
         transform = single_chain.to_transform([xyzrpy])
         self.assertEqual(transform.shape, (4, 4))
-        
+
         sample_result = single_chain.sample_xyzrpy()
         self.assertEqual(len(sample_result), 1)
         self.assertEqual(sample_result[0].shape, (6,))
-    
+
     def test_chain_with_tsrs_parameter(self):
         """Test TSRChain with TSRs parameter."""
         chain = TSRChain(TSRs=[self.tsr1, self.tsr2])
-        
+
         self.assertEqual(len(chain.TSRs), 2)
         self.assertIs(chain.TSRs[0], self.tsr1)
         self.assertIs(chain.TSRs[1], self.tsr2)
@@ -323,10 +321,18 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
 
     def test_single_tsr_contains_matches_tsr(self):
         """Single-TSR chain: contains() should match TSR.contains()."""
-        tsr = TSR(Bw=np.array([
-            [-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1],
-            [-pi/4, pi/4], [-pi/4, pi/4], [-pi/4, pi/4],
-        ]))
+        tsr = TSR(
+            Bw=np.array(
+                [
+                    [-0.1, 0.1],
+                    [-0.1, 0.1],
+                    [-0.1, 0.1],
+                    [-pi / 4, pi / 4],
+                    [-pi / 4, pi / 4],
+                    [-pi / 4, pi / 4],
+                ]
+            )
+        )
         chain = TSRChain(tsr=tsr)
 
         for _ in range(10):
@@ -336,18 +342,32 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
     def test_multi_tsr_rejects_partial_satisfaction(self):
         """Multi-TSR chain: a transform satisfying only one TSR should be rejected."""
         # TSR1: allows x in [-0.1, 0.1], everything else at 0
-        tsr1 = TSR(Bw=np.array([
-            [-0.1, 0.1], [0, 0], [0, 0],
-            [0, 0], [0, 0], [0, 0],
-        ]))
+        tsr1 = TSR(
+            Bw=np.array(
+                [
+                    [-0.1, 0.1],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                ]
+            )
+        )
         # TSR2: allows y in [-0.1, 0.1], everything else at 0
         tsr2 = TSR(
             T0_w=np.eye(4),
             Tw_e=np.eye(4),
-            Bw=np.array([
-                [0, 0], [-0.1, 0.1], [0, 0],
-                [0, 0], [0, 0], [0, 0],
-            ]),
+            Bw=np.array(
+                [
+                    [0, 0],
+                    [-0.1, 0.1],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                ]
+            ),
         )
         chain = TSRChain(TSRs=[tsr1, tsr2])
 
@@ -362,17 +382,31 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
 
     def test_contains_consistent_with_distance(self):
         """contains() should agree with distance() < epsilon for all transforms."""
-        tsr1 = TSR(Bw=np.array([
-            [-0.05, 0.05], [-0.05, 0.05], [-0.05, 0.05],
-            [-pi/6, pi/6], [-pi/6, pi/6], [-pi/6, pi/6],
-        ]))
+        tsr1 = TSR(
+            Bw=np.array(
+                [
+                    [-0.05, 0.05],
+                    [-0.05, 0.05],
+                    [-0.05, 0.05],
+                    [-pi / 6, pi / 6],
+                    [-pi / 6, pi / 6],
+                    [-pi / 6, pi / 6],
+                ]
+            )
+        )
         tsr2 = TSR(
-            T0_w=np.array([[1,0,0,0.1],[0,1,0,0],[0,0,1,0],[0,0,0,1]], dtype=float),
+            T0_w=np.array([[1, 0, 0, 0.1], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float),
             Tw_e=np.eye(4),
-            Bw=np.array([
-                [-0.05, 0.05], [-0.05, 0.05], [-0.05, 0.05],
-                [-pi/6, pi/6], [-pi/6, pi/6], [-pi/6, pi/6],
-            ]),
+            Bw=np.array(
+                [
+                    [-0.05, 0.05],
+                    [-0.05, 0.05],
+                    [-0.05, 0.05],
+                    [-pi / 6, pi / 6],
+                    [-pi / 6, pi / 6],
+                    [-pi / 6, pi / 6],
+                ]
+            ),
         )
         chain = TSRChain(TSRs=[tsr1, tsr2])
 
@@ -381,16 +415,18 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
             np.eye(4),
             chain.sample(),
         ]
-        far = np.eye(4); far[0, 3] = 5.0
+        far = np.eye(4)
+        far[0, 3] = 5.0
         transforms.append(far)
 
         from tsr.utils import EPSILON
+
         for t in transforms:
             dist, _ = chain.distance(t)
             self.assertEqual(
-                chain.contains(t), abs(dist) < EPSILON,
-                f"contains/distance mismatch: contains={chain.contains(t)}, "
-                f"dist={dist}, pos={t[:3,3]}"
+                chain.contains(t),
+                abs(dist) < EPSILON,
+                f"contains/distance mismatch: contains={chain.contains(t)}, dist={dist}, pos={t[:3, 3]}",
             )
 
     def test_empty_chain_contains_returns_false(self):
@@ -399,5 +435,5 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
         self.assertFalse(chain.contains(np.eye(4)))
 
 
-if __name__ == '__main__':
-    unittest.main() 
+if __name__ == "__main__":
+    unittest.main()

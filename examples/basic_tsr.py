@@ -30,17 +30,19 @@ def main():
     T0_w[0:3, 3] = [0.5, 0.0, 0.3]  # Mug at x=0.5, z=0.3
 
     # Gripper approaches from the side (-x direction), offset by 5cm
-    Tw_e = np.array([
-        [0, 0, 1, -0.05],   # gripper z-axis points toward mug
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 0, 1]
-    ])
+    Tw_e = np.array(
+        [
+            [0, 0, 1, -0.05],  # gripper z-axis points toward mug
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1],
+        ]
+    )
 
     # Bounds: allow any rotation around the mug (yaw), small z tolerance
     Bw = np.zeros((6, 2))
-    Bw[2, :] = [-0.02, 0.02]      # z: +/- 2cm
-    Bw[5, :] = [-pi, pi]          # yaw: full rotation around mug
+    Bw[2, :] = [-0.02, 0.02]  # z: +/- 2cm
+    Bw[5, :] = [-pi, pi]  # yaw: full rotation around mug
 
     # Create the TSR
     tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
@@ -51,7 +53,7 @@ def main():
     for i in range(3):
         pose = tsr.sample()
         pos = pose[0:3, 3]
-        print(f"   Sample {i+1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
+        print(f"   Sample {i + 1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
 
     # Check if a pose is valid
     print("\n2. Containment check")

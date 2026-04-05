@@ -1,12 +1,15 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """HandRegistry: plain-string keyed registry for gripper template generators."""
+
 from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
 from tsr.template import TSRTemplate
-from .base import GripperBase
 
-_Key       = Tuple[str, str, str]   # (hand, reference, task)
+_Key = Tuple[str, str, str]  # (hand, reference, task)
 _Generator = Callable[..., List[TSRTemplate]]
 
 
@@ -46,9 +49,11 @@ class HandRegistry:
 
             registry.register("parallel_jaw", "cylinder", "grasp")(fn)
         """
+
         def decorator(fn: _Generator) -> _Generator:
             self._registry[(hand, reference, task)] = fn
             return fn
+
         return decorator
 
     def get(self, hand: str, reference: str, task: str) -> _Generator:
@@ -59,10 +64,7 @@ class HandRegistry:
         """
         key = (hand, reference, task)
         if key not in self._registry:
-            raise KeyError(
-                f"No generator registered for {key!r}. "
-                f"Available: {sorted(self._registry)}"
-            )
+            raise KeyError(f"No generator registered for {key!r}. Available: {sorted(self._registry)}")
         return self._registry[key]
 
     def list_tasks(self) -> List[_Key]:
@@ -76,27 +78,11 @@ class HandRegistry:
 # Module-level registry pre-populated with built-in hands.
 default_registry = HandRegistry()
 
-default_registry.register("parallel_jaw", "cylinder", "grasp")(
-    lambda gripper, **kw: gripper.grasp_cylinder(**kw)
-)
-default_registry.register("robotiq_2f140", "cylinder", "grasp")(
-    lambda gripper, **kw: gripper.grasp_cylinder(**kw)
-)
-default_registry.register("parallel_jaw", "box", "grasp")(
-    lambda gripper, **kw: gripper.grasp_box(**kw)
-)
-default_registry.register("robotiq_2f140", "box", "grasp")(
-    lambda gripper, **kw: gripper.grasp_box(**kw)
-)
-default_registry.register("parallel_jaw", "sphere", "grasp")(
-    lambda gripper, **kw: gripper.grasp_sphere(**kw)
-)
-default_registry.register("robotiq_2f140", "sphere", "grasp")(
-    lambda gripper, **kw: gripper.grasp_sphere(**kw)
-)
-default_registry.register("parallel_jaw", "torus", "grasp")(
-    lambda gripper, **kw: gripper.grasp_torus(**kw)
-)
-default_registry.register("robotiq_2f140", "torus", "grasp")(
-    lambda gripper, **kw: gripper.grasp_torus(**kw)
-)
+default_registry.register("parallel_jaw", "cylinder", "grasp")(lambda gripper, **kw: gripper.grasp_cylinder(**kw))
+default_registry.register("robotiq_2f140", "cylinder", "grasp")(lambda gripper, **kw: gripper.grasp_cylinder(**kw))
+default_registry.register("parallel_jaw", "box", "grasp")(lambda gripper, **kw: gripper.grasp_box(**kw))
+default_registry.register("robotiq_2f140", "box", "grasp")(lambda gripper, **kw: gripper.grasp_box(**kw))
+default_registry.register("parallel_jaw", "sphere", "grasp")(lambda gripper, **kw: gripper.grasp_sphere(**kw))
+default_registry.register("robotiq_2f140", "sphere", "grasp")(lambda gripper, **kw: gripper.grasp_sphere(**kw))
+default_registry.register("parallel_jaw", "torus", "grasp")(lambda gripper, **kw: gripper.grasp_torus(**kw))
+default_registry.register("robotiq_2f140", "torus", "grasp")(lambda gripper, **kw: gripper.grasp_torus(**kw))

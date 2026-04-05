@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
+from functools import reduce
+
 import numpy
 import numpy.random
-from functools import reduce
 from numpy import pi
 
 from .utils import EPSILON, geodesic_distance, wrap_to_interval
 
-NANBW = numpy.ones(6)*float('nan')
+NANBW = numpy.ones(6) * float("nan")
 
 
 class TSR:
@@ -32,7 +33,7 @@ class TSR:
         self.Bw = numpy.array(Bw)
 
         if numpy.any(self.Bw[0:3, 0] > self.Bw[0:3, 1]):
-            raise ValueError('Bw translation bounds must be [min, max]', Bw)
+            raise ValueError("Bw translation bounds must be [min, max]", Bw)
 
         # We will now create a continuous version of the bound to maintain:
         # 1. Bw[i,1] > Bw[i,0] which is necessary for LBFGS-B
@@ -44,9 +45,9 @@ class TSR:
         # and has size 2*pi - (lower - upper)
         Bw_interval = Bw_cont[3:6, 1] - Bw_cont[3:6, 0]
         # Handle outer intervals: if interval is negative, it wraps around
-        Bw_interval = numpy.where(Bw_interval < 0, 2*pi + Bw_interval, Bw_interval)
+        Bw_interval = numpy.where(Bw_interval < 0, 2 * pi + Bw_interval, Bw_interval)
         # Clamp to max 2*pi (full rotation)
-        Bw_interval = numpy.minimum(Bw_interval, 2*pi)
+        Bw_interval = numpy.minimum(Bw_interval, 2 * pi)
 
         Bw_cont[3:6, 0] = wrap_to_interval(Bw_cont[3:6, 0])
         Bw_cont[3:6, 1] = Bw_cont[3:6, 0] + Bw_interval
@@ -55,8 +56,7 @@ class TSR:
 
     def __repr__(self) -> str:
         _DOF = ("x", "y", "z", "roll", "pitch", "yaw")
-        free = [_DOF[i] for i in range(6)
-                if not numpy.isclose(self.Bw[i, 0], self.Bw[i, 1])]
+        free = [_DOF[i] for i in range(6) if not numpy.isclose(self.Bw[i, 0], self.Bw[i, 1])]
         t0 = self.T0_w[:3, 3].round(3)
         te = self.Tw_e[:3, 3].round(3)
         free_str = ",".join(free) if free else "fixed"
@@ -72,22 +72,20 @@ class TSR:
         rpy = numpy.zeros(3)
         if not (abs(abs(rot[2, 0]) - 1) < EPSILON):
             p = -numpy.arcsin(rot[2, 0])
-            rpy[0] = numpy.arctan2((rot[2, 1]/numpy.cos(p)),
-                                   (rot[2, 2]/numpy.cos(p)))
+            rpy[0] = numpy.arctan2((rot[2, 1] / numpy.cos(p)), (rot[2, 2] / numpy.cos(p)))
             rpy[1] = p
-            rpy[2] = numpy.arctan2((rot[1, 0]/numpy.cos(p)),
-                                   (rot[0, 0]/numpy.cos(p)))
+            rpy[2] = numpy.arctan2((rot[1, 0] / numpy.cos(p)), (rot[0, 0] / numpy.cos(p)))
         else:
             if abs(rot[2, 0] + 1) < EPSILON:
                 r_offset = numpy.arctan2(rot[0, 1], rot[0, 2])
                 rpy[0] = r_offset
-                rpy[1] = pi/2
-                rpy[2] = 0.
+                rpy[1] = pi / 2
+                rpy[2] = 0.0
             else:
                 r_offset = numpy.arctan2(-rot[0, 1], -rot[0, 2])
                 rpy[0] = r_offset
-                rpy[1] = -pi/2
-                rpy[2] = 0.
+                rpy[1] = -pi / 2
+                rpy[2] = 0.0
         return rpy
 
     @staticmethod
@@ -110,19 +108,15 @@ class TSR:
         """
         rot = numpy.zeros((3, 3))
         r, p, y = rpy[0], rpy[1], rpy[2]
-        rot[0][0] = numpy.cos(p)*numpy.cos(y)
-        rot[1][0] = numpy.cos(p)*numpy.sin(y)
+        rot[0][0] = numpy.cos(p) * numpy.cos(y)
+        rot[1][0] = numpy.cos(p) * numpy.sin(y)
         rot[2][0] = -numpy.sin(p)
-        rot[0][1] = (numpy.sin(r)*numpy.sin(p)*numpy.cos(y) -
-                     numpy.cos(r)*numpy.sin(y))
-        rot[1][1] = (numpy.sin(r)*numpy.sin(p)*numpy.sin(y) +
-                     numpy.cos(r)*numpy.cos(y))
-        rot[2][1] = numpy.sin(r)*numpy.cos(p)
-        rot[0][2] = (numpy.cos(r)*numpy.sin(p)*numpy.cos(y) +
-                     numpy.sin(r)*numpy.sin(y))
-        rot[1][2] = (numpy.cos(r)*numpy.sin(p)*numpy.sin(y) -
-                     numpy.sin(r)*numpy.cos(y))
-        rot[2][2] = numpy.cos(r)*numpy.cos(p)
+        rot[0][1] = numpy.sin(r) * numpy.sin(p) * numpy.cos(y) - numpy.cos(r) * numpy.sin(y)
+        rot[1][1] = numpy.sin(r) * numpy.sin(p) * numpy.sin(y) + numpy.cos(r) * numpy.cos(y)
+        rot[2][1] = numpy.sin(r) * numpy.cos(p)
+        rot[0][2] = numpy.cos(r) * numpy.sin(p) * numpy.cos(y) + numpy.sin(r) * numpy.sin(y)
+        rot[1][2] = numpy.cos(r) * numpy.sin(p) * numpy.sin(y) - numpy.sin(r) * numpy.cos(y)
+        rot[2][2] = numpy.cos(r) * numpy.cos(p)
         return rot
 
     @staticmethod
@@ -152,9 +146,8 @@ class TSR:
         # Check bounds condition on XYZ component.
         xyzcheck = []
         for i, x in enumerate(xyz):
-            x_val = x.item() if hasattr(x, 'item') else float(x)  # Convert to scalar
-            xyzcheck.append(((x_val + EPSILON) >= Bw[i, 0]) and
-                           ((x_val - EPSILON) <= Bw[i, 1]))
+            x_val = x.item() if hasattr(x, "item") else float(x)  # Convert to scalar
+            xyzcheck.append(((x_val + EPSILON) >= Bw[i, 0]) and ((x_val - EPSILON) <= Bw[i, 1]))
         return xyzcheck
 
     @staticmethod
@@ -174,14 +167,12 @@ class TSR:
         # Check bounds condition on RPY component.
         rpycheck = [False] * 3
         for i in range(0, 3):
-            if (Bw[i, 0] > Bw[i, 1] + EPSILON):
+            if Bw[i, 0] > Bw[i, 1] + EPSILON:
                 # An outer interval
-                rpycheck[i] = (((rpy[i] + EPSILON) >= Bw[i, 0]) or
-                               ((rpy[i] - EPSILON) <= Bw[i, 1]))
+                rpycheck[i] = ((rpy[i] + EPSILON) >= Bw[i, 0]) or ((rpy[i] - EPSILON) <= Bw[i, 1])
             else:
                 # An inner interval
-                rpycheck[i] = (((rpy[i] + EPSILON) >= Bw[i, 0]) and
-                               ((rpy[i] - EPSILON) <= Bw[i, 1]))
+                rpycheck[i] = ((rpy[i] + EPSILON) >= Bw[i, 0]) and ((rpy[i] - EPSILON) <= Bw[i, 1])
         return rpycheck
 
     @staticmethod
@@ -203,11 +194,9 @@ class TSR:
             psol = -numpy.arcsin(rot[2, 0])
             for p in [psol, (pi - psol)]:
                 rpy = numpy.zeros(3)
-                rpy[0] = numpy.arctan2((rot[2, 1]/numpy.cos(p)),
-                                       (rot[2, 2]/numpy.cos(p)))
+                rpy[0] = numpy.arctan2((rot[2, 1] / numpy.cos(p)), (rot[2, 2] / numpy.cos(p)))
                 rpy[1] = p
-                rpy[2] = numpy.arctan2((rot[1, 0]/numpy.cos(p)),
-                                       (rot[0, 0]/numpy.cos(p)))
+                rpy[2] = numpy.arctan2((rot[1, 0] / numpy.cos(p)), (rot[0, 0] / numpy.cos(p)))
                 rpycheck = TSR.rpy_within_bounds(rpy, Bw)
                 if all(rpycheck):
                     return rpycheck, rpy
@@ -218,14 +207,14 @@ class TSR:
                 # Valid rotation: [y + r_offset, pi/2, y]
                 # check the four r-y Bw corners
                 rpy_list = []
-                rpy_list.append([Bw[2, 0] + r_offset, pi/2, Bw[2, 0]])
-                rpy_list.append([Bw[2, 1] + r_offset, pi/2, Bw[2, 1]])
-                rpy_list.append([Bw[0, 0], pi/2, Bw[0, 0] - r_offset])
-                rpy_list.append([Bw[0, 1], pi/2, Bw[0, 1] - r_offset])
+                rpy_list.append([Bw[2, 0] + r_offset, pi / 2, Bw[2, 0]])
+                rpy_list.append([Bw[2, 1] + r_offset, pi / 2, Bw[2, 1]])
+                rpy_list.append([Bw[0, 0], pi / 2, Bw[0, 0] - r_offset])
+                rpy_list.append([Bw[0, 1], pi / 2, Bw[0, 1] - r_offset])
                 for rpy in rpy_list:
                     rpycheck = TSR.rpy_within_bounds(rpy, Bw)
                     # No point checking anything if pi/2 not in Bw
-                    if (rpycheck[1] is False):
+                    if rpycheck[1] is False:
                         return rpycheck, None
                     if all(rpycheck):
                         return rpycheck, rpy
@@ -234,14 +223,14 @@ class TSR:
                 # Valid rotation: [-y + r_offset, -pi/2, y]
                 # check the four r-y Bw corners
                 rpy_list = []
-                rpy_list.append([-Bw[2, 0] + r_offset, -pi/2, Bw[2, 0]])
-                rpy_list.append([-Bw[2, 1] + r_offset, -pi/2, Bw[2, 1]])
-                rpy_list.append([Bw[0, 0], -pi/2, -Bw[0, 0] + r_offset])
-                rpy_list.append([Bw[0, 1], -pi/2, -Bw[0, 1] + r_offset])
+                rpy_list.append([-Bw[2, 0] + r_offset, -pi / 2, Bw[2, 0]])
+                rpy_list.append([-Bw[2, 1] + r_offset, -pi / 2, Bw[2, 1]])
+                rpy_list.append([Bw[0, 0], -pi / 2, -Bw[0, 0] + r_offset])
+                rpy_list.append([Bw[0, 1], -pi / 2, -Bw[0, 1] + r_offset])
                 for rpy in rpy_list:
                     rpycheck = TSR.rpy_within_bounds(rpy, Bw)
                     # No point checking anything if -pi/2 not in Bw
-                    if (rpycheck[1] is False):
+                    if rpycheck[1] is False:
                         return rpycheck, None
                     if all(rpycheck):
                         return rpycheck, rpy
@@ -256,13 +245,12 @@ class TSR:
         @return trans 4x4 transform
         """
         if len(xyzrpy) != 6:
-            raise ValueError('xyzrpy must be of length 6')
+            raise ValueError("xyzrpy must be of length 6")
         validity = self.is_valid(xyzrpy)
         if not all(validity):
             violated = [i for i, v in enumerate(validity) if not v]
             raise ValueError(
-                f'xyzrpy violates bounds at dimensions {violated}: '
-                f'xyzrpy={xyzrpy}, bounds={self._Bw_cont[violated]}'
+                f"xyzrpy violates bounds at dimensions {violated}: xyzrpy={xyzrpy}, bounds={self._Bw_cont[violated]}"
             )
         Tw = TSR.xyzrpy_to_trans(xyzrpy)
         trans = reduce(numpy.dot, [self.T0_w, Tw, self.Tw_e])
@@ -274,9 +262,7 @@ class TSR:
         @param  trans  4x4 transform
         @return xyzrpy 6x1 vector of Bw values
         """
-        Tw = reduce(numpy.dot, [numpy.linalg.inv(self.T0_w),
-                                trans,
-                                numpy.linalg.inv(self.Tw_e)])
+        Tw = reduce(numpy.dot, [numpy.linalg.inv(self.T0_w), trans, numpy.linalg.inv(self.Tw_e)])
         xyz, rot = Tw[0:3, 3], Tw[0:3, 0:3]
         rpycheck, rpy = TSR.rot_within_rpy_bounds(rot, self._Bw_cont)
         if not all(rpycheck):
@@ -358,13 +344,13 @@ class TSR:
         xyz = Tw_s_prime[0:3, 3]
         rot = Tw_s_prime[0:3, 0:3]
         rpy = TSR.rot_to_rpy(rot)
-        dw = numpy.hstack((xyz, rpy))
+        numpy.hstack((xyz, rpy))
 
         # Handle RPY redundancy - find the RPY representation that minimizes distance
         # The paper mentions checking equivalent rotations {x4 ± π, −x5 ± π, x6 ± π}
         best_dx = None
         best_dw = None
-        best_norm = float('inf')
+        best_norm = float("inf")
 
         # Generate candidate RPY values (original + 8 equivalent representations)
         rpy_candidates = [rpy]
@@ -419,7 +405,7 @@ class TSR:
         """
         # Fast path: if transform is contained, distance is 0
         if self.contains(trans):
-            return 0., self.to_xyzrpy(trans)
+            return 0.0, self.to_xyzrpy(trans)
 
         # Compute displacement using closed-form formula from paper
         dx, dw = self._displacement_to_tsr(trans)
@@ -448,7 +434,7 @@ class TSR:
         @return bwopt Closest Bw value to trans
         """
         if self.contains(trans):
-            return 0., self.to_xyzrpy(trans)
+            return 0.0, self.to_xyzrpy(trans)
 
         import scipy.optimize
 
@@ -456,14 +442,12 @@ class TSR:
             bwtrans = self.to_transform(bw)
             return geodesic_distance(bwtrans, trans)
 
-        bwinit = (self._Bw_cont[:, 0] + self._Bw_cont[:, 1])/2
-        bwbounds = [(self._Bw_cont[i, 0], self._Bw_cont[i, 1])
-                    for i in range(6)]
+        bwinit = (self._Bw_cont[:, 0] + self._Bw_cont[:, 1]) / 2
+        bwbounds = [(self._Bw_cont[i, 0], self._Bw_cont[i, 1]) for i in range(6)]
 
         bwopt, dist, info = scipy.optimize.fmin_l_bfgs_b(
-                                objective, bwinit, fprime=None,
-                                args=(),
-                                bounds=bwbounds, approx_grad=True)
+            objective, bwinit, fprime=None, args=(), bounds=bwbounds, approx_grad=True
+        )
         return dist, bwopt
 
     def sample_xyzrpy(self, xyzrpy=NANBW):
@@ -477,13 +461,16 @@ class TSR:
         """
         check = self.is_valid(xyzrpy, ignoreNAN=True)
         if not all(check):
-            raise ValueError('xyzrpy must be within bounds', check)
+            raise ValueError("xyzrpy must be within bounds", check)
 
-        Bw_sample = numpy.array([self._Bw_cont[i, 0] +
-                                (self._Bw_cont[i, 1] - self._Bw_cont[i, 0]) *
-                                numpy.random.random_sample()
-                                if numpy.isnan(x) else x
-                                for i, x in enumerate(xyzrpy)])
+        Bw_sample = numpy.array(
+            [
+                self._Bw_cont[i, 0] + (self._Bw_cont[i, 1] - self._Bw_cont[i, 0]) * numpy.random.random_sample()
+                if numpy.isnan(x)
+                else x
+                for i, x in enumerate(xyzrpy)
+            ]
+        )
         # Unwrap rpy to [-pi, pi]
         Bw_sample[3:6] = wrap_to_interval(Bw_sample[3:6])
         return Bw_sample
@@ -500,25 +487,26 @@ class TSR:
         return self.to_transform(self.sample_xyzrpy(xyzrpy))
 
     def to_dict(self):
-        """ Convert this TSR to a python dict. """
+        """Convert this TSR to a python dict."""
         return {
-            'T0_w': self.T0_w.tolist(),
-            'Tw_e': self.Tw_e.tolist(),
-            'Bw': self.Bw.tolist(),
+            "T0_w": self.T0_w.tolist(),
+            "Tw_e": self.Tw_e.tolist(),
+            "Bw": self.Bw.tolist(),
         }
 
     @staticmethod
     def from_dict(x):
-        """ Construct a TSR from a python dict. """
+        """Construct a TSR from a python dict."""
         return TSR(
-            T0_w=numpy.array(x['T0_w']),
-            Tw_e=numpy.array(x['Tw_e']),
-            Bw=numpy.array(x['Bw']),
+            T0_w=numpy.array(x["T0_w"]),
+            Tw_e=numpy.array(x["Tw_e"]),
+            Bw=numpy.array(x["Bw"]),
         )
 
     def to_json(self):
-        """ Convert this TSR to a JSON string. """
+        """Convert this TSR to a JSON string."""
         import json
+
         return json.dumps(self.to_dict())
 
     @staticmethod
@@ -529,17 +517,20 @@ class TSR:
         This method internally forwards all arguments to `json.loads`.
         """
         import json
+
         x_dict = json.loads(x, *args, **kw_args)
         return TSR.from_dict(x_dict)
 
     def to_yaml(self):
-        """ Convert this TSR to a YAML string. """
+        """Convert this TSR to a YAML string."""
         import yaml
+
         return yaml.dump(self.to_dict())
 
     @staticmethod
     def from_yaml(x):
         """Construct a TSR from a YAML string."""
         import yaml
+
         x_dict = yaml.safe_load(x)
         return TSR.from_dict(x_dict)
