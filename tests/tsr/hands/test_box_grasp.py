@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Tests for ParallelJawGripper box grasp primitives.
 
 Box dimensions used:
@@ -5,7 +8,9 @@ Box dimensions used:
   - TALL box:   0.08 × 0.06 × 0.20 m — BOX_Z = 0.20 > max_aperture = 0.14
                 so "span-z" orientations on x/y faces are filtered out.
 """
+
 import unittest
+
 import numpy as np
 
 from tsr.hands import ParallelJawGripper
@@ -42,8 +47,11 @@ class TestBoxFaceTemplatesHelper(unittest.TestCase):
         """Each template has freedom in exactly one Bw row (the slide direction)."""
         for t in self.gripper.grasp_box(SX, SY, SZ):
             free_rows = [i for i in range(3) if t.Bw[i, 0] != t.Bw[i, 1]]
-            self.assertEqual(len(free_rows), 1,
-                             msg=f"Expected 1 free Bw row, got {free_rows} in {t.name}")
+            self.assertEqual(
+                len(free_rows),
+                1,
+                msg=f"Expected 1 free Bw row, got {free_rows} in {t.name}",
+            )
 
     def test_bw_no_rotational_dof(self):
         for t in self.gripper.grasp_box(SX, SY, SZ):
@@ -58,8 +66,12 @@ class TestBoxFaceTemplatesHelper(unittest.TestCase):
             # trans should be antiparallel to z_ee
             h_palm = np.linalg.norm(trans)
             if h_palm > 1e-12:
-                np.testing.assert_allclose(trans / h_palm, -z_ee, atol=1e-10,
-                                           err_msg=f"Translation not along -z_EE in {t.name}")
+                np.testing.assert_allclose(
+                    trans / h_palm,
+                    -z_ee,
+                    atol=1e-10,
+                    err_msg=f"Translation not along -z_EE in {t.name}",
+                )
 
     def test_preshape_matches_span_dim(self):
         """Auto-computed preshape = span_dim + clearance for each orientation."""
@@ -70,12 +82,11 @@ class TestBoxFaceTemplatesHelper(unittest.TestCase):
             candidates = [SX + clearance, SY + clearance, SZ + clearance]
             self.assertTrue(
                 any(abs(ps - c) < 1e-9 for c in candidates),
-                msg=f"preshape {ps:.4f} not near any face dim + clearance in {t.name}"
+                msg=f"preshape {ps:.4f} not near any face dim + clearance in {t.name}",
             )
 
 
 class TestParallelJawGripperBoxTop(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -88,7 +99,7 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_z_axis_points_down(self):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., 0., -1.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
 
     def test_tsr_origin_at_box_top(self):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
@@ -96,8 +107,7 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_preshape_exceeds_aperture_raises(self):
         with self.assertRaises(ValueError):
-            self.gripper.grasp_box_top(SX, SY, SZ,
-                                       preshape=self.gripper.max_aperture + 0.01)
+            self.gripper.grasp_box_top(SX, SY, SZ, preshape=self.gripper.max_aperture + 0.01)
 
     def test_zero_dim_raises(self):
         with self.assertRaises(ValueError):
@@ -109,9 +119,7 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_palm_offset_decreases_with_depth(self):
         # h_palm = finger_length - d; as depth index increases, h_palm decreases
-        names_zs = [(t.name, t.Tw_e[2, 3])
-                    for t in self.gripper.grasp_box_top(SX, SY, SZ, k=3)
-                    if "span-x" in t.name]
+        names_zs = [(t.name, t.Tw_e[2, 3]) for t in self.gripper.grasp_box_top(SX, SY, SZ, k=3) if "span-x" in t.name]
         z_vals = [z for _, z in names_zs]
         self.assertEqual(sorted(z_vals, reverse=True), z_vals)
 
@@ -122,25 +130,23 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_span_x_slides_in_y(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
-        span_x_templates = [t for t in self.gripper.grasp_box_top(SX, SY, SZ)
-                             if "span-x" in t.name]
+        span_x_templates = [t for t in self.gripper.grasp_box_top(SX, SY, SZ) if "span-x" in t.name]
         for t in span_x_templates:
-            self.assertEqual(t.Bw[0, 0], t.Bw[0, 1])   # x fixed
+            self.assertEqual(t.Bw[0, 0], t.Bw[0, 1])  # x fixed
             self.assertAlmostEqual(t.Bw[1, 0], -(SY / 2 - clearance))  # y slides
-            self.assertAlmostEqual(t.Bw[1, 1],  (SY / 2 - clearance))
+            self.assertAlmostEqual(t.Bw[1, 1], (SY / 2 - clearance))
 
     def test_span_y_slides_in_x(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
-        span_y_templates = [t for t in self.gripper.grasp_box_top(SX, SY, SZ)
-                             if "span-y" in t.name]
+        span_y_templates = [t for t in self.gripper.grasp_box_top(SX, SY, SZ) if "span-y" in t.name]
         for t in span_y_templates:
-            self.assertEqual(t.Bw[1, 0], t.Bw[1, 1])   # y fixed
+            self.assertEqual(t.Bw[1, 0], t.Bw[1, 1])  # y fixed
             self.assertAlmostEqual(t.Bw[0, 0], -(SX / 2 - clearance))  # x slides
-            self.assertAlmostEqual(t.Bw[0, 1],  (SX / 2 - clearance))
+            self.assertAlmostEqual(t.Bw[0, 1], (SX / 2 - clearance))
 
     def test_wide_box_span_x_filtered(self):
         """If box_x > max_aperture - clearance, span-x orientation is skipped."""
-        wide = self.gripper.max_aperture + 0.01   # definitely too wide
+        wide = self.gripper.max_aperture + 0.01  # definitely too wide
         templates = self.gripper.grasp_box_top(wide, SY, SZ)
         self.assertTrue(all("span-x" not in t.name for t in templates))
         # span-y should still be there (SY=0.06 fits)
@@ -153,7 +159,6 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
 
 class TestParallelJawGripperBoxBottom(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -162,7 +167,7 @@ class TestParallelJawGripperBoxBottom(unittest.TestCase):
 
     def test_z_axis_points_up(self):
         for t in self.gripper.grasp_box_bottom(SX, SY, SZ):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., 0., 1.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
 
     def test_tsr_origin_at_z_zero(self):
         for t in self.gripper.grasp_box_bottom(SX, SY, SZ):
@@ -179,7 +184,6 @@ class TestParallelJawGripperBoxBottom(unittest.TestCase):
 
 
 class TestParallelJawGripperBoxFaceX(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -203,9 +207,9 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
         pos_x = [t for t in templates if "+x" in t.name]
         neg_x = [t for t in templates if "-x" in t.name]
         for t in pos_x:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [-1., 0., 0.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [-1.0, 0.0, 0.0], atol=1e-10)
         for t in neg_x:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [+1., 0., 0.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [+1.0, 0.0, 0.0], atol=1e-10)
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box_face_x(SX, SY, SZ):
@@ -213,28 +217,25 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
 
     def test_span_y_slides_in_z_only(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
-        span_y = [t for t in self.gripper.grasp_box_face_x(SX, SY, SZ)
-                  if "span-y" in t.name]
+        span_y = [t for t in self.gripper.grasp_box_face_x(SX, SY, SZ) if "span-y" in t.name]
         for t in span_y:
             self.assertEqual(t.Bw[0, 0], t.Bw[0, 1])  # x fixed (radial)
             self.assertEqual(t.Bw[1, 0], t.Bw[1, 1])  # y fixed (span)
             self.assertAlmostEqual(t.Bw[2, 0], -(SZ / 2 - clearance))  # z slides
-            self.assertAlmostEqual(t.Bw[2, 1],  (SZ / 2 - clearance))
+            self.assertAlmostEqual(t.Bw[2, 1], (SZ / 2 - clearance))
 
     def test_span_z_slides_in_y_only(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
-        span_z = [t for t in self.gripper.grasp_box_face_x(SX, SY, SZ)
-                  if "span-z" in t.name]
+        span_z = [t for t in self.gripper.grasp_box_face_x(SX, SY, SZ) if "span-z" in t.name]
         for t in span_z:
             self.assertEqual(t.Bw[0, 0], t.Bw[0, 1])  # x fixed (radial)
             self.assertAlmostEqual(t.Bw[1, 0], -(SY / 2 - clearance))  # y slides
-            self.assertAlmostEqual(t.Bw[1, 1],  (SY / 2 - clearance))
+            self.assertAlmostEqual(t.Bw[1, 1], (SY / 2 - clearance))
             self.assertEqual(t.Bw[2, 0], t.Bw[2, 1])  # z fixed (span)
 
     def test_preshape_exceeds_aperture_raises(self):
         with self.assertRaises(ValueError):
-            self.gripper.grasp_box_face_x(SX, SY, SZ,
-                                          preshape=self.gripper.max_aperture + 0.01)
+            self.gripper.grasp_box_face_x(SX, SY, SZ, preshape=self.gripper.max_aperture + 0.01)
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_face_x(SX, SY, SZ):
@@ -243,7 +244,6 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
 
 
 class TestParallelJawGripperBoxFaceY(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -261,9 +261,9 @@ class TestParallelJawGripperBoxFaceY(unittest.TestCase):
         pos_y = [t for t in templates if "+y" in t.name]
         neg_y = [t for t in templates if "-y" in t.name]
         for t in pos_y:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., -1., 0.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, -1.0, 0.0], atol=1e-10)
         for t in neg_y:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., +1., 0.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, +1.0, 0.0], atol=1e-10)
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box_face_y(SX, SY, SZ):
@@ -271,13 +271,12 @@ class TestParallelJawGripperBoxFaceY(unittest.TestCase):
 
     def test_span_x_slides_in_z_only(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
-        span_x = [t for t in self.gripper.grasp_box_face_y(SX, SY, SZ)
-                  if "span-x" in t.name]
+        span_x = [t for t in self.gripper.grasp_box_face_y(SX, SY, SZ) if "span-x" in t.name]
         for t in span_x:
             self.assertEqual(t.Bw[1, 0], t.Bw[1, 1])  # y fixed (radial)
             self.assertEqual(t.Bw[0, 0], t.Bw[0, 1])  # x fixed (span)
             self.assertAlmostEqual(t.Bw[2, 0], -(SZ / 2 - clearance))
-            self.assertAlmostEqual(t.Bw[2, 1],  (SZ / 2 - clearance))
+            self.assertAlmostEqual(t.Bw[2, 1], (SZ / 2 - clearance))
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_face_y(SX, SY, SZ):
@@ -286,7 +285,6 @@ class TestParallelJawGripperBoxFaceY(unittest.TestCase):
 
 
 class TestParallelJawGripperBoxCombined(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 

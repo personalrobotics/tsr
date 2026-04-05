@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """tsr.placement — Stable placement TSR generator.
 
 Usage::
@@ -11,6 +14,7 @@ Usage::
     tsr  = templates[0].instantiate(surface_pose)
     pose = tsr.sample()
 """
+
 from .stable_placer import StablePlacer
 
 __all__ = ["StablePlacer"]

@@ -2,27 +2,52 @@ name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [main]
   pull_request:
-    branches: [ master, main ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
 
-    - uses: astral-sh/setup-uv@v2
-      with:
-        version: latest
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
 
-    - name: Install dependencies
-      run: uv sync --extra test
+      - name: Ruff lint
+        run: uv run ruff check .
 
-    - name: Run tests
-      run: uv run pytest tests/ -v --tb=short
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pytest
+        run: uv run pytest tests/ -v
+
+  notify-robot-code:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch integration run
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.ROBOT_CODE_DISPATCH_TOKEN }}
+          repository: personalrobotics/robot-code
+          event-type: sibling-updated
+          client-payload: '{"repo":"${{ github.event.repository.name }}","sha":"${{ github.sha }}"}'

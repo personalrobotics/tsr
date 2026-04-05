@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """StablePlacer: generate stable placement TSRs for objects on a flat surface."""
+
 from __future__ import annotations
 
 from typing import List
@@ -44,14 +48,16 @@ class StablePlacer:
 
     def _bw(self, roll_range=None, pitch_range=None) -> np.ndarray:
         """Build 6×2 Bw: surface extents for xy, z/roll/pitch fixed, yaw free."""
-        bw = np.array([
-            [-self.table_x,  self.table_x],
-            [-self.table_y,  self.table_y],
-            [0.0,            0.0],
-            [0.0,            0.0],
-            [0.0,            0.0],
-            [-np.pi,         np.pi],
-        ])
+        bw = np.array(
+            [
+                [-self.table_x, self.table_x],
+                [-self.table_y, self.table_y],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [-np.pi, np.pi],
+            ]
+        )
         if roll_range is not None:
             bw[3] = roll_range
         if pitch_range is not None:
@@ -65,8 +71,7 @@ class StablePlacer:
         T[2, 3] = float(com_height)
         return T
 
-    def _template(self, name, description, variant, Tw_e, Bw, subject,
-                  stability_margin=None) -> TSRTemplate:
+    def _template(self, name, description, variant, Tw_e, Bw, subject, stability_margin=None) -> TSRTemplate:
         return TSRTemplate(
             T_ref_tsr=np.eye(4),
             Tw_e=Tw_e,
@@ -152,20 +157,19 @@ class StablePlacer:
         # (outward normal of the resting face, COM height, variant label)
         # Each face is listed with its outward normal pointing toward the table.
         candidates = [
-            (np.array([ 0.0,  0.0, -1.0]), lz / 2.0, "-z"),
-            (np.array([ 0.0,  0.0, +1.0]), lz / 2.0, "+z"),
-            (np.array([ 0.0, -1.0,  0.0]), ly / 2.0, "-y"),
-            (np.array([ 0.0, +1.0,  0.0]), ly / 2.0, "+y"),
-            (np.array([-1.0,  0.0,  0.0]), lx / 2.0, "-x"),
-            (np.array([+1.0,  0.0,  0.0]), lx / 2.0, "+x"),
+            (np.array([0.0, 0.0, -1.0]), lz / 2.0, "-z"),
+            (np.array([0.0, 0.0, +1.0]), lz / 2.0, "+z"),
+            (np.array([0.0, -1.0, 0.0]), ly / 2.0, "-y"),
+            (np.array([0.0, +1.0, 0.0]), ly / 2.0, "+y"),
+            (np.array([-1.0, 0.0, 0.0]), lx / 2.0, "-x"),
+            (np.array([+1.0, 0.0, 0.0]), lx / 2.0, "+x"),
         ]
 
         return [
             self._template(
                 name=f"Place box {label}-face down ({subject} on {self.reference})",
                 description=(
-                    f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} face "
-                    f"on {self.reference}. Yaw free."
+                    f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} face on {self.reference}. Yaw free."
                 ),
                 variant=label,
                 Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), com_h),
@@ -191,20 +195,19 @@ class StablePlacer:
         if radius <= 0:
             raise ValueError("radius must be positive")
 
-        return [self._template(
-            name=f"Place sphere ({subject} on {self.reference})",
-            description=(
-                f"Sphere (r={radius:.3f} m) on {self.reference}. "
-                f"All orientations free."
-            ),
-            variant="upright",
-            Tw_e=self._tw_e(np.eye(3), float(radius)),
-            Bw=self._bw(
-                roll_range=np.array([-np.pi, np.pi]),
-                pitch_range=np.array([-np.pi, np.pi]),
-            ),
-            subject=subject,
-        )]
+        return [
+            self._template(
+                name=f"Place sphere ({subject} on {self.reference})",
+                description=(f"Sphere (r={radius:.3f} m) on {self.reference}. All orientations free."),
+                variant="upright",
+                Tw_e=self._tw_e(np.eye(3), float(radius)),
+                Bw=self._bw(
+                    roll_range=np.array([-np.pi, np.pi]),
+                    pitch_range=np.array([-np.pi, np.pi]),
+                ),
+                subject=subject,
+            )
+        ]
 
     def place_torus(
         self,
@@ -278,26 +281,24 @@ class StablePlacer:
             raise ValueError("com must be a length-3 array")
 
         min_margin_rad = float(np.radians(min_margin_deg))
-        poses = sorted(stable_poses_mesh(vertices, com),
-                       key=lambda x: -x[2])  # descending stability margin
+        poses = sorted(stable_poses_mesh(vertices, com), key=lambda x: -x[2])  # descending stability margin
         poses = [p for p in poses if p[2] >= min_margin_rad]
 
         templates = []
         for idx, (R, com_height, margin_rad) in enumerate(poses):
             deg = float(np.degrees(margin_rad))
-            templates.append(self._template(
-                name=(
-                    f"Place mesh face {idx + 1}/{len(poses)} "
-                    f"({subject} on {self.reference}, margin {deg:.1f}°)"
-                ),
-                description=(
-                    f"Mesh resting on stable face {idx + 1} of {len(poses)} "
-                    f"(stability margin {deg:.1f}°) on {self.reference}."
-                ),
-                variant=f"face-{idx + 1}",
-                Tw_e=self._tw_e(R, com_height),
-                Bw=self._bw(),
-                subject=subject,
-                stability_margin=float(margin_rad),
-            ))
+            templates.append(
+                self._template(
+                    name=(f"Place mesh face {idx + 1}/{len(poses)} ({subject} on {self.reference}, margin {deg:.1f}°)"),
+                    description=(
+                        f"Mesh resting on stable face {idx + 1} of {len(poses)} "
+                        f"(stability margin {deg:.1f}°) on {self.reference}."
+                    ),
+                    variant=f"face-{idx + 1}",
+                    Tw_e=self._tw_e(R, com_height),
+                    Bw=self._bw(),
+                    subject=subject,
+                    stability_margin=float(margin_rad),
+                )
+            )
         return templates

@@ -1,7 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
 import numpy as np
 
 from .tsr import TSR
@@ -86,64 +90,68 @@ class TSRTemplate:
     def to_dict(self):
         """Convert this TSRTemplate to a python dict for serialization."""
         result = {
-            'name': self.name,
-            'description': self.description,
-            'task': self.task,
-            'subject': self.subject,
-            'reference': self.reference,
-            'T_ref_tsr': self.T_ref_tsr.tolist(),
-            'Tw_e': self.Tw_e.tolist(),
-            'Bw': self.Bw.tolist(),
+            "name": self.name,
+            "description": self.description,
+            "task": self.task,
+            "subject": self.subject,
+            "reference": self.reference,
+            "T_ref_tsr": self.T_ref_tsr.tolist(),
+            "Tw_e": self.Tw_e.tolist(),
+            "Bw": self.Bw.tolist(),
         }
         if self.variant:
-            result['variant'] = self.variant
+            result["variant"] = self.variant
         if self.preshape is not None:
-            result['preshape'] = self.preshape.tolist()
+            result["preshape"] = self.preshape.tolist()
         if self.stability_margin is not None:
-            result['stability_margin'] = float(self.stability_margin)
+            result["stability_margin"] = float(self.stability_margin)
         return result
 
     @staticmethod
     def from_dict(x):
         """Construct a TSRTemplate from a python dict."""
         preshape = None
-        if 'preshape' in x and x['preshape'] is not None:
-            preshape = np.array(x['preshape'])
+        if "preshape" in x and x["preshape"] is not None:
+            preshape = np.array(x["preshape"])
 
         return TSRTemplate(
-            name=x.get('name', ''),
-            description=x.get('description', ''),
-            task=x['task'],
-            subject=x['subject'],
-            reference=x['reference'],
-            variant=x.get('variant', ''),
-            T_ref_tsr=np.array(x['T_ref_tsr']),
-            Tw_e=np.array(x['Tw_e']),
-            Bw=np.array(x['Bw']),
+            name=x.get("name", ""),
+            description=x.get("description", ""),
+            task=x["task"],
+            subject=x["subject"],
+            reference=x["reference"],
+            variant=x.get("variant", ""),
+            T_ref_tsr=np.array(x["T_ref_tsr"]),
+            Tw_e=np.array(x["Tw_e"]),
+            Bw=np.array(x["Bw"]),
             preshape=preshape,
-            stability_margin=x.get('stability_margin', None),
+            stability_margin=x.get("stability_margin", None),
         )
 
     def to_json(self):
         """Convert this TSRTemplate to a JSON string."""
         import json
+
         return json.dumps(self.to_dict())
 
     @staticmethod
     def from_json(x, *args, **kw_args):
         """Construct a TSRTemplate from a JSON string."""
         import json
+
         x_dict = json.loads(x, *args, **kw_args)
         return TSRTemplate.from_dict(x_dict)
 
     def to_yaml(self):
         """Convert this TSRTemplate to a YAML string."""
         import yaml
+
         return yaml.dump(self.to_dict())
 
     @staticmethod
     def from_yaml(x):
         """Construct a TSRTemplate from a YAML string."""
         import yaml
+
         x_dict = yaml.safe_load(x)
         return TSRTemplate.from_dict(x_dict)

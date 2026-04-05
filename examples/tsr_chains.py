@@ -37,32 +37,36 @@ def main():
     hinge_pose[0:3, 3] = [0.0, 0.0, 0.8]  # Hinge at z=0.8m
 
     # Handle is 60cm from hinge along the door
-    handle_offset = np.array([
-        [1, 0, 0, 0.6],   # Handle 60cm from hinge
-        [0, 1, 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]
-    ])
+    handle_offset = np.array(
+        [
+            [1, 0, 0, 0.6],  # Handle 60cm from hinge
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ]
+    )
 
     # Door can open from 0 to 90 degrees
     hinge_bounds = np.zeros((6, 2))
-    hinge_bounds[5, :] = [0, pi/2]  # yaw: 0 to 90 degrees
+    hinge_bounds[5, :] = [0, pi / 2]  # yaw: 0 to 90 degrees
 
     hinge_tsr = TSR(T0_w=hinge_pose, Tw_e=handle_offset, Bw=hinge_bounds)
 
     # TSR 2: Gripper constraint relative to handle
     # Gripper approaches handle from the front
-    gripper_offset = np.array([
-        [0, 0, 1, -0.05],  # Approach from -z, 5cm offset
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 0, 1]
-    ])
+    gripper_offset = np.array(
+        [
+            [0, 0, 1, -0.05],  # Approach from -z, 5cm offset
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1],
+        ]
+    )
 
     # Small tolerance in gripper position
     gripper_bounds = np.zeros((6, 2))
-    gripper_bounds[2, :] = [-0.01, 0.01]   # z: +/- 1cm
-    gripper_bounds[5, :] = [-pi/6, pi/6]   # yaw: +/- 30 degrees
+    gripper_bounds[2, :] = [-0.01, 0.01]  # z: +/- 1cm
+    gripper_bounds[5, :] = [-pi / 6, pi / 6]  # yaw: +/- 30 degrees
 
     gripper_tsr = TSR(T0_w=np.eye(4), Tw_e=gripper_offset, Bw=gripper_bounds)
 
@@ -76,7 +80,7 @@ def main():
     for i in range(4):
         pose = door_chain.sample()
         pos = pose[0:3, 3]
-        print(f"      {i+1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
+        print(f"      {i + 1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
 
     # Check if a pose satisfies the chain
     print("\n   Containment check:")

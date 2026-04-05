@@ -1,18 +1,25 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
+from unittest import TestCase
+
 import numpy
 from numpy import pi
+
 from tsr.tsr import TSR
-from unittest import TestCase
 
 
 class TsrTest(TestCase):
     def test_sample_xyzrpy(self):
         # Test zero-intervals.
-        Bw = [[0.,   0.],    # X
-              [1.,   1.],    # Y
-              [-1., -1.],    # Z
-              [0.,   0.],    # roll
-              [pi,   pi],    # pitch
-              [-pi, -pi]]  # yaw
+        Bw = [
+            [0.0, 0.0],  # X
+            [1.0, 1.0],  # Y
+            [-1.0, -1.0],  # Z
+            [0.0, 0.0],  # roll
+            [pi, pi],  # pitch
+            [-pi, -pi],
+        ]  # yaw
         tsr = TSR(Bw=Bw)
         s = tsr.sample_xyzrpy()
 
@@ -24,12 +31,14 @@ class TsrTest(TestCase):
         self.assertTrue(numpy.allclose(s, expected, atol=1e-10))
 
         # Test simple non-zero intervals
-        Bw = [[-0.1, 0.1],   # X
-              [-0.1, 0.1],   # Y
-              [-0.1, 0.1],   # Z
-              [-pi/4, pi/4], # roll
-              [-pi/4, pi/4], # pitch
-              [-pi/4, pi/4]] # yaw
+        Bw = [
+            [-0.1, 0.1],  # X
+            [-0.1, 0.1],  # Y
+            [-0.1, 0.1],  # Z
+            [-pi / 4, pi / 4],  # roll
+            [-pi / 4, pi / 4],  # pitch
+            [-pi / 4, pi / 4],
+        ]  # yaw
         tsr = TSR(Bw=Bw)
         s = tsr.sample_xyzrpy()
 
@@ -43,10 +52,10 @@ class TsrTest(TestCase):
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
         Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]    # Allow any yaw rotation
-        
+        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
-        
+
         self.assertIsInstance(tsr.T0_w, numpy.ndarray)
         self.assertIsInstance(tsr.Tw_e, numpy.ndarray)
         self.assertIsInstance(tsr.Bw, numpy.ndarray)
@@ -60,15 +69,15 @@ class TsrTest(TestCase):
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
         Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]    # Allow any yaw rotation
-        
+        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
-        
+
         # Test sampling
         pose = tsr.sample()
         self.assertIsInstance(pose, numpy.ndarray)
         self.assertEqual(pose.shape, (4, 4))
-        
+
         # Test xyzrpy sampling
         xyzrpy = tsr.sample_xyzrpy()
         self.assertIsInstance(xyzrpy, numpy.ndarray)
@@ -80,14 +89,14 @@ class TsrTest(TestCase):
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
         Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]    # Allow any yaw rotation
-        
+        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
-        
+
         # Test valid xyzrpy
         valid_xyzrpy = numpy.array([0.0, 0.0, 0.01, 0.0, 0.0, 0.0])
         self.assertTrue(all(tsr.is_valid(valid_xyzrpy)))
-        
+
         # Test invalid xyzrpy (outside bounds)
         invalid_xyzrpy = numpy.array([0.0, 0.0, 0.1, 0.0, 0.0, 0.0])  # z too large
         self.assertFalse(all(tsr.is_valid(invalid_xyzrpy)))
@@ -98,15 +107,15 @@ class TsrTest(TestCase):
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
         Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]    # Allow any yaw rotation
-        
+        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
-        
+
         # Test contained transform
         contained_transform = numpy.eye(4)
         contained_transform[2, 3] = 0.01  # Within z bounds
         self.assertTrue(tsr.contains(contained_transform))
-        
+
         # Test non-contained transform
         non_contained_transform = numpy.eye(4)
         non_contained_transform[2, 3] = 0.1  # Outside z bounds
@@ -118,7 +127,7 @@ class TsrTest(TestCase):
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
         Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]    # Allow any yaw rotation
+        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -150,14 +159,16 @@ class TsrTest(TestCase):
         Tw_e = numpy.eye(4)
         Tw_e[2, 3] = 0.5  # End-effector 0.5m above TSR frame
 
-        Bw = numpy.array([
-            [-0.1, 0.1],   # X bounds
-            [-0.1, 0.1],   # Y bounds
-            [-0.1, 0.1],   # Z bounds
-            [-pi/4, pi/4], # roll bounds
-            [-pi/4, pi/4], # pitch bounds
-            [-pi/4, pi/4]  # yaw bounds
-        ])
+        Bw = numpy.array(
+            [
+                [-0.1, 0.1],  # X bounds
+                [-0.1, 0.1],  # Y bounds
+                [-0.1, 0.1],  # Z bounds
+                [-pi / 4, pi / 4],  # roll bounds
+                [-pi / 4, pi / 4],  # pitch bounds
+                [-pi / 4, pi / 4],  # yaw bounds
+            ]
+        )
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -179,29 +190,21 @@ class TsrTest(TestCase):
         and returns 0 for contained transforms.
         """
         # Rotated T0_w: TSR frame rotated 90 degrees about Z
-        T0_w = numpy.array([
-            [0, -1, 0, 0.5],
-            [1,  0, 0, 0.5],
-            [0,  0, 1, 0],
-            [0,  0, 0, 1]
-        ], dtype=float)
+        T0_w = numpy.array([[0, -1, 0, 0.5], [1, 0, 0, 0.5], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
 
         # Tw_e with rotation and translation
-        Tw_e = numpy.array([
-            [0, 0, 1, 0.1],
-            [1, 0, 0, 0],
-            [0, 1, 0, 0.05],
-            [0, 0, 0, 1]
-        ], dtype=float)
+        Tw_e = numpy.array([[0, 0, 1, 0.1], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]], dtype=float)
 
-        Bw = numpy.array([
-            [-0.05, 0.05],
-            [-0.05, 0.05],
-            [-0.05, 0.05],
-            [-pi/6, pi/6],
-            [-pi/6, pi/6],
-            [-pi/6, pi/6]
-        ])
+        Bw = numpy.array(
+            [
+                [-0.05, 0.05],
+                [-0.05, 0.05],
+                [-0.05, 0.05],
+                [-pi / 6, pi / 6],
+                [-pi / 6, pi / 6],
+                [-pi / 6, pi / 6],
+            ]
+        )
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -229,28 +232,20 @@ class TsrTest(TestCase):
         - contains(t) == False implies distance(t) > 0
         """
         # Use non-trivial frames to catch frame-handling bugs
-        T0_w = numpy.array([
-            [1, 0, 0, 0.3],
-            [0, 1, 0, -0.2],
-            [0, 0, 1, 0.1],
-            [0, 0, 0, 1]
-        ], dtype=float)
+        T0_w = numpy.array([[1, 0, 0, 0.3], [0, 1, 0, -0.2], [0, 0, 1, 0.1], [0, 0, 0, 1]], dtype=float)
 
-        Tw_e = numpy.array([
-            [0, -1, 0, 0],
-            [1,  0, 0, 0.1],
-            [0,  0, 1, 0],
-            [0,  0, 0, 1]
-        ], dtype=float)
+        Tw_e = numpy.array([[0, -1, 0, 0], [1, 0, 0, 0.1], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
 
-        Bw = numpy.array([
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-            [-pi/4, pi/4],
-            [-pi/4, pi/4],
-            [-pi/4, pi/4]
-        ])
+        Bw = numpy.array(
+            [
+                [-0.1, 0.1],
+                [-0.1, 0.1],
+                [-0.1, 0.1],
+                [-pi / 4, pi / 4],
+                [-pi / 4, pi / 4],
+                [-pi / 4, pi / 4],
+            ]
+        )
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -262,10 +257,12 @@ class TsrTest(TestCase):
             is_contained = tsr.contains(sample_transform)
             distance, _ = tsr.distance(sample_transform)
 
-            self.assertTrue(is_contained,
-                f"Sampled transform should be contained, bw={sample_bw}")
-            self.assertEqual(distance, 0.0,
-                f"Distance should be 0 for contained transform, bw={sample_bw}")
+            self.assertTrue(is_contained, f"Sampled transform should be contained, bw={sample_bw}")
+            self.assertEqual(
+                distance,
+                0.0,
+                f"Distance should be 0 for contained transform, bw={sample_bw}",
+            )
 
         # Test transforms outside the TSR
         outside_transforms = [
@@ -283,32 +280,32 @@ class TsrTest(TestCase):
 
             # If not contained, distance must be > 0
             if not is_contained:
-                self.assertGreater(distance, 0.0,
-                    "Non-contained transform should have positive distance")
+                self.assertGreater(
+                    distance,
+                    0.0,
+                    "Non-contained transform should have positive distance",
+                )
 
     def test_roundtrip_to_transform_to_xyzrpy(self):
         """Test that to_transform and to_xyzrpy are inverses.
 
         This validates the frame transformations are consistent.
         """
-        T0_w = numpy.array([
-            [0, 0, 1, 1.0],
-            [0, 1, 0, 0],
-            [-1, 0, 0, 0.5],
-            [0, 0, 0, 1]
-        ], dtype=float)
+        T0_w = numpy.array([[0, 0, 1, 1.0], [0, 1, 0, 0], [-1, 0, 0, 0.5], [0, 0, 0, 1]], dtype=float)
 
         Tw_e = numpy.eye(4)
         Tw_e[0, 3] = 0.2
 
-        Bw = numpy.array([
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-            [-pi/4, pi/4],
-            [-pi/4, pi/4],
-            [-pi/4, pi/4]
-        ])
+        Bw = numpy.array(
+            [
+                [-0.1, 0.1],
+                [-0.1, 0.1],
+                [-0.1, 0.1],
+                [-pi / 4, pi / 4],
+                [-pi / 4, pi / 4],
+                [-pi / 4, pi / 4],
+            ]
+        )
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -318,8 +315,10 @@ class TsrTest(TestCase):
         recovered_bw = tsr.to_xyzrpy(transform)
 
         numpy.testing.assert_array_almost_equal(
-            original_bw, recovered_bw, decimal=10,
-            err_msg="Round-trip xyzrpy -> transform -> xyzrpy failed"
+            original_bw,
+            recovered_bw,
+            decimal=10,
+            err_msg="Round-trip xyzrpy -> transform -> xyzrpy failed",
         )
 
     def test_outer_interval_bounds(self):
@@ -330,47 +329,65 @@ class TsrTest(TestCase):
         intervals are handled correctly.
         """
         # Outer interval for yaw: values near ±pi (back hemisphere)
-        Bw = numpy.array([
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-            [-pi/4, pi/4],
-            [-pi/4, pi/4],
-            [3*pi/4, -3*pi/4]  # Outer interval: |yaw| > 3*pi/4
-        ])
+        Bw = numpy.array(
+            [
+                [-0.1, 0.1],
+                [-0.1, 0.1],
+                [-0.1, 0.1],
+                [-pi / 4, pi / 4],
+                [-pi / 4, pi / 4],
+                [3 * pi / 4, -3 * pi / 4],  # Outer interval: |yaw| > 3*pi/4
+            ]
+        )
 
         tsr = TSR(Bw=Bw)
 
         # Verify _Bw_cont has correct interval size (pi/2, not negative)
         yaw_interval = tsr._Bw_cont[5, 1] - tsr._Bw_cont[5, 0]
-        self.assertGreater(yaw_interval, 0,
-            "Outer interval should produce positive continuous interval")
-        self.assertAlmostEqual(yaw_interval, pi/2, places=10,
-            msg="Outer interval [3*pi/4, -3*pi/4] should have size pi/2")
+        self.assertGreater(
+            yaw_interval,
+            0,
+            "Outer interval should produce positive continuous interval",
+        )
+        self.assertAlmostEqual(
+            yaw_interval,
+            pi / 2,
+            places=10,
+            msg="Outer interval [3*pi/4, -3*pi/4] should have size pi/2",
+        )
 
         # Test sampling produces values in the outer interval
         for _ in range(10):
             sample = tsr.sample_xyzrpy()
             yaw = sample[5]
-            self.assertTrue(abs(yaw) > 3*pi/4 - 0.01,
-                f"Sampled yaw {yaw} should be in outer interval (|yaw| > 3*pi/4)")
+            self.assertTrue(
+                abs(yaw) > 3 * pi / 4 - 0.01,
+                f"Sampled yaw {yaw} should be in outer interval (|yaw| > 3*pi/4)",
+            )
 
         # Test contains: transform with yaw near pi should be contained
-        valid_bw = numpy.array([0, 0, 0, 0, 0, 0.9*pi])
+        valid_bw = numpy.array([0, 0, 0, 0, 0, 0.9 * pi])
         trans_in = tsr.to_transform(valid_bw)
-        self.assertTrue(tsr.contains(trans_in),
-            "Transform with yaw=0.9*pi should be in outer interval")
+        self.assertTrue(
+            tsr.contains(trans_in),
+            "Transform with yaw=0.9*pi should be in outer interval",
+        )
 
         # Test contains: transform with yaw=0 should NOT be contained
         # (yaw=0 is not in the outer interval [3*pi/4, -3*pi/4])
         trans_yaw0 = numpy.eye(4)
-        self.assertFalse(tsr.contains(trans_yaw0),
-            "Transform with yaw=0 should NOT be in outer interval")
+        self.assertFalse(
+            tsr.contains(trans_yaw0),
+            "Transform with yaw=0 should NOT be in outer interval",
+        )
 
         # Test distance consistency for outer interval
         distance, _ = tsr.distance(trans_in)
-        self.assertEqual(distance, 0.0,
-            "Distance should be 0 for contained transform in outer interval")
+        self.assertEqual(
+            distance,
+            0.0,
+            "Distance should be 0 for contained transform in outer interval",
+        )
 
     def test_rpy_roundtrip_near_singularity(self):
         """Test rot_to_rpy / rpy_to_rot round-trip near pitch = ±pi/2.
@@ -380,26 +397,25 @@ class TsrTest(TestCase):
         consistent rotation matrix round-trip.
         """
         test_pitches = [
-            pi/2 - 1e-6,   # just below singularity
-            pi/2,           # exact singularity
-            pi/2 + 1e-6,   # just above singularity
-            -pi/2 - 1e-6,
-            -pi/2,
-            -pi/2 + 1e-6,
+            pi / 2 - 1e-6,  # just below singularity
+            pi / 2,  # exact singularity
+            pi / 2 + 1e-6,  # just above singularity
+            -pi / 2 - 1e-6,
+            -pi / 2,
+            -pi / 2 + 1e-6,
         ]
         for pitch in test_pitches:
             R = TSR.rpy_to_rot([0.3, pitch, 0.5])
             rpy = TSR.rot_to_rpy(R)
             R2 = TSR.rpy_to_rot(rpy)
-            numpy.testing.assert_allclose(R, R2, atol=1e-6,
-                err_msg=f"RPY round-trip failed at pitch={pitch}")
+            numpy.testing.assert_allclose(R, R2, atol=1e-6, err_msg=f"RPY round-trip failed at pitch={pitch}")
 
     def test_rpy_roundtrip_general(self):
         """Test rot_to_rpy / rpy_to_rot round-trip for general rotations."""
         test_rpys = [
             [0, 0, 0],
-            [pi/4, pi/6, pi/3],
-            [-pi/3, pi/4, -pi/6],
+            [pi / 4, pi / 6, pi / 3],
+            [-pi / 3, pi / 4, -pi / 6],
             [pi, 0, pi],
             [0.1, -0.2, 0.3],
         ]
@@ -407,5 +423,4 @@ class TsrTest(TestCase):
             R = TSR.rpy_to_rot(rpy)
             rpy2 = TSR.rot_to_rpy(R)
             R2 = TSR.rpy_to_rot(rpy2)
-            numpy.testing.assert_allclose(R, R2, atol=1e-10,
-                err_msg=f"RPY round-trip failed for rpy={rpy}")
+            numpy.testing.assert_allclose(R, R2, atol=1e-10, err_msg=f"RPY round-trip failed for rpy={rpy}")

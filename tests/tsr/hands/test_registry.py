@@ -1,17 +1,22 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Tests for HandRegistry."""
+
 import unittest
 
-from tsr.hands import ParallelJawGripper, Robotiq2F140, HandRegistry, default_registry
+from tsr.hands import HandRegistry, ParallelJawGripper, default_registry
 from tsr.template import TSRTemplate
 
 
 class TestHandRegistry(unittest.TestCase):
-
     def setUp(self):
         self.registry = HandRegistry()
 
     def test_register_and_get(self):
-        fn = lambda gripper, **kw: gripper.grasp_cylinder(**kw)
+        def fn(gripper, **kw):
+            return gripper.grasp_cylinder(**kw)
+
         self.registry.register("test_hand", "cylinder", "grasp")(fn)
         self.assertIs(self.registry.get("test_hand", "cylinder", "grasp"), fn)
 
@@ -19,6 +24,7 @@ class TestHandRegistry(unittest.TestCase):
         @self.registry.register("deco_hand", "sphere", "grasp")
         def _gen(gripper, **kw):
             return []
+
         self.assertIs(self.registry.get("deco_hand", "sphere", "grasp"), _gen)
 
     def test_get_missing_raises_key_error(self):
@@ -43,8 +49,8 @@ class TestHandRegistry(unittest.TestCase):
         self.assertIn(("robotiq_2f140", "cylinder", "grasp"), default_registry)
 
     def test_generator_produces_templates(self):
-        gen      = default_registry.get("parallel_jaw", "cylinder", "grasp")
-        gripper  = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
+        gen = default_registry.get("parallel_jaw", "cylinder", "grasp")
+        gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
         templates = gen(gripper, cylinder_radius=0.040, cylinder_height=0.10)
         self.assertEqual(len(templates), 12)  # 4*k with k=3
         for t in templates:

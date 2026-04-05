@@ -1,16 +1,20 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Tests for ParallelJawGripper sphere grasp primitives."""
+
 import unittest
+
 import numpy as np
 
 from tsr.hands import ParallelJawGripper
 
-RADIUS = 0.040   # sphere radius [m]
-FL     = 0.055   # finger length
-MA     = 0.140   # max aperture
+RADIUS = 0.040  # sphere radius [m]
+FL = 0.055  # finger length
+MA = 0.140  # max aperture
 
 
 class TestGraspSphere(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=FL, max_aperture=MA)
         self.templates = self.gripper.grasp_sphere(object_radius=RADIUS)
@@ -18,7 +22,7 @@ class TestGraspSphere(unittest.TestCase):
     # ── Template count ─────────────────────────────────────────────────────
 
     def test_default_k3_returns_3_templates(self):
-        self.assertEqual(len(self.templates), 3)   # k depths, full SO(3) in Bw
+        self.assertEqual(len(self.templates), 3)  # k depths, full SO(3) in Bw
 
     def test_k1_returns_1_template(self):
         ts = self.gripper.grasp_sphere(RADIUS, k=1)
@@ -43,8 +47,7 @@ class TestGraspSphere(unittest.TestCase):
             trans = t.Tw_e[:3, 3]
             ro = np.linalg.norm(trans)
             self.assertGreater(ro, 0)
-            np.testing.assert_allclose(trans / ro, -z_ee, atol=1e-10,
-                                       err_msg=f"z_EE not inward in {t.name}")
+            np.testing.assert_allclose(trans / ro, -z_ee, atol=1e-10, err_msg=f"z_EE not inward in {t.name}")
 
     def test_standoff_within_expected_range(self):
         clearance = self.gripper.clearance_fraction * min(FL, RADIUS)
@@ -63,22 +66,25 @@ class TestGraspSphere(unittest.TestCase):
         """Sphere grasp has no positional freedom — all Bw trans rows fixed."""
         for t in self.templates:
             for row in range(3):
-                self.assertEqual(t.Bw[row, 0], t.Bw[row, 1],
-                                 msg=f"Bw row {row} not fixed in {t.name}")
+                self.assertEqual(
+                    t.Bw[row, 0],
+                    t.Bw[row, 1],
+                    msg=f"Bw row {row} not fixed in {t.name}",
+                )
 
     def test_bw_full_roll_freedom(self):
         for t in self.templates:
-            self.assertAlmostEqual(t.Bw[3, 0], 0.)
+            self.assertAlmostEqual(t.Bw[3, 0], 0.0)
             self.assertAlmostEqual(t.Bw[3, 1], 2 * np.pi)
 
     def test_bw_full_pitch_range(self):
         for t in self.templates:
             self.assertAlmostEqual(t.Bw[4, 0], -np.pi / 2)
-            self.assertAlmostEqual(t.Bw[4, 1],  np.pi / 2)
+            self.assertAlmostEqual(t.Bw[4, 1], np.pi / 2)
 
     def test_bw_full_yaw_freedom(self):
         for t in self.templates:
-            self.assertAlmostEqual(t.Bw[5, 0], 0.)
+            self.assertAlmostEqual(t.Bw[5, 0], 0.0)
             self.assertAlmostEqual(t.Bw[5, 1], 2 * np.pi)
 
     # ── Preshape ──────────────────────────────────────────────────────────
@@ -107,7 +113,7 @@ class TestGraspSphere(unittest.TestCase):
 
     def test_raises_for_nonpositive_radius(self):
         with self.assertRaises(ValueError):
-            self.gripper.grasp_sphere(0.)
+            self.gripper.grasp_sphere(0.0)
 
     def test_large_sphere_raises(self):
         # auto-computed preshape = 2r + clearance > max_aperture → ValueError
@@ -125,9 +131,9 @@ class TestGraspSphere(unittest.TestCase):
     # ── angle_range ───────────────────────────────────────────────────────
 
     def test_custom_angle_range(self):
-        ts = self.gripper.grasp_sphere(RADIUS, angle_range=(0., np.pi))
+        ts = self.gripper.grasp_sphere(RADIUS, angle_range=(0.0, np.pi))
         for t in ts:
-            self.assertAlmostEqual(t.Bw[5, 0], 0.)
+            self.assertAlmostEqual(t.Bw[5, 0], 0.0)
             self.assertAlmostEqual(t.Bw[5, 1], np.pi)
 
 

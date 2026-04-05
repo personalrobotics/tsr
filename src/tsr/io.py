@@ -1,9 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """TSR Template I/O utilities for YAML file management."""
 
 import logging
-import yaml
 from pathlib import Path
 from typing import List, Union
+
+import yaml
 
 from .template import TSRTemplate
 
@@ -14,13 +18,13 @@ def save_template(template: TSRTemplate, filepath: Union[str, Path]) -> None:
     """Save a single TSR template to a YAML file."""
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         yaml.dump(template.to_dict(), f, default_flow_style=False, sort_keys=False)
 
 
 def load_template(filepath: Union[str, Path]) -> TSRTemplate:
     """Load a single TSR template from a YAML file."""
-    with open(filepath, 'r') as f:
+    with open(filepath, "r") as f:
         data = yaml.safe_load(f)
     return TSRTemplate.from_dict(data)
 
@@ -30,22 +34,20 @@ def save_template_collection(templates: List[TSRTemplate], filepath: Union[str, 
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
     data = [template.to_dict() for template in templates]
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 def load_template_collection(filepath: Union[str, Path]) -> List[TSRTemplate]:
     """Load multiple TSR templates from a single YAML file."""
-    with open(filepath, 'r') as f:
+    with open(filepath, "r") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, list):
         raise ValueError(f"Expected list of templates in {filepath}")
     return [TSRTemplate.from_dict(d) for d in data]
 
 
-def load_templates_from_directory(
-    directory: Union[str, Path], pattern: str = "*.yaml"
-) -> List[TSRTemplate]:
+def load_templates_from_directory(directory: Union[str, Path], pattern: str = "*.yaml") -> List[TSRTemplate]:
     """Load all TSR templates from a directory."""
     directory = Path(directory)
     templates = []
@@ -89,6 +91,7 @@ def load_package_templates_by_category(category: str) -> List[TSRTemplate]:
 # Backwards compatibility
 class TemplateIO:
     """Deprecated: use module-level functions directly."""
+
     save_template = staticmethod(save_template)
     load_template = staticmethod(load_template)
     save_template_collection = staticmethod(save_template_collection)

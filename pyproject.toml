@@ -7,19 +7,19 @@ name = "tsr"
 version = "1.0.0"
 description = "Python package for using Task Space Regions"
 readme = "README.md"
-license = {text = "BSD"}
+license = "MIT"
 authors = [
-    {name = "Siddhartha Srinivasa", email = "siddh@cs.washington.edu"}
+    {name = "Siddhartha Srinivasa", email = "siddhartha.srinivasa@gmail.com"}
 ]
 maintainers = [
-    {name = "Siddhartha Srinivasa", email = "siddh@cs.washington.edu"}
+    {name = "Siddhartha Srinivasa", email = "siddhartha.srinivasa@gmail.com"}
 ]
 requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD License",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering",
@@ -46,7 +46,8 @@ viz = [
 
 [project.urls]
 Homepage = "https://github.com/personalrobotics/tsr"
-Repository = "https://github.com/personalrobotics/tsr.git"
+Repository = "https://github.com/personalrobotics/tsr"
+Issues = "https://github.com/personalrobotics/tsr/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsr"]
@@ -83,4 +84,14 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
-] 
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/tsr/__init__.py" = ["F401"]
+"src/tsr/**/__init__.py" = ["F401"]

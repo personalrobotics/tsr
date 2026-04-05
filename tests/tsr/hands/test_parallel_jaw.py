@@ -1,17 +1,21 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Siddhartha Srinivasa
+
 """Tests for ParallelJawGripper."""
+
 import unittest
+
 import numpy as np
 from numpy import pi
 
 from tsr.hands import ParallelJawGripper
 from tsr.template import TSRTemplate
 
-R = 0.040   # cylinder radius
-H = 0.120   # cylinder height
+R = 0.040  # cylinder radius
+H = 0.120  # cylinder height
 
 
 class TestParallelJawGripperCylinderSide(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -25,13 +29,11 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
         self.assertEqual(len(self.gripper.grasp_cylinder_side(R, H, k=2)), 4)
 
     def test_preshape_too_small_returns_empty(self):
-        self.assertEqual(
-            self.gripper.grasp_cylinder_side(R, H, preshape=2 * R - 0.001), [])
+        self.assertEqual(self.gripper.grasp_cylinder_side(R, H, preshape=2 * R - 0.001), [])
 
     def test_preshape_exceeds_aperture_raises(self):
         with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_side(R, H,
-                                             preshape=self.gripper.max_aperture + 0.01)
+            self.gripper.grasp_cylinder_side(R, H, preshape=self.gripper.max_aperture + 0.01)
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
@@ -43,7 +45,7 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
 
     def test_default_preshape_is_2r_plus_clearance(self):
         clearance = self.gripper.clearance_fraction * min(self.gripper.finger_length, R)
-        expected  = 2 * R + clearance
+        expected = 2 * R + clearance
         templates = self.gripper.grasp_cylinder_side(R, H)
         np.testing.assert_allclose(templates[0].preshape[0], expected)
 
@@ -61,7 +63,7 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
     def test_bw_shape_and_yaw_free(self):
         for t in self.gripper.grasp_cylinder_side(R, H):
             self.assertEqual(t.Bw.shape, (6, 2))
-            self.assertAlmostEqual(t.Bw[5, 0], 0.)
+            self.assertAlmostEqual(t.Bw[5, 0], 0.0)
             self.assertAlmostEqual(t.Bw[5, 1], 2 * pi)
             for row in (0, 1, 3, 4):
                 self.assertEqual(t.Bw[row, 0], t.Bw[row, 1])
@@ -75,9 +77,9 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
     def test_names_contain_depth_and_roll_labels(self):
         names = [t.name for t in self.gripper.grasp_cylinder_side(R, H)]
         self.assertTrue(any("shallow" in n for n in names))
-        self.assertTrue(any("mid"     in n for n in names))
-        self.assertTrue(any("deep"    in n for n in names))
-        self.assertTrue(any("roll 0°"   in n for n in names))
+        self.assertTrue(any("mid" in n for n in names))
+        self.assertTrue(any("deep" in n for n in names))
+        self.assertTrue(any("roll 0°" in n for n in names))
         self.assertTrue(any("roll 180°" in n for n in names))
 
     def test_instantiate_and_sample_produces_valid_pose(self):
@@ -98,7 +100,6 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
 
 
 class TestParallelJawGripperCylinderTop(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -112,13 +113,11 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
         self.assertEqual(len(self.gripper.grasp_cylinder_top(R, H, k=2)), 2)
 
     def test_preshape_too_small_returns_empty(self):
-        self.assertEqual(
-            self.gripper.grasp_cylinder_top(R, H, preshape=2 * R - 0.001), [])
+        self.assertEqual(self.gripper.grasp_cylinder_top(R, H, preshape=2 * R - 0.001), [])
 
     def test_preshape_exceeds_aperture_raises(self):
         with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_top(R, H,
-                                            preshape=self.gripper.max_aperture + 0.01)
+            self.gripper.grasp_cylinder_top(R, H, preshape=self.gripper.max_aperture + 0.01)
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
@@ -127,7 +126,7 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
     def test_bw_shape_and_yaw_free(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
             self.assertEqual(t.Bw.shape, (6, 2))
-            self.assertAlmostEqual(t.Bw[5, 0], 0.)
+            self.assertAlmostEqual(t.Bw[5, 0], 0.0)
             self.assertAlmostEqual(t.Bw[5, 1], 2 * pi)
             for row in (0, 1, 2, 3, 4):
                 self.assertEqual(t.Bw[row, 0], t.Bw[row, 1])
@@ -140,7 +139,7 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
 
     def test_z_axis_points_down(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., 0., -1.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
 
     def test_tsr_origin_at_cylinder_top(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
@@ -153,8 +152,8 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
     def test_names_contain_depth_labels(self):
         names = [t.name for t in self.gripper.grasp_cylinder_top(R, H)]
         self.assertTrue(any("shallow" in n for n in names))
-        self.assertTrue(any("mid"     in n for n in names))
-        self.assertTrue(any("deep"    in n for n in names))
+        self.assertTrue(any("mid" in n for n in names))
+        self.assertTrue(any("deep" in n for n in names))
 
     def test_instantiate_and_sample_produces_valid_pose(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
@@ -166,7 +165,6 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
 
 
 class TestParallelJawGripperCylinderBottom(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -177,13 +175,11 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
         self.assertEqual(len(self.gripper.grasp_cylinder_bottom(R, H, k=1)), 1)
 
     def test_preshape_too_small_returns_empty(self):
-        self.assertEqual(
-            self.gripper.grasp_cylinder_bottom(R, H, preshape=2 * R - 0.001), [])
+        self.assertEqual(self.gripper.grasp_cylinder_bottom(R, H, preshape=2 * R - 0.001), [])
 
     def test_preshape_exceeds_aperture_raises(self):
         with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_bottom(R, H,
-                                               preshape=self.gripper.max_aperture + 0.01)
+            self.gripper.grasp_cylinder_bottom(R, H, preshape=self.gripper.max_aperture + 0.01)
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
@@ -192,7 +188,7 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
     def test_bw_shape_and_yaw_free(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
             self.assertEqual(t.Bw.shape, (6, 2))
-            self.assertAlmostEqual(t.Bw[5, 0], 0.)
+            self.assertAlmostEqual(t.Bw[5, 0], 0.0)
             self.assertAlmostEqual(t.Bw[5, 1], 2 * pi)
             for row in (0, 1, 2, 3, 4):
                 self.assertEqual(t.Bw[row, 0], t.Bw[row, 1])
@@ -205,7 +201,7 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
 
     def test_z_axis_points_up(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0., 0., 1.], atol=1e-10)
+            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
 
     def test_tsr_origin_at_z_zero(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
@@ -218,8 +214,8 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
     def test_names_contain_depth_labels(self):
         names = [t.name for t in self.gripper.grasp_cylinder_bottom(R, H)]
         self.assertTrue(any("shallow" in n for n in names))
-        self.assertTrue(any("mid"     in n for n in names))
-        self.assertTrue(any("deep"    in n for n in names))
+        self.assertTrue(any("mid" in n for n in names))
+        self.assertTrue(any("deep" in n for n in names))
 
     def test_instantiate_and_sample_produces_valid_pose(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
@@ -231,7 +227,6 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
 
 
 class TestParallelJawGripperCylinderCombined(unittest.TestCase):
-
     def setUp(self):
         self.gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
@@ -247,8 +242,7 @@ class TestParallelJawGripperCylinderCombined(unittest.TestCase):
             self.assertIsInstance(t, TSRTemplate)
 
     def test_preshape_too_small_returns_empty(self):
-        self.assertEqual(
-            self.gripper.grasp_cylinder(R, H, preshape=2 * R - 0.001), [])
+        self.assertEqual(self.gripper.grasp_cylinder(R, H, preshape=2 * R - 0.001), [])
 
     def test_instantiate_and_sample_all_valid(self):
         for t in self.gripper.grasp_cylinder(R, H):
@@ -258,9 +252,8 @@ class TestParallelJawGripperCylinderCombined(unittest.TestCase):
 
 
 class TestParallelJawGripperAngleRange(unittest.TestCase):
-
     def test_restricted_angle_range(self):
         gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
-        for t in gripper.grasp_cylinder_side(R, H, angle_range=(0., np.pi)):
-            self.assertAlmostEqual(t.Bw[5, 0], 0.)
+        for t in gripper.grasp_cylinder_side(R, H, angle_range=(0.0, np.pi)):
+            self.assertAlmostEqual(t.Bw[5, 0], 0.0)
             self.assertAlmostEqual(t.Bw[5, 1], np.pi)
