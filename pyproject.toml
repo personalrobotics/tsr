@@ -47,6 +47,11 @@ viz = [
     "Pillow>=10.3.0",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/personalrobotics/tsr"
 Repository = "https://github.com/personalrobotics/tsr"
