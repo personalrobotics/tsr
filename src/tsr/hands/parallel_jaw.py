@@ -1117,27 +1117,41 @@ class Robotiq2F85(ParallelJawGripper):
     """Robotiq 2F-85 parallel gripper.
 
     Fixed hardware parameters measured from mujoco_menagerie's
-    ``robotiq_2f85/2f85.xml`` model:
+    ``robotiq_2f85/2f85.xml`` via the disembodied-hand visualizer
+    (``mj_manipulator/scripts/visualize_grasps.py``), which walks each
+    collision geom's AABB along the approach axis:
 
-    - ``FINGER_LENGTH = 0.129 m`` — distance from base_mount origin
-      (palm) to the pad-contact midpoint when fully closed, measured
-      along the approach direction. The 2F-85 linkage pulls the pads
-      slightly further out when closed than when open, so we use the
-      closed geometry — that's where the fingertips actually grasp.
-    - ``MAX_APERTURE = 0.098 m`` — pad-to-pad distance when fully
-      open. The real hardware nominally has an 85 mm span; the
-      menagerie model's soft joint limits let the linkage extend a
-      bit past that at the mechanical stop, which is fine for our
-      TSR validation (preshape ≤ MAX_APERTURE).
+    - ``FINGER_LENGTH = 0.059 m`` — distance from the **forward edge of
+      the base housing** (the TSR "palm") to the pad-contact midpoint.
+      The 2F-85's ``base`` body is a chunky housing that extends ~94 mm
+      past the base_mount plate along the approach axis — the
+      mechanism (drivers/couplers/spring links) sits inside that block.
+      FINGER_LENGTH must be measured *from the forward edge of the
+      housing*, not from base_mount, so the TSR's "everything behind
+      the palm is clear space" assumption holds.
+    - ``MAX_APERTURE = 0.085 m`` — inner-face to inner-face distance
+      between the pads when fully open. This is what the TSR actually
+      needs for ``preshape ≤ MAX_APERTURE`` (the object has to fit
+      *between* the inner faces, not between outer edges). Old
+      ``0.098 m`` was outer-face to outer-face and would claim the
+      gripper fits objects it can't.
 
     Outputs poses in the canonical TSR EE frame (z=approach,
-    y=finger-opening, x=palm normal). Use ``grasp_site`` at the
-    gripper's base_mount origin as the arm's ``ee_site`` so IK
-    targets the canonical frame directly.
+    y=finger-opening, x=palm normal). The arm's ``ee_site`` (a.k.a.
+    ``grasp_site``) must be placed at the forward edge of the base
+    housing — i.e., at ``base_mount + [0, 0, 0.094]`` in the 2F-85
+    frame, before the -90° about-z alignment rotation. See
+    ``mj_manipulator/demos/iiwa14_setup.py`` for the canonical attach.
     """
 
-    FINGER_LENGTH = 0.129
-    MAX_APERTURE = 0.098
+    FINGER_LENGTH = 0.059
+    MAX_APERTURE = 0.085
+
+    # Distance from base_mount origin to the TSR palm along the
+    # approach axis. Callers placing a grasp_site in an MjSpec should
+    # offset it by this value (plus ``base_mount.pos``) so the arm's
+    # ee_site lands on the TSR palm, not inside the housing.
+    PALM_OFFSET_FROM_BASE_MOUNT = 0.094
 
     def __init__(self):
         super().__init__(
