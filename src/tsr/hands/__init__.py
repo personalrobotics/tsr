@@ -16,12 +16,13 @@ Usage::
 """
 
 from .base import GripperBase
-from .parallel_jaw import FrankaHand, ParallelJawGripper, Robotiq2F140
+from .parallel_jaw import FrankaHand, ParallelJawGripper, Robotiq2F85, Robotiq2F140
 from .registry import HandRegistry, default_registry
 
 __all__ = [
     "GripperBase",
     "ParallelJawGripper",
+    "Robotiq2F85",
     "Robotiq2F140",
     "FrankaHand",
     "HandRegistry",

@@ -1113,6 +1113,39 @@ class Robotiq2F140(ParallelJawGripper):
         )
 
 
+class Robotiq2F85(ParallelJawGripper):
+    """Robotiq 2F-85 parallel gripper.
+
+    Fixed hardware parameters measured from mujoco_menagerie's
+    ``robotiq_2f85/2f85.xml`` model:
+
+    - ``FINGER_LENGTH = 0.129 m`` — distance from base_mount origin
+      (palm) to the pad-contact midpoint when fully closed, measured
+      along the approach direction. The 2F-85 linkage pulls the pads
+      slightly further out when closed than when open, so we use the
+      closed geometry — that's where the fingertips actually grasp.
+    - ``MAX_APERTURE = 0.098 m`` — pad-to-pad distance when fully
+      open. The real hardware nominally has an 85 mm span; the
+      menagerie model's soft joint limits let the linkage extend a
+      bit past that at the mechanical stop, which is fine for our
+      TSR validation (preshape ≤ MAX_APERTURE).
+
+    Outputs poses in the canonical TSR EE frame (z=approach,
+    y=finger-opening, x=palm normal). Use ``grasp_site`` at the
+    gripper's base_mount origin as the arm's ``ee_site`` so IK
+    targets the canonical frame directly.
+    """
+
+    FINGER_LENGTH = 0.129
+    MAX_APERTURE = 0.098
+
+    def __init__(self):
+        super().__init__(
+            finger_length=self.FINGER_LENGTH,
+            max_aperture=self.MAX_APERTURE,
+        )
+
+
 class FrankaHand(ParallelJawGripper):
     """Franka Emika Panda hand (parallel jaw gripper).
 
