@@ -45,8 +45,14 @@ class TestHandRegistry(unittest.TestCase):
     def test_default_registry_has_parallel_jaw(self):
         self.assertIn(("parallel_jaw", "cylinder", "grasp"), default_registry)
 
-    def test_default_registry_has_robotiq(self):
+    def test_default_registry_has_robotiq_2f140(self):
         self.assertIn(("robotiq_2f140", "cylinder", "grasp"), default_registry)
+
+    def test_default_registry_has_robotiq_2f85(self):
+        self.assertIn(("robotiq_2f85", "cylinder", "grasp"), default_registry)
+        self.assertIn(("robotiq_2f85", "box", "grasp"), default_registry)
+        self.assertIn(("robotiq_2f85", "sphere", "grasp"), default_registry)
+        self.assertIn(("robotiq_2f85", "torus", "grasp"), default_registry)
 
     def test_generator_produces_templates(self):
         gen = default_registry.get("parallel_jaw", "cylinder", "grasp")

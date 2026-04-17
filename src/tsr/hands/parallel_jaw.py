@@ -1113,6 +1113,53 @@ class Robotiq2F140(ParallelJawGripper):
         )
 
 
+class Robotiq2F85(ParallelJawGripper):
+    """Robotiq 2F-85 parallel gripper.
+
+    Fixed hardware parameters measured from mujoco_menagerie's
+    ``robotiq_2f85/2f85.xml`` via the disembodied-hand visualizer
+    (``mj_manipulator/scripts/visualize_grasps.py``), which walks each
+    collision geom's AABB along the approach axis:
+
+    - ``FINGER_LENGTH = 0.059 m`` — distance from the **forward edge of
+      the base housing** (the TSR "palm") to the pad-contact midpoint.
+      The 2F-85's ``base`` body is a chunky housing that extends ~94 mm
+      past the base_mount plate along the approach axis — the
+      mechanism (drivers/couplers/spring links) sits inside that block.
+      FINGER_LENGTH must be measured *from the forward edge of the
+      housing*, not from base_mount, so the TSR's "everything behind
+      the palm is clear space" assumption holds.
+    - ``MAX_APERTURE = 0.085 m`` — inner-face to inner-face distance
+      between the pads when fully open. This is what the TSR actually
+      needs for ``preshape ≤ MAX_APERTURE`` (the object has to fit
+      *between* the inner faces, not between outer edges). Old
+      ``0.098 m`` was outer-face to outer-face and would claim the
+      gripper fits objects it can't.
+
+    Outputs poses in the canonical TSR EE frame (z=approach,
+    y=finger-opening, x=palm normal). The arm's ``ee_site`` (a.k.a.
+    ``grasp_site``) must be placed at the forward edge of the base
+    housing — i.e., at ``base_mount + [0, 0, 0.094]`` in the 2F-85
+    frame, before the -90° about-z alignment rotation. See
+    ``mj_manipulator/demos/iiwa14_setup.py`` for the canonical attach.
+    """
+
+    FINGER_LENGTH = 0.059
+    MAX_APERTURE = 0.085
+
+    # Distance from base_mount origin to the TSR palm along the
+    # approach axis. Callers placing a grasp_site in an MjSpec should
+    # offset it by this value (plus ``base_mount.pos``) so the arm's
+    # ee_site lands on the TSR palm, not inside the housing.
+    PALM_OFFSET_FROM_BASE_MOUNT = 0.094
+
+    def __init__(self):
+        super().__init__(
+            finger_length=self.FINGER_LENGTH,
+            max_aperture=self.MAX_APERTURE,
+        )
+
+
 class FrankaHand(ParallelJawGripper):
     """Franka Emika Panda hand (parallel jaw gripper).
 
