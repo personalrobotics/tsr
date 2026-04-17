@@ -1163,19 +1163,35 @@ class Robotiq2F85(ParallelJawGripper):
 class FrankaHand(ParallelJawGripper):
     """Franka Emika Panda hand (parallel jaw gripper).
 
-    Fixed hardware parameters derived from the menagerie hand.xml model:
-      finger_length = 44.5 mm  (fingertip pad centre from finger-joint origin)
-      max_aperture  =  80 mm   (2 × 40 mm joint range)
+    Fixed hardware parameters measured from the menagerie ``hand.xml``
+    model via ``mj_manipulator/scripts/validate_gripper.py``, which walks
+    each collision geom's AABB along the approach axis:
+
+    - ``FINGER_LENGTH = 0.037 m`` — distance from the **forward edge of
+      the hand body** (the TSR "palm") to the pad-contact midpoint.
+      The menagerie ``hand`` body extends 16.9 mm past the finger-joint
+      origin along the approach axis (the metal collar around the
+      finger mounts). ``FINGER_LENGTH`` must be measured from *that*
+      forward edge so the TSR's "everything behind the palm is clear
+      space" assumption holds — same failure mode that bit the 2F-85.
+    - ``MAX_APERTURE = 0.080 m`` — 2 × 40 mm joint range. Unchanged.
 
     The canonical EE frame (z=approach, y=finger-opening, x=palm normal)
-    matches the Franka hand body axes directly — the ``add_franka_ee_site``
-    helper in ``mj_manipulator.arms.franka`` places a ``grasp_site`` at the
-    finger-joint origin (palm) with identity orientation. Use that site as the
-    arm's ``ee_site`` so IK targets the canonical frame directly.
+    matches the Franka hand body axes directly. The ``add_franka_ee_site``
+    helper in ``mj_manipulator.arms.franka`` places a ``grasp_site`` at
+    ``hand + [0, 0, 0.0753]`` (= finger-joint origin + 17 mm forward)
+    with identity orientation. Use that site as the arm's ``ee_site``.
     """
 
-    FINGER_LENGTH = 0.054  # fingertip (pad tip) from finger-joint origin [m]
+    FINGER_LENGTH = 0.037  # palm (housing forward edge) → pad-mid [m]
     MAX_APERTURE = 0.080  # 2 × 40 mm joint range [m]
+
+    # Distance from the ``hand`` body origin to the TSR palm along the
+    # approach axis. Callers placing a grasp_site in an MjSpec should
+    # offset it by ``finger_joint_offset + PALM_OFFSET_FROM_HAND``.
+    # For menagerie hand.xml, finger_joint_offset = 0.0584 m, so the
+    # canonical grasp_site position is hand + [0, 0, 0.0753].
+    PALM_OFFSET_FROM_HAND = 0.0753
 
     def __init__(self):
         super().__init__(
