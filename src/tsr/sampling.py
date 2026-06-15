@@ -8,8 +8,8 @@ from typing import List, Optional, Sequence
 import numpy as np
 from numpy import pi
 
+from .core import TSR
 from .template import TSRTemplate
-from .tsr import TSR
 
 
 def _interval_sum(Bw: np.ndarray) -> float:

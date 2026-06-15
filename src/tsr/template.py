@@ -8,7 +8,7 @@ from typing import Optional
 
 import numpy as np
 
-from .tsr import TSR
+from .core import TSR
 
 
 @dataclass(frozen=True)
