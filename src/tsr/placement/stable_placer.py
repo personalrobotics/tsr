@@ -8,9 +8,10 @@ from __future__ import annotations
 from typing import List
 
 import numpy as np
+from gafropy import Motor, Rotor
 
 from ..template import TSRTemplate
-from ._stable_poses import _rotation_to_align, stable_poses_mesh
+from ._stable_poses import _rotor_to_align, stable_poses_mesh
 
 
 class StablePlacer:
@@ -47,7 +48,14 @@ class StablePlacer:
     # ------------------------------------------------------------------
 
     def _bw(self, roll_range=None, pitch_range=None) -> np.ndarray:
-        """Build 6×2 Bw: surface extents for xy, z/roll/pitch fixed, yaw free."""
+        """Build 6×2 Bw in split coords [tx,ty,tz,b12,b13,b23].
+
+        Surface extents for xy; tz and the in-plane rotor-bivector axes (b12,
+        b13) fixed; b23 (rotation about the surface normal, i.e. free "yaw") is
+        unbounded. ``roll_range`` / ``pitch_range`` open the b12 / b13 bivector
+        axes (small tilts about x / y); for small angles these coincide with the
+        intuitive roll / pitch.
+        """
         bw = np.array(
             [
                 [-self.table_x, self.table_x],
@@ -64,16 +72,13 @@ class StablePlacer:
             bw[4] = pitch_range
         return bw
 
-    def _tw_e(self, R: np.ndarray, com_height: float) -> np.ndarray:
-        """Build 4×4 Tw_e from rotation R and COM height above the surface."""
-        T = np.eye(4)
-        T[:3, :3] = R
-        T[2, 3] = float(com_height)
-        return T
+    def _tw_e(self, rotor: Rotor, com_height: float) -> Motor:
+        """Build Tw_e Motor from a rotation ``Rotor`` and COM height above the surface."""
+        return Motor.from_translation_rotor(0.0, 0.0, float(com_height), rotor)
 
     def _template(self, name, description, variant, Tw_e, Bw, subject, stability_margin=None) -> TSRTemplate:
         return TSRTemplate(
-            T_ref_tsr=np.eye(4),
+            T_ref_tsr=Motor.from_translation(0.0, 0.0, 0.0),
             Tw_e=Tw_e,
             Bw=Bw,
             task="place",
@@ -123,7 +128,7 @@ class StablePlacer:
                     f"resting on {label} face on {self.reference}. Yaw free."
                 ),
                 variant=label,
-                Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), cylinder_height / 2.0),
+                Tw_e=self._tw_e(_rotor_to_align(n, _neg_z), cylinder_height / 2.0),
                 Bw=self._bw(),
                 subject=subject,
             )
@@ -172,7 +177,7 @@ class StablePlacer:
                     f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} face on {self.reference}. Yaw free."
                 ),
                 variant=label,
-                Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), com_h),
+                Tw_e=self._tw_e(_rotor_to_align(n, _neg_z), com_h),
                 Bw=self._bw(),
                 subject=subject,
             )
@@ -200,7 +205,7 @@ class StablePlacer:
                 name=f"Place sphere ({subject} on {self.reference})",
                 description=(f"Sphere (r={radius:.3f} m) on {self.reference}. All orientations free."),
                 variant="upright",
-                Tw_e=self._tw_e(np.eye(3), float(radius)),
+                Tw_e=self._tw_e(Rotor.Unit(), float(radius)),
                 Bw=self._bw(
                     roll_range=np.array([-np.pi, np.pi]),
                     pitch_range=np.array([-np.pi, np.pi]),
@@ -245,7 +250,7 @@ class StablePlacer:
                     f"flat, {label} face down on {self.reference}. Yaw free."
                 ),
                 variant=label,
-                Tw_e=self._tw_e(_rotation_to_align(n, _neg_z), float(minor_radius)),
+                Tw_e=self._tw_e(_rotor_to_align(n, _neg_z), float(minor_radius)),
                 Bw=self._bw(),
                 subject=subject,
             )
@@ -285,7 +290,7 @@ class StablePlacer:
         poses = [p for p in poses if p[2] >= min_margin_rad]
 
         templates = []
-        for idx, (R, com_height, margin_rad) in enumerate(poses):
+        for idx, (rotor, com_height, margin_rad) in enumerate(poses):
             deg = float(np.degrees(margin_rad))
             templates.append(
                 self._template(
@@ -295,7 +300,7 @@ class StablePlacer:
                         f"(stability margin {deg:.1f}°) on {self.reference}."
                     ),
                     variant=f"face-{idx + 1}",
-                    Tw_e=self._tw_e(R, com_height),
+                    Tw_e=self._tw_e(rotor, com_height),
                     Bw=self._bw(),
                     subject=subject,
                     stability_margin=float(margin_rad),

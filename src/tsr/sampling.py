@@ -139,19 +139,23 @@ def choose_tsr(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -
     return tsrs[choose_tsr_index(tsrs, rng)]
 
 
-def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -> np.ndarray:
-    """Weighted-select a TSR and return a sampled 4×4 transform.
+def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None):
+    """Weighted-select a TSR and return a sampled transform (gafropy ``Motor``).
 
     This function combines TSR selection and sampling into a single operation.
     It first selects a TSR using weighted random sampling (based on volume),
     then samples a pose from that TSR.
+
+    ``Bw`` rows are ``[tx, ty, tz, b12, b13, b23]``: a translation box plus a
+    rotor-bivector box (axis*angle). ``[-pi, pi]`` on a bivector row is a full
+    turn about that axis.
 
     Args:
         tsrs: Sequence of TSR objects
         rng: Optional random number generator. If None, uses default RNG.
 
     Returns:
-        4×4 transformation matrix representing a valid pose from one of the TSRs
+        A ``Motor`` representing a valid pose from one of the TSRs.
 
     Examples:
         >>> # Create multiple TSRs for different grasp approaches
@@ -162,10 +166,8 @@ def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = N
         >>>
         >>> # Sample from multiple TSRs
         >>> pose = sample_from_tsrs([side_tsr, top_tsr])
-        >>> pose.shape
+        >>> pose.to_transformation_matrix().shape
         (4, 4)
-        >>> np.allclose(pose[3, :], [0, 0, 0, 1])  # Valid transform
-        True
     """
     return choose_tsr(tsrs, rng).sample()
 
@@ -211,7 +213,7 @@ def sample_from_templates(
     templates: Sequence["TSRTemplate"],
     T_ref_world: np.ndarray,
     rng: Optional[np.random.Generator] = None,
-) -> np.ndarray:
+):
     """Instantiate templates, weighted-select one TSR, and sample a transform.
 
     This function combines template instantiation, TSR selection, and sampling
@@ -224,7 +226,7 @@ def sample_from_templates(
         rng: Optional random number generator. If None, uses default RNG.
 
     Returns:
-        4×4 transformation matrix representing a valid pose from one of the templates
+        A ``Motor`` representing a valid pose from one of the templates.
 
     Examples:
         >>> # Create templates for different grasp approaches
@@ -242,10 +244,8 @@ def sample_from_templates(
         >>> # Sample from templates
         >>> object_pose = np.array([[1,0,0,0.5], [0,1,0,0], [0,0,1,0.3], [0,0,0,1]])
         >>> pose = sample_from_templates([side_template, top_template], object_pose)
-        >>> pose.shape
+        >>> pose.to_transformation_matrix().shape
         (4, 4)
-        >>> np.allclose(pose[3, :], [0, 0, 0, 1])  # Valid transform
-        True
     """
     tsrs = instantiate_templates(templates, T_ref_world)
     return sample_from_tsrs(tsrs, rng)

@@ -13,7 +13,6 @@ Usage:
     from tsr import sample_from_tsrs
 """
 
-# Core math
 # Template I/O
 from .io import (
     get_package_templates,
@@ -25,6 +24,9 @@ from .io import (
     save_template,
     save_template_collection,
 )
+
+# Constraints
+from .constraints import Constraint, PlaneConstraint, SphereConstraint
 
 # Placement
 from .placement import StablePlacer

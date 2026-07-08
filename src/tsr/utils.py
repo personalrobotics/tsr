@@ -4,6 +4,8 @@
 import numpy as np
 from numpy import pi
 
+from gafropy import Motor
+
 EPSILON = 0.001
 
 
@@ -23,57 +25,40 @@ def wrap_to_interval(angles: np.ndarray, lower: np.ndarray = None) -> np.ndarray
     return (angles - lower) % (2 * pi) + lower
 
 
-def rotation_angle(R: np.ndarray) -> float:
-    """
-    Compute the angle of rotation for a rotation matrix.
-
-    The rotation angle θ satisfies: trace(R) = 1 + 2*cos(θ)
-    Therefore: θ = arccos((trace(R) - 1) / 2)
-
-    Args:
-        R: 3x3 rotation matrix
-
-    Returns:
-        angle: rotation angle in radians [0, π]
-    """
-    # Compute trace and clamp to valid range for arccos
-    trace = np.trace(R)
-    # trace = 1 + 2*cos(θ), so cos(θ) = (trace - 1) / 2
-    cos_angle = (trace - 1.0) / 2.0
-    # Clamp to [-1, 1] to handle numerical errors
-    cos_angle = np.clip(cos_angle, -1.0, 1.0)
-    return np.arccos(cos_angle)
-
-
-def geodesic_error(t1: np.ndarray, t2: np.ndarray) -> np.ndarray:
+def geodesic_error(t1, t2) -> np.ndarray:
     """
     Compute the geodesic error between two transforms on SE(3).
 
     The error is computed as:
     - Translation error: the Euclidean distance between positions
-    - Rotation error: the angle of the relative rotation R1^T * R2
+    - Rotation error: the angle of the relative rotation, taken from the rotor
+      of the relative ``Motor`` (m1^-1 * m2).
 
     Args:
-        t1: first transform (4x4)
-        t2: second transform (4x4)
+        t1: first transform (Motor or 4x4 matrix)
+        t2: second transform (Motor or 4x4 matrix)
 
     Returns:
         error: 4-vector [dx, dy, dz, rotation_angle]
                where dx, dy, dz are in meters and rotation_angle is in radians
     """
-    # Translation error (in world frame)
-    trans_error = t2[0:3, 3] - t1[0:3, 3]
+    m1, m2 = Motor(t1), Motor(t2)
 
-    # Rotation error: angle of R1^T * R2
-    R1 = t1[0:3, 0:3]
-    R2 = t2[0:3, 0:3]
-    R_rel = np.dot(R1.T, R2)
-    angle_error = rotation_angle(R_rel)
+    # Translation error (in world frame), from the translators directly.
+    p1, p2 = m1.get_translator(), m2.get_translator()
+    trans_error = np.array([p2.x() - p1.x(), p2.y() - p1.y(), p2.z() - p1.z()])
+
+    # Rotation error: the *minimal* angle of the relative rotation. ``Rotor.angle``
+    # is unwrapped (grows past pi), which makes the error discontinuous at pi and
+    # breaks gradient-based callers; the rotor bivector-log norm is the minimal
+    # angle in [0, pi] and is smooth, so we use that.
+    rel = m1.inverse().multiply(m2)
+    angle_error = float(np.linalg.norm(rel.get_rotor().log().to_array()))
 
     return np.hstack((trans_error, angle_error))
 
 
-def geodesic_distance(t1: np.ndarray, t2: np.ndarray, r: float = 1.0) -> float:
+def geodesic_distance(t1, t2, r: float = 1.0) -> float:
     """
     Compute the geodesic distance between two transforms on SE(3).
 
@@ -86,8 +71,8 @@ def geodesic_distance(t1: np.ndarray, t2: np.ndarray, r: float = 1.0) -> float:
     arbitrary manner"
 
     Args:
-        t1: first transform (4x4)
-        t2: second transform (4x4)
+        t1: first transform (Motor or 4x4 matrix)
+        t2: second transform (Motor or 4x4 matrix)
         r: weight for rotation in units of meters/radian (default 1.0)
            Higher values penalize rotation errors more.
 

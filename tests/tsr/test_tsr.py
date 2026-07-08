@@ -4,43 +4,43 @@
 from unittest import TestCase
 
 import numpy
+from gafropy import Motor
 from numpy import pi
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.tsr import TSR
 
 
 class TsrTest(TestCase):
-    def test_sample_xyzrpy(self):
-        # Test zero-intervals.
+    def test_sample_bw(self):
+        # Test zero-intervals (translation box + rotor-bivector box).
         Bw = [
-            [0.0, 0.0],  # X
-            [1.0, 1.0],  # Y
-            [-1.0, -1.0],  # Z
-            [0.0, 0.0],  # roll
-            [pi, pi],  # pitch
-            [-pi, -pi],
-        ]  # yaw
+            [0.0, 0.0],  # tx
+            [1.0, 1.0],  # ty
+            [-1.0, -1.0],  # tz
+            [0.0, 0.0],  # b12
+            [0.5, 0.5],  # b13
+            [-0.5, -0.5],  # b23
+        ]
         tsr = TSR(Bw=Bw)
-        s = tsr.sample_xyzrpy()
+        s = tsr.sample_bw()
 
         Bw = numpy.array(Bw)
-        # For zero-intervals, the sampled value should be exactly equal to the bound
-        # Note: angles get wrapped, so pi becomes -pi
-        expected = Bw[:, 0].copy()
-        expected[4] = -pi  # pitch gets wrapped from pi to -pi
-        self.assertTrue(numpy.allclose(s, expected, atol=1e-10))
+        # For zero-intervals, the sampled value equals the bound exactly (no
+        # Euler wrapping in the split parametrization).
+        self.assertTrue(numpy.allclose(s, Bw[:, 0], atol=1e-10))
 
         # Test simple non-zero intervals
         Bw = [
-            [-0.1, 0.1],  # X
-            [-0.1, 0.1],  # Y
-            [-0.1, 0.1],  # Z
-            [-pi / 4, pi / 4],  # roll
-            [-pi / 4, pi / 4],  # pitch
-            [-pi / 4, pi / 4],
-        ]  # yaw
+            [-0.1, 0.1],  # tx
+            [-0.1, 0.1],  # ty
+            [-0.1, 0.1],  # tz
+            [-pi / 4, pi / 4],  # b12
+            [-pi / 4, pi / 4],  # b13
+            [-pi / 4, pi / 4],  # b23
+        ]
         tsr = TSR(Bw=Bw)
-        s = tsr.sample_xyzrpy()
+        s = tsr.sample_bw()
 
         Bw = numpy.array(Bw)
         self.assertTrue(numpy.all(s >= Bw[:, 0]))
@@ -51,16 +51,18 @@ class TsrTest(TestCase):
         T0_w = numpy.eye(4)
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
-        Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+        # Rotation-first (Motor.log) order: rows 0:3 = rotor bivector (b12,b13,b23),
+        # rows 3:6 = translation (tx,ty,tz). Row 5 is tz; row 2 is b23 (yaw).
+        Bw[5, :] = [0.0, 0.02]  # Allow vertical (z) movement
+        Bw[2, :] = [-pi, pi]  # Allow any yaw rotation (b23)
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
-        self.assertIsInstance(tsr.T0_w, numpy.ndarray)
-        self.assertIsInstance(tsr.Tw_e, numpy.ndarray)
+        self.assertIsInstance(tsr.T0_w, Motor)
+        self.assertIsInstance(tsr.Tw_e, Motor)
         self.assertIsInstance(tsr.Bw, numpy.ndarray)
-        self.assertEqual(tsr.T0_w.shape, (4, 4))
-        self.assertEqual(tsr.Tw_e.shape, (4, 4))
+        self.assertEqual(to_matrix(tsr.T0_w).shape, (4, 4))
+        self.assertEqual(to_matrix(tsr.Tw_e).shape, (4, 4))
         self.assertEqual(tsr.Bw.shape, (6, 2))
 
     def test_tsr_sampling(self):
@@ -68,18 +70,20 @@ class TsrTest(TestCase):
         T0_w = numpy.eye(4)
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
-        Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+        # Rotation-first (Motor.log) order: rows 0:3 = rotor bivector (b12,b13,b23),
+        # rows 3:6 = translation (tx,ty,tz). Row 5 is tz; row 2 is b23 (yaw).
+        Bw[5, :] = [0.0, 0.02]  # Allow vertical (z) movement
+        Bw[2, :] = [-pi, pi]  # Allow any yaw rotation (b23)
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
         # Test sampling
         pose = tsr.sample()
-        self.assertIsInstance(pose, numpy.ndarray)
-        self.assertEqual(pose.shape, (4, 4))
+        self.assertIsInstance(pose, Motor)
+        self.assertEqual(to_matrix(pose).shape, (4, 4))
 
         # Test xyzrpy sampling
-        xyzrpy = tsr.sample_xyzrpy()
+        xyzrpy = tsr.sample_bw()
         self.assertIsInstance(xyzrpy, numpy.ndarray)
         self.assertEqual(xyzrpy.shape, (6,))
 
@@ -88,17 +92,19 @@ class TsrTest(TestCase):
         T0_w = numpy.eye(4)
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
-        Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+        # Rotation-first (Motor.log) order: rows 0:3 = rotor bivector (b12,b13,b23),
+        # rows 3:6 = translation (tx,ty,tz). Row 5 is tz; row 2 is b23 (yaw).
+        Bw[5, :] = [0.0, 0.02]  # Allow vertical (z) movement
+        Bw[2, :] = [-pi, pi]  # Allow any yaw rotation (b23)
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
-        # Test valid xyzrpy
-        valid_xyzrpy = numpy.array([0.0, 0.0, 0.01, 0.0, 0.0, 0.0])
+        # Test valid bw (z = row 5 within [0, 0.02])
+        valid_xyzrpy = numpy.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.01])
         self.assertTrue(all(tsr.is_valid(valid_xyzrpy)))
 
-        # Test invalid xyzrpy (outside bounds)
-        invalid_xyzrpy = numpy.array([0.0, 0.0, 0.1, 0.0, 0.0, 0.0])  # z too large
+        # Test invalid bw (z = row 5 outside [0, 0.02])
+        invalid_xyzrpy = numpy.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.1])  # z too large
         self.assertFalse(all(tsr.is_valid(invalid_xyzrpy)))
 
     def test_tsr_contains(self):
@@ -106,8 +112,10 @@ class TsrTest(TestCase):
         T0_w = numpy.eye(4)
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
-        Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+        # Rotation-first (Motor.log) order: rows 0:3 = rotor bivector (b12,b13,b23),
+        # rows 3:6 = translation (tx,ty,tz). Row 5 is tz; row 2 is b23 (yaw).
+        Bw[5, :] = [0.0, 0.02]  # Allow vertical (z) movement
+        Bw[2, :] = [-pi, pi]  # Allow any yaw rotation (b23)
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -126,8 +134,10 @@ class TsrTest(TestCase):
         T0_w = numpy.eye(4)
         Tw_e = numpy.eye(4)
         Bw = numpy.zeros((6, 2))
-        Bw[2, :] = [0.0, 0.02]  # Allow vertical movement
-        Bw[5, :] = [-pi, pi]  # Allow any yaw rotation
+        # Rotation-first (Motor.log) order: rows 0:3 = rotor bivector (b12,b13,b23),
+        # rows 3:6 = translation (tx,ty,tz). Row 5 is tz; row 2 is b23 (yaw).
+        Bw[5, :] = [0.0, 0.02]  # Allow vertical (z) movement
+        Bw[2, :] = [-pi, pi]  # Allow any yaw rotation (b23)
 
         tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
@@ -221,7 +231,9 @@ class TsrTest(TestCase):
         edge_transform = tsr.to_transform(edge_bw)
 
         distance, bwopt = tsr.distance(edge_transform)
-        self.assertEqual(distance, 0.0)
+        # CGA composition leaves a machine-epsilon residual at the exact bound
+        # edge (the legacy matrix path happened to land on exactly 0.0).
+        self.assertAlmostEqual(distance, 0.0, places=9)
         self.assertTrue(tsr.contains(edge_transform))
 
     def test_contains_distance_consistency(self):
@@ -251,7 +263,7 @@ class TsrTest(TestCase):
 
         # Test multiple random samples - all should be contained with distance 0
         for _ in range(10):
-            sample_bw = tsr.sample_xyzrpy()
+            sample_bw = tsr.sample_bw()
             sample_transform = tsr.to_transform(sample_bw)
 
             is_contained = tsr.contains(sample_transform)
@@ -312,115 +324,68 @@ class TsrTest(TestCase):
         # Test round-trip: xyzrpy -> transform -> xyzrpy
         original_bw = numpy.array([0.05, -0.03, 0.02, 0.1, -0.1, 0.2])
         transform = tsr.to_transform(original_bw)
-        recovered_bw = tsr.to_xyzrpy(transform)
+        recovered_bw = tsr.to_bw(transform)
 
         numpy.testing.assert_array_almost_equal(
             original_bw,
             recovered_bw,
-            decimal=10,
+            decimal=9,
             err_msg="Round-trip xyzrpy -> transform -> xyzrpy failed",
         )
 
-    def test_outer_interval_bounds(self):
-        """Test TSR with outer interval RPY bounds (wrapping around ±pi).
+    def test_full_turn_bivector_bound(self):
+        """A rotor-bivector bound of [-pi, pi] on one axis is a full turn.
 
-        An outer interval like [3*pi/4, -3*pi/4] for yaw means yaw values
-        in the 'back hemisphere' (|yaw| > 3*pi/4). This tests that such
-        intervals are handled correctly.
+        Replaces the legacy Euler 'outer interval' test: in the split
+        parametrization there are no wraparound outer intervals — a free
+        rotation about an axis is simply ``b_axis in [-pi, pi]``.
         """
-        # Outer interval for yaw: values near ±pi (back hemisphere)
+        # Free rotation about the z axis (b23), translation pinned to origin.
         Bw = numpy.array(
             [
-                [-0.1, 0.1],
-                [-0.1, 0.1],
-                [-0.1, 0.1],
-                [-pi / 4, pi / 4],
-                [-pi / 4, pi / 4],
-                [3 * pi / 4, -3 * pi / 4],  # Outer interval: |yaw| > 3*pi/4
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [-pi, pi],
             ]
         )
-
         tsr = TSR(Bw=Bw)
 
-        # Verify _Bw_cont has correct interval size (pi/2, not negative)
-        yaw_interval = tsr._Bw_cont[5, 1] - tsr._Bw_cont[5, 0]
-        self.assertGreater(
-            yaw_interval,
-            0,
-            "Outer interval should produce positive continuous interval",
-        )
-        self.assertAlmostEqual(
-            yaw_interval,
-            pi / 2,
-            places=10,
-            msg="Outer interval [3*pi/4, -3*pi/4] should have size pi/2",
-        )
+        # Any pure z-rotation is contained, with distance 0.
+        for angle in numpy.linspace(-pi + 0.05, pi - 0.05, 12):
+            trans = tsr.to_transform(numpy.array([0, 0, 0, 0, 0, angle]))
+            self.assertTrue(tsr.contains(trans), f"z-rotation by {angle} should be contained")
+            dist, _ = tsr.distance(trans)
+            self.assertAlmostEqual(dist, 0.0, places=9)
 
-        # Test sampling produces values in the outer interval
-        for _ in range(10):
-            sample = tsr.sample_xyzrpy()
-            yaw = sample[5]
-            self.assertTrue(
-                abs(yaw) > 3 * pi / 4 - 0.01,
-                f"Sampled yaw {yaw} should be in outer interval (|yaw| > 3*pi/4)",
-            )
+        # A rotation about x (b12) is NOT in this TSR.
+        from tests.tsr._motor_helpers import motor_from_split
 
-        # Test contains: transform with yaw near pi should be contained
-        valid_bw = numpy.array([0, 0, 0, 0, 0, 0.9 * pi])
-        trans_in = tsr.to_transform(valid_bw)
-        self.assertTrue(
-            tsr.contains(trans_in),
-            "Transform with yaw=0.9*pi should be in outer interval",
-        )
+        off_axis = motor_from_split([0, 0, 0], [0.5, 0, 0])
+        self.assertFalse(tsr.contains(off_axis), "x-rotation should not be contained")
+        dist, _ = tsr.distance(off_axis)
+        self.assertGreater(dist, 0.0)
 
-        # Test contains: transform with yaw=0 should NOT be contained
-        # (yaw=0 is not in the outer interval [3*pi/4, -3*pi/4])
-        trans_yaw0 = numpy.eye(4)
-        self.assertFalse(
-            tsr.contains(trans_yaw0),
-            "Transform with yaw=0 should NOT be in outer interval",
-        )
+    def test_rotor_log_exp_roundtrip(self):
+        """rotor_log / rotor_exp (and motor split) round-trip on the bivector.
 
-        # Test distance consistency for outer interval
-        distance, _ = tsr.distance(trans_in)
-        self.assertEqual(
-            distance,
-            0.0,
-            "Distance should be 0 for contained transform in outer interval",
-        )
-
-    def test_rpy_roundtrip_near_singularity(self):
-        """Test rot_to_rpy / rpy_to_rot round-trip near pitch = ±pi/2.
-
-        The RPY decomposition has a gimbal lock singularity at pitch = ±pi/2.
-        The code has special-case logic for this; verify it produces a
-        consistent rotation matrix round-trip.
+        Replaces the legacy Euler rot<->rpy round-trip tests; the split
+        parametrization has no gimbal singularity to special-case.
         """
-        test_pitches = [
-            pi / 2 - 1e-6,  # just below singularity
-            pi / 2,  # exact singularity
-            pi / 2 + 1e-6,  # just above singularity
-            -pi / 2 - 1e-6,
-            -pi / 2,
-            -pi / 2 + 1e-6,
-        ]
-        for pitch in test_pitches:
-            R = TSR.rpy_to_rot([0.3, pitch, 0.5])
-            rpy = TSR.rot_to_rpy(R)
-            R2 = TSR.rpy_to_rot(rpy)
-            numpy.testing.assert_allclose(R, R2, atol=1e-6, err_msg=f"RPY round-trip failed at pitch={pitch}")
+        from tests.tsr._motor_helpers import motor_from_split, motor_split
 
-    def test_rpy_roundtrip_general(self):
-        """Test rot_to_rpy / rpy_to_rot round-trip for general rotations."""
-        test_rpys = [
-            [0, 0, 0],
-            [pi / 4, pi / 6, pi / 3],
-            [-pi / 3, pi / 4, -pi / 6],
-            [pi, 0, pi],
-            [0.1, -0.2, 0.3],
-        ]
-        for rpy in test_rpys:
-            R = TSR.rpy_to_rot(rpy)
-            rpy2 = TSR.rot_to_rpy(R)
-            R2 = TSR.rpy_to_rot(rpy2)
-            numpy.testing.assert_allclose(R, R2, atol=1e-10, err_msg=f"RPY round-trip failed for rpy={rpy}")
+        rng = numpy.random.default_rng(0)
+        from gafropy import Motor
+
+        for _ in range(200):
+            M = Motor.Random()
+            t, b = motor_split(M)
+            M2 = motor_from_split(t, b)
+            numpy.testing.assert_allclose(
+                M.to_transformation_matrix(),
+                M2.to_transformation_matrix(),
+                atol=1e-9,
+                err_msg="motor split round-trip failed",
+            )

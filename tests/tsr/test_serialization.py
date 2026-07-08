@@ -16,6 +16,7 @@ import numpy as np
 import yaml
 from numpy import pi
 
+from tests.tsr._motor_helpers import motor_from_log, to_matrix
 from tsr.tsr import TSR
 from tsr.tsr_chain import TSRChain
 
@@ -41,7 +42,7 @@ class TestTSRSerialization(unittest.TestCase):
             ]
         )
 
-        self.tsr = TSR(T0_w=self.T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
+        self.tsr = TSR(T0_w=to_matrix(self.T0_w), Tw_e=to_matrix(self.Tw_e), Bw=self.Bw)
 
     def test_to_dict(self):
         """Test TSR.to_dict() method."""
@@ -58,17 +59,22 @@ class TestTSRSerialization(unittest.TestCase):
         self.assertIsInstance(result["Tw_e"], list)
         self.assertIsInstance(result["Bw"], list)
 
-        # Check values
-        np.testing.assert_array_almost_equal(np.array(result["T0_w"]), self.T0_w)
-        np.testing.assert_array_almost_equal(np.array(result["Tw_e"]), self.Tw_e)
+        # Transforms are serialized as a 6-vector bivector log; verify they
+        # reconstruct the original matrices.
+        self.assertEqual(len(result["T0_w"]), 6)
+        self.assertEqual(len(result["Tw_e"]), 6)
+        np.testing.assert_array_almost_equal(to_matrix(motor_from_log(result["T0_w"])), to_matrix(self.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(motor_from_log(result["Tw_e"])), to_matrix(self.Tw_e))
         np.testing.assert_array_almost_equal(np.array(result["Bw"]), self.Bw)
 
     def test_from_dict(self):
         """Test TSR.from_dict() method."""
-        # Create dictionary representation
+        # Create dictionary representation (legacy 4x4-matrix transforms are
+        # still accepted; the format marker attests Bw is in split coords).
         data = {
-            "T0_w": self.T0_w.tolist(),
-            "Tw_e": self.Tw_e.tolist(),
+            "format": "cga-split-v1",
+            "T0_w": to_matrix(self.T0_w).tolist(),
+            "Tw_e": to_matrix(self.Tw_e).tolist(),
             "Bw": self.Bw.tolist(),
         }
 
@@ -76,8 +82,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_dict(data)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
     def test_dict_roundtrip(self):
@@ -87,8 +93,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_dict(data)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
     def test_to_json(self):
@@ -104,9 +110,9 @@ class TestTSRSerialization(unittest.TestCase):
         self.assertIn("Tw_e", parsed)
         self.assertIn("Bw", parsed)
 
-        # Check values
-        np.testing.assert_array_almost_equal(np.array(parsed["T0_w"]), self.T0_w)
-        np.testing.assert_array_almost_equal(np.array(parsed["Tw_e"]), self.Tw_e)
+        # Transforms serialize as 6-vector bivector logs.
+        np.testing.assert_array_almost_equal(to_matrix(motor_from_log(parsed["T0_w"])), to_matrix(self.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(motor_from_log(parsed["Tw_e"])), to_matrix(self.Tw_e))
         np.testing.assert_array_almost_equal(np.array(parsed["Bw"]), self.Bw)
 
     def test_from_json(self):
@@ -114,8 +120,9 @@ class TestTSRSerialization(unittest.TestCase):
         # Create JSON string
         json_str = json.dumps(
             {
-                "T0_w": self.T0_w.tolist(),
-                "Tw_e": self.Tw_e.tolist(),
+                "format": "cga-split-v1",
+                "T0_w": to_matrix(self.T0_w).tolist(),
+                "Tw_e": to_matrix(self.Tw_e).tolist(),
                 "Bw": self.Bw.tolist(),
             }
         )
@@ -124,8 +131,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_json(json_str)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
     def test_json_roundtrip(self):
@@ -135,8 +142,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_json(json_str)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
     def test_to_yaml(self):
@@ -152,9 +159,9 @@ class TestTSRSerialization(unittest.TestCase):
         self.assertIn("Tw_e", parsed)
         self.assertIn("Bw", parsed)
 
-        # Check values
-        np.testing.assert_array_almost_equal(np.array(parsed["T0_w"]), self.T0_w)
-        np.testing.assert_array_almost_equal(np.array(parsed["Tw_e"]), self.Tw_e)
+        # Transforms serialize as 6-vector bivector logs.
+        np.testing.assert_array_almost_equal(to_matrix(motor_from_log(parsed["T0_w"])), to_matrix(self.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(motor_from_log(parsed["Tw_e"])), to_matrix(self.Tw_e))
         np.testing.assert_array_almost_equal(np.array(parsed["Bw"]), self.Bw)
 
     def test_from_yaml(self):
@@ -162,8 +169,9 @@ class TestTSRSerialization(unittest.TestCase):
         # Create YAML string
         yaml_str = yaml.dump(
             {
-                "T0_w": self.T0_w.tolist(),
-                "Tw_e": self.Tw_e.tolist(),
+                "format": "cga-split-v1",
+                "T0_w": to_matrix(self.T0_w).tolist(),
+                "Tw_e": to_matrix(self.Tw_e).tolist(),
                 "Bw": self.Bw.tolist(),
             }
         )
@@ -172,8 +180,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_yaml(yaml_str)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
     def test_yaml_roundtrip(self):
@@ -183,8 +191,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_yaml(yaml_str)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
     def test_cross_format_roundtrip(self):
@@ -196,8 +204,8 @@ class TestTSRSerialization(unittest.TestCase):
         reconstructed = TSR.from_yaml(yaml_str)
 
         # Check that all attributes match
-        np.testing.assert_array_almost_equal(reconstructed.T0_w, self.tsr.T0_w)
-        np.testing.assert_array_almost_equal(reconstructed.Tw_e, self.tsr.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T0_w), to_matrix(self.tsr.T0_w))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.tsr.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.tsr.Bw)
 
 
@@ -268,8 +276,8 @@ class TestTSRChainSerialization(unittest.TestCase):
 
         # Check TSRs
         for original, reconstructed_tsr in zip(self.chain.TSRs, reconstructed.TSRs):
-            np.testing.assert_array_almost_equal(reconstructed_tsr.T0_w, original.T0_w)
-            np.testing.assert_array_almost_equal(reconstructed_tsr.Tw_e, original.Tw_e)
+            np.testing.assert_array_almost_equal(to_matrix(reconstructed_tsr.T0_w), to_matrix(original.T0_w))
+            np.testing.assert_array_almost_equal(to_matrix(reconstructed_tsr.Tw_e), to_matrix(original.Tw_e))
             np.testing.assert_array_almost_equal(reconstructed_tsr.Bw, original.Bw)
 
     def test_dict_roundtrip(self):
@@ -280,8 +288,8 @@ class TestTSRChainSerialization(unittest.TestCase):
         self.assertEqual(len(reconstructed.TSRs), len(self.chain.TSRs))
 
         for original, reconstructed_tsr in zip(self.chain.TSRs, reconstructed.TSRs):
-            np.testing.assert_array_almost_equal(reconstructed_tsr.T0_w, original.T0_w)
-            np.testing.assert_array_almost_equal(reconstructed_tsr.Tw_e, original.Tw_e)
+            np.testing.assert_array_almost_equal(to_matrix(reconstructed_tsr.T0_w), to_matrix(original.T0_w))
+            np.testing.assert_array_almost_equal(to_matrix(reconstructed_tsr.Tw_e), to_matrix(original.Tw_e))
             np.testing.assert_array_almost_equal(reconstructed_tsr.Bw, original.Bw)
 
     def test_to_json(self):

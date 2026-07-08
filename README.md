@@ -146,8 +146,9 @@ templates = placer.place_mesh(vertices, com, subject="widget",
 table_pose = np.eye(4)
 table_pose[2, 3] = 0.75   # table surface at z = 0.75 m
 
+from tsr import to_matrix
 for t in templates:
-    pose = t.sample(table_pose)
+    pose = to_matrix(t.sample(table_pose))   # sample() returns a Motor
     print(t, "→ COM z =", pose[2, 3])
 ```
 
@@ -163,9 +164,14 @@ from tsr import TSR
 import numpy as np
 
 # A TSR is defined by three components:
-#   T0_w : 4×4 transform — world frame to TSR frame
-#   Tw_e : 4×4 transform — TSR frame to end-effector at Bw=0
+#   T0_w : transform — world frame to TSR frame
+#   Tw_e : transform — TSR frame to end-effector at Bw=0
 #   Bw   : 6×2 bounds — [x, y, z, roll, pitch, yaw]
+#
+# Transforms are gafropy.Motor objects internally. T0_w / Tw_e (and any
+# transform passed to contains/distance/to_xyzrpy) may be given as a Motor
+# OR a 4×4 numpy matrix; methods that return a pose return a Motor.
+# Use tsr.to_matrix(pose) to get a 4×4 matrix when you need one.
 
 # Example: keep a mug upright — free xy/yaw, small pitch/roll
 T0_w = np.eye(4)
@@ -180,9 +186,12 @@ Bw[5, :] = [-np.pi, np.pi]    # yaw: free
 
 tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
-pose     = tsr.sample()             # random SE(3) pose in the region
+pose     = tsr.sample()             # random SE(3) pose (a gafropy.Motor)
 distance, _ = tsr.distance(pose)   # distance to nearest valid pose
 is_valid = tsr.contains(pose)      # containment check
+
+from tsr import to_matrix
+T = to_matrix(pose)                 # 4×4 numpy matrix when you need one
 ```
 
 ### Save and load templates

@@ -23,6 +23,7 @@ from tsr.sampling import (
 )
 from tsr.template import TSRTemplate
 from tsr.tsr import TSR
+from tests.tsr._motor_helpers import to_matrix
 
 
 class TestSamplingUtilities(unittest.TestCase):
@@ -144,13 +145,13 @@ class TestSamplingUtilities(unittest.TestCase):
     def test_sample_from_tsrs(self):
         """Test sampling from multiple TSRs."""
         # Test with default RNG
-        pose = sample_from_tsrs(self.tsrs)
+        pose = to_matrix(sample_from_tsrs(self.tsrs))
         self.assertIsInstance(pose, np.ndarray)
         self.assertEqual(pose.shape, (4, 4))
 
         # Test with custom RNG
         rng = np.random.default_rng(42)
-        pose = sample_from_tsrs(self.tsrs, rng)
+        pose = to_matrix(sample_from_tsrs(self.tsrs, rng))
         self.assertIsInstance(pose, np.ndarray)
         self.assertEqual(pose.shape, (4, 4))
 
@@ -228,18 +229,18 @@ class TestTemplateSampling(unittest.TestCase):
         # TSRs should be instantiated at the reference pose
         for tsr in tsrs:
             # T0_w should be T_ref_world @ T_ref_tsr (which is just T_ref_world for identity T_ref_tsr)
-            np.testing.assert_array_almost_equal(tsr.T0_w, self.T_ref_world)
+            np.testing.assert_array_almost_equal(to_matrix(tsr.T0_w), self.T_ref_world)
 
     def test_sample_from_templates(self):
         """Test sampling from templates."""
         # Test with default RNG
-        pose = sample_from_templates(self.templates, self.T_ref_world)
+        pose = to_matrix(sample_from_templates(self.templates, self.T_ref_world))
         self.assertIsInstance(pose, np.ndarray)
         self.assertEqual(pose.shape, (4, 4))
 
         # Test with custom RNG
         rng = np.random.default_rng(42)
-        pose = sample_from_templates(self.templates, self.T_ref_world, rng)
+        pose = to_matrix(sample_from_templates(self.templates, self.T_ref_world, rng))
         self.assertIsInstance(pose, np.ndarray)
         self.assertEqual(pose.shape, (4, 4))
 
@@ -250,7 +251,7 @@ class TestTemplateSampling(unittest.TestCase):
     def test_sample_from_templates_single_template(self):
         """Test sampling from single template."""
         single_template = [self.template1]
-        pose = sample_from_templates(single_template, self.T_ref_world)
+        pose = to_matrix(sample_from_templates(single_template, self.T_ref_world))
         self.assertIsInstance(pose, np.ndarray)
         self.assertEqual(pose.shape, (4, 4))
 
@@ -284,8 +285,8 @@ class TestSamplingEdgeCases(unittest.TestCase):
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
 
-        pose1 = sample_from_tsrs([tsr], rng1)
-        pose2 = sample_from_tsrs([tsr], rng2)
+        pose1 = to_matrix(sample_from_tsrs([tsr], rng1))
+        pose2 = to_matrix(sample_from_tsrs([tsr], rng2))
 
         # Since TSR.sample() uses its own RNG, we can't guarantee exact reproducibility
         # But we can verify both poses are valid transforms

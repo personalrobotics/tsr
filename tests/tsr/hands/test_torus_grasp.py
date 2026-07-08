@@ -13,6 +13,7 @@ import unittest
 import numpy as np
 
 from tsr.hands import ParallelJawGripper
+from tests.tsr._motor_helpers import to_matrix
 
 FL = 0.055  # finger length
 MA = 0.140  # max aperture
@@ -58,36 +59,36 @@ class TestGraspTorusSide(unittest.TestCase):
 
     def test_tw_e_valid_se3(self):
         for t in self.templates:
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_z_ee_in_xz_plane_of_tsr_frame(self):
         """z_EE = (−cosα, 0, −sinα): y-component always zero."""
         for t in self.templates:
-            self.assertAlmostEqual(t.Tw_e[1, 2], 0.0, msg=f"z_EE y-component nonzero in {t.name}")
+            self.assertAlmostEqual(to_matrix(t.Tw_e)[1, 2], 0.0, msg=f"z_EE y-component nonzero in {t.name}")
 
     def test_z_ee_equatorial_is_minus_x(self):
         """Middle minor angle of n_minor=3 is α=0: z_EE = (−1, 0, 0)."""
         ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=3)
         # Templates order: α=−π/2 (idx 0,1), α=0 (idx 2,3), α=+π/2 (idx 4,5)
         for t in ts[2:4]:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [-1.0, 0.0, 0.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [-1.0, 0.0, 0.0], atol=1e-10)
 
     def test_z_ee_at_alpha_pos_pi2_points_down(self):
         """Last minor angle is +π/2: z_EE = (0, 0, −1) (approach from above)."""
         ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=5)
         for t in ts[-2:]:  # last 2 = α=+π/2, both hand flips
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
 
     def test_z_ee_at_alpha_neg_pi2_points_up(self):
         """First minor angle is −π/2: z_EE = (0, 0, +1) (approach from below)."""
         ts = self.gripper.grasp_torus_side(SR, Sr, k=1, n_minor=5)
         for t in ts[:2]:  # first 2 = α=−π/2, both hand flips
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
 
     def test_gripper_outside_tube_surface(self):
         """Distance from tube center to gripper must exceed tube_radius."""
         for t in self.templates:
-            tx, tz = t.Tw_e[0, 3], t.Tw_e[2, 3]
+            tx, tz = to_matrix(t.Tw_e)[0, 3], to_matrix(t.Tw_e)[2, 3]
             # Tube center in TSR frame is at (R, 0, 0)
             dist_from_tube_center = np.sqrt((tx - SR) ** 2 + tz**2)
             self.assertGreater(
@@ -99,7 +100,7 @@ class TestGraspTorusSide(unittest.TestCase):
     def test_y_ee_in_radial_vertical_plane(self):
         """y_EE (finger opening) lies in the radial-vertical plane: y-component = 0."""
         for t in self.templates:
-            self.assertAlmostEqual(t.Tw_e[1, 1], 0.0, msg=f"y_EE y-component nonzero in {t.name}")
+            self.assertAlmostEqual(to_matrix(t.Tw_e)[1, 1], 0.0, msg=f"y_EE y-component nonzero in {t.name}")
 
     # ── Geometry: Bw ─────────────────────────────────────────────────────
 
@@ -147,7 +148,7 @@ class TestGraspTorusSide(unittest.TestCase):
         # k=2, n_minor=3 → α=0 block at idx 4-7; shallow=4,5
         ts = self.gripper.grasp_torus_side(SR, Sr, k=2, n_minor=3)
         for t in ts[4:6]:
-            ro_minor = t.Tw_e[0, 3] - SR
+            ro_minor = to_matrix(t.Tw_e)[0, 3] - SR
             np.testing.assert_allclose(ro_minor - FL, 0.0, atol=1e-10)
 
     def test_side_depth_deep_fingertip_at_inner_surface(self):
@@ -155,7 +156,7 @@ class TestGraspTorusSide(unittest.TestCase):
         # k=2, n_minor=3 → α=0 block at idx 4-7; deep=6,7
         ts = self.gripper.grasp_torus_side(SR, Sr, k=2, n_minor=3)
         for t in ts[6:8]:
-            ro_minor = t.Tw_e[0, 3] - SR
+            ro_minor = to_matrix(t.Tw_e)[0, 3] - SR
             np.testing.assert_allclose(ro_minor - FL, -Sr, atol=1e-10)
 
     def test_raises_for_invalid_torus(self):
@@ -166,7 +167,7 @@ class TestGraspTorusSide(unittest.TestCase):
 
     def test_tsr_origin_at_torus_center(self):
         for t in self.templates:
-            np.testing.assert_allclose(t.T_ref_tsr, np.eye(4), atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.T_ref_tsr), np.eye(4), atol=1e-10)
 
 
 class TestGraspTorusSpan(unittest.TestCase):
@@ -196,31 +197,31 @@ class TestGraspTorusSpan(unittest.TestCase):
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_torus_span(SR, Sr):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_top_z_ee_points_down(self):
         """Top templates: z_EE = (0,0,-1) in TSR frame."""
         ts = self.gripper.grasp_torus_span(SR, Sr)
         top_templates = ts[::2]  # every other starting at 0 = top
         for t in top_templates:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
 
     def test_bottom_z_ee_points_up(self):
         """Bottom templates: z_EE = (0,0,+1) in TSR frame."""
         ts = self.gripper.grasp_torus_span(SR, Sr)
         bot_templates = ts[1::2]  # every other starting at 1 = bottom
         for t in bot_templates:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
 
     def test_top_tsr_origin_at_tube_top(self):
         ts = self.gripper.grasp_torus_span(SR, Sr)
         for t in ts[::2]:
-            self.assertAlmostEqual(t.T_ref_tsr[2, 3], Sr)
+            self.assertAlmostEqual(to_matrix(t.T_ref_tsr)[2, 3], Sr)
 
     def test_bottom_tsr_origin_at_tube_bottom(self):
         ts = self.gripper.grasp_torus_span(SR, Sr)
         for t in ts[1::2]:
-            self.assertAlmostEqual(t.T_ref_tsr[2, 3], -Sr)
+            self.assertAlmostEqual(to_matrix(t.T_ref_tsr)[2, 3], -Sr)
 
     def test_bw_full_yaw_freedom(self):
         for t in self.gripper.grasp_torus_span(SR, Sr):

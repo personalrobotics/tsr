@@ -1,23 +1,55 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
-from functools import reduce
-
 import numpy
 import numpy.random
 from numpy import pi
 
-from .utils import EPSILON, geodesic_distance, wrap_to_interval
+from gafropy import Motor
+
+from .constraints.base import Constraint
+from .utils import EPSILON, geodesic_distance
+
+# bw / Bw are in gafro ``Motor.log()`` order: [b12, b13, b23, e1i, e2i, e3i] =
+# [rotor bivector (3), translation (3)]. Index helpers keep that explicit.
+_ROT = slice(0, 3)
+_TRANS = slice(3, 6)
 
 NANBW = numpy.ones(6) * float("nan")
 
 
-class TSR:
+def _load_transform(value):
+    """Deserialize a transform stored as a 6-vector bivector log or a 4x4 matrix.
+
+    Returns a ``Motor``. Length-6 values are read as a bivector log; 4x4 nested
+    lists are read as the legacy matrix format.
+    """
+    return Motor(numpy.asarray(value, dtype=float))
+
+
+class TSR(Constraint):
     """
     Core Task Space Region (TSR) class — geometry-only, robot-agnostic.
 
     A TSR is defined by a transform T0_w to the TSR frame, a transform Tw_e
     from the TSR frame to the end-effector, and a bounding box Bw over 6 DoFs.
+
+    **Coordinate system (CGA split).** Every rigid transform is a gafropy
+    ``Motor`` ``M = Translator(t) * Rotor(r)``. The 6-vector ``bw`` and the box
+    ``Bw`` are split accordingly:
+
+        bw = [tx, ty, tz,  b12, b13, b23]
+             └ translation ┘ └ rotor-bivector log (axis*angle) ┘
+
+    The rotation half is the rotor bivector log (``Rotor.log()``), i.e. the
+    rotation axis scaled by the rotation angle, with the angle wrapped to
+    ``(-pi, pi]``. A box on these three components is a decoupled, axis-clean
+    rotation region (e.g. "rotate freely about z" is ``b23 in [-pi, pi]``). This
+    replaces the legacy Euler ``[roll, pitch, yaw]`` parametrization.
+
+    Both constructor arguments and methods that take a transform accept either a
+    ``Motor`` or a 4x4 numpy matrix (or a 6-vector bivector log); methods that
+    return a transform return a ``Motor``.
     """
 
     def __init__(self, T0_w=None, Tw_e=None, Bw=None):
@@ -28,413 +60,157 @@ class TSR:
         if Bw is None:
             Bw = numpy.zeros((6, 2))
 
-        self.T0_w = numpy.array(T0_w)
-        self.Tw_e = numpy.array(Tw_e)
-        self.Bw = numpy.array(Bw)
+        self.T0_w = Motor(T0_w)
+        self.Tw_e = Motor(Tw_e)
+        self.Bw = numpy.array(Bw, dtype=float)
 
-        if numpy.any(self.Bw[0:3, 0] > self.Bw[0:3, 1]):
-            raise ValueError("Bw translation bounds must be [min, max]", Bw)
+        if self.Bw.shape != (6, 2):
+            raise ValueError("Bw must be shape (6,2)", Bw)
+        if numpy.any(self.Bw[:, 0] > self.Bw[:, 1] + EPSILON):
+            raise ValueError("Bw bounds must be [min, max] for every row", Bw)
 
-        # We will now create a continuous version of the bound to maintain:
-        # 1. Bw[i,1] > Bw[i,0] which is necessary for LBFGS-B
-        # 2. signed rotations, necessary for expressiveness
+        # Continuous bound. Translation rows pass through unchanged. Rotation
+        # (bivector) rows are clamped to the representable range [-pi, pi]: the
+        # rotor bivector log angle is wrapped to (-pi, pi], so a component can
+        # never exceed pi in magnitude. A box of [-pi, pi] is a full turn. In the
+        # Motor.log order the rotor bivector occupies rows 0:3.
         Bw_cont = numpy.copy(self.Bw)
-
-        # Compute interval size, handling outer intervals (where upper < lower)
-        # For outer intervals like [3*pi/4, -3*pi/4], the interval wraps around
-        # and has size 2*pi - (lower - upper)
-        Bw_interval = Bw_cont[3:6, 1] - Bw_cont[3:6, 0]
-        # Handle outer intervals: if interval is negative, it wraps around
-        Bw_interval = numpy.where(Bw_interval < 0, 2 * pi + Bw_interval, Bw_interval)
-        # Clamp to max 2*pi (full rotation)
-        Bw_interval = numpy.minimum(Bw_interval, 2 * pi)
-
-        Bw_cont[3:6, 0] = wrap_to_interval(Bw_cont[3:6, 0])
-        Bw_cont[3:6, 1] = Bw_cont[3:6, 0] + Bw_interval
-
+        Bw_cont[_ROT, 0] = numpy.clip(Bw_cont[_ROT, 0], -pi, pi)
+        Bw_cont[_ROT, 1] = numpy.clip(Bw_cont[_ROT, 1], -pi, pi)
         self._Bw_cont = Bw_cont
 
     def __repr__(self) -> str:
-        _DOF = ("x", "y", "z", "roll", "pitch", "yaw")
+        _DOF = ("b12", "b13", "b23", "x", "y", "z")
         free = [_DOF[i] for i in range(6) if not numpy.isclose(self.Bw[i, 0], self.Bw[i, 1])]
-        t0 = self.T0_w[:3, 3].round(3)
-        te = self.Tw_e[:3, 3].round(3)
+        t0 = numpy.asarray(self.T0_w.get_translator().to_array())
+        te = numpy.asarray(self.Tw_e.get_translator().to_array())
         free_str = ",".join(free) if free else "fixed"
-        return f"TSR(free=[{free_str}], T0_w.t={t0}, Tw_e.t={te})"
+        return f"TSR(free=[{free_str}], T0_w.t={t0.round(3)}, Tw_e.t={te.round(3)})"
 
-    @staticmethod
-    def rot_to_rpy(rot):
-        """
-        Converts a rotation matrix to one valid rpy
-        @param rot 3x3 rotation matrix
-        @return rpy (3,) rpy
-        """
-        rpy = numpy.zeros(3)
-        if not (abs(abs(rot[2, 0]) - 1) < EPSILON):
-            p = -numpy.arcsin(rot[2, 0])
-            rpy[0] = numpy.arctan2((rot[2, 1] / numpy.cos(p)), (rot[2, 2] / numpy.cos(p)))
-            rpy[1] = p
-            rpy[2] = numpy.arctan2((rot[1, 0] / numpy.cos(p)), (rot[0, 0] / numpy.cos(p)))
-        else:
-            if abs(rot[2, 0] + 1) < EPSILON:
-                r_offset = numpy.arctan2(rot[0, 1], rot[0, 2])
-                rpy[0] = r_offset
-                rpy[1] = pi / 2
-                rpy[2] = 0.0
-            else:
-                r_offset = numpy.arctan2(-rot[0, 1], -rot[0, 2])
-                rpy[0] = r_offset
-                rpy[1] = -pi / 2
-                rpy[2] = 0.0
-        return rpy
+    # ------------------------------------------------------------------
+    # bw <-> transform
+    # ------------------------------------------------------------------
 
-    @staticmethod
-    def trans_to_xyzrpy(trans):
-        """
-        Converts a transformation matrix to one valid xyzrpy
-        @param trans 4x4 transformation matrix
-        @return xyzrpy 6x1 xyzrpy
-        """
-        xyz, rot = trans[0:3, 3], trans[0:3, 0:3]
-        rpy = TSR.rot_to_rpy(rot)
-        return numpy.hstack((xyz, rpy))
+    def bw_to_trans(self, bw):
+        """Convert a 6-vector ``bw`` (the Motor bivector log) into a Motor in the
+        TSR ``w`` frame. ``bw`` is exactly ``Motor.log()`` order, so this is
+        ``Motor.exp(*bw)``."""
+        bw = numpy.asarray(bw, dtype=float).reshape(6)
+        return Motor.exp(*(float(v) for v in bw))
 
-    @staticmethod
-    def rpy_to_rot(rpy):
+    def to_transform(self, bw):
         """
-        Converts an rpy to a rotation matrix
-        @param rpy (3,) rpy
-        @return rot 3x3 rotation matrix
-        """
-        rot = numpy.zeros((3, 3))
-        r, p, y = rpy[0], rpy[1], rpy[2]
-        rot[0][0] = numpy.cos(p) * numpy.cos(y)
-        rot[1][0] = numpy.cos(p) * numpy.sin(y)
-        rot[2][0] = -numpy.sin(p)
-        rot[0][1] = numpy.sin(r) * numpy.sin(p) * numpy.cos(y) - numpy.cos(r) * numpy.sin(y)
-        rot[1][1] = numpy.sin(r) * numpy.sin(p) * numpy.sin(y) + numpy.cos(r) * numpy.cos(y)
-        rot[2][1] = numpy.sin(r) * numpy.cos(p)
-        rot[0][2] = numpy.cos(r) * numpy.sin(p) * numpy.cos(y) + numpy.sin(r) * numpy.sin(y)
-        rot[1][2] = numpy.cos(r) * numpy.sin(p) * numpy.sin(y) - numpy.sin(r) * numpy.cos(y)
-        rot[2][2] = numpy.cos(r) * numpy.cos(p)
-        return rot
-
-    @staticmethod
-    def xyzrpy_to_trans(xyzrpy):
-        """
-        Converts an xyzrpy to a transformation matrix
-        @param xyzrpy 6x1 xyzrpy vector
-        @return trans 4x4 transformation matrix
-        """
-        trans = numpy.zeros((4, 4))
-        trans[3][3] = 1.0
-        xyz, rpy = xyzrpy[0:3], xyzrpy[3:6]
-        trans[0:3, 3] = xyz
-        rot = TSR.rpy_to_rot(rpy)
-        trans[0:3, 0:3] = rot
-        return trans
-
-    @staticmethod
-    def xyz_within_bounds(xyz, Bw):
-        """
-        Checks whether an xyz value is within a given xyz bounds.
-        Main issue: dealing with roundoff issues for zero bounds
-        @param xyz a (3,) xyz value
-        @param Bw bounds on xyz
-        @return check a (3,) vector of True if within and False if outside
-        """
-        # Check bounds condition on XYZ component.
-        xyzcheck = []
-        for i, x in enumerate(xyz):
-            x_val = x.item() if hasattr(x, "item") else float(x)  # Convert to scalar
-            xyzcheck.append(((x_val + EPSILON) >= Bw[i, 0]) and ((x_val - EPSILON) <= Bw[i, 1]))
-        return xyzcheck
-
-    @staticmethod
-    def rpy_within_bounds(rpy, Bw):
-        """
-        Checks whether an rpy value is within a given rpy bounds.
-        Assumes all values in the bounds are [-pi, pi]
-        Two main issues: dealing with roundoff issues for zero bounds and
-        Wraparound for rpy.
-        @param rpy a (3,) rpy value
-        @param Bw bounds on rpy
-        @return check a (3,) vector of True if within and False if outside
-        """
-        # Unwrap rpy to Bw_cont.
-        rpy = wrap_to_interval(rpy, lower=Bw[:3, 0])
-
-        # Check bounds condition on RPY component.
-        rpycheck = [False] * 3
-        for i in range(0, 3):
-            if Bw[i, 0] > Bw[i, 1] + EPSILON:
-                # An outer interval
-                rpycheck[i] = ((rpy[i] + EPSILON) >= Bw[i, 0]) or ((rpy[i] - EPSILON) <= Bw[i, 1])
-            else:
-                # An inner interval
-                rpycheck[i] = ((rpy[i] + EPSILON) >= Bw[i, 0]) and ((rpy[i] - EPSILON) <= Bw[i, 1])
-        return rpycheck
-
-    @staticmethod
-    def rot_within_rpy_bounds(rot, Bw):
-        """
-        Checks whether a rotation matrix is within a given rpy bounds.
-        Assumes all values in the bounds are [-pi, pi]
-        Two main challenges with rpy:
-            (1) Usually, two rpy solutions for each rot.
-            (2) 1D subspace of degenerate solutions at singularities.
-        Based on: http://staff.city.ac.uk/~sbbh653/publications/euler.pdf
-        @param rot 3x3 rotation matrix
-        @param Bw bounds on rpy
-        @return check a (3,) vector of True if within and False if outside
-        @return rpy the rpy consistent with the bound or None if nothing is
-        """
-        if not (abs(abs(rot[2, 0]) - 1) < EPSILON):
-            # Not a singularity. Two pitch solutions
-            psol = -numpy.arcsin(rot[2, 0])
-            for p in [psol, (pi - psol)]:
-                rpy = numpy.zeros(3)
-                rpy[0] = numpy.arctan2((rot[2, 1] / numpy.cos(p)), (rot[2, 2] / numpy.cos(p)))
-                rpy[1] = p
-                rpy[2] = numpy.arctan2((rot[1, 0] / numpy.cos(p)), (rot[0, 0] / numpy.cos(p)))
-                rpycheck = TSR.rpy_within_bounds(rpy, Bw)
-                if all(rpycheck):
-                    return rpycheck, rpy
-            return rpycheck, None
-        else:
-            if abs(rot[2, 0] + 1) < EPSILON:
-                r_offset = numpy.arctan2(rot[0, 1], rot[0, 2])
-                # Valid rotation: [y + r_offset, pi/2, y]
-                # check the four r-y Bw corners
-                rpy_list = []
-                rpy_list.append([Bw[2, 0] + r_offset, pi / 2, Bw[2, 0]])
-                rpy_list.append([Bw[2, 1] + r_offset, pi / 2, Bw[2, 1]])
-                rpy_list.append([Bw[0, 0], pi / 2, Bw[0, 0] - r_offset])
-                rpy_list.append([Bw[0, 1], pi / 2, Bw[0, 1] - r_offset])
-                for rpy in rpy_list:
-                    rpycheck = TSR.rpy_within_bounds(rpy, Bw)
-                    # No point checking anything if pi/2 not in Bw
-                    if rpycheck[1] is False:
-                        return rpycheck, None
-                    if all(rpycheck):
-                        return rpycheck, rpy
-            else:
-                r_offset = numpy.arctan2(-rot[0, 1], -rot[0, 2])
-                # Valid rotation: [-y + r_offset, -pi/2, y]
-                # check the four r-y Bw corners
-                rpy_list = []
-                rpy_list.append([-Bw[2, 0] + r_offset, -pi / 2, Bw[2, 0]])
-                rpy_list.append([-Bw[2, 1] + r_offset, -pi / 2, Bw[2, 1]])
-                rpy_list.append([Bw[0, 0], -pi / 2, -Bw[0, 0] + r_offset])
-                rpy_list.append([Bw[0, 1], -pi / 2, -Bw[0, 1] + r_offset])
-                for rpy in rpy_list:
-                    rpycheck = TSR.rpy_within_bounds(rpy, Bw)
-                    # No point checking anything if -pi/2 not in Bw
-                    if rpycheck[1] is False:
-                        return rpycheck, None
-                    if all(rpycheck):
-                        return rpycheck, rpy
-        return rpycheck, None
-
-    def to_transform(self, xyzrpy):
-        """
-        Converts a [x y z roll pitch yaw] into an
+        Converts a 6-vector ``bw`` (split translation + rotor-bivector) into an
         end-effector transform.
 
-        @param  xyzrpy [x y z roll pitch yaw]
-        @return trans 4x4 transform
+        @param  bw     [tx, ty, tz, b12, b13, b23]
+        @return trans  Motor end-effector transform
         """
-        if len(xyzrpy) != 6:
-            raise ValueError("xyzrpy must be of length 6")
-        validity = self.is_valid(xyzrpy)
+        if len(bw) != 6:
+            raise ValueError("bw must be of length 6")
+        validity = self.is_valid(bw)
         if not all(validity):
             violated = [i for i, v in enumerate(validity) if not v]
             raise ValueError(
-                f"xyzrpy violates bounds at dimensions {violated}: xyzrpy={xyzrpy}, bounds={self._Bw_cont[violated]}"
+                f"bw violates bounds at dimensions {violated}: bw={bw}, bounds={self._Bw_cont[violated]}"
             )
-        Tw = TSR.xyzrpy_to_trans(xyzrpy)
-        trans = reduce(numpy.dot, [self.T0_w, Tw, self.Tw_e])
-        return trans
+        Tw = self.bw_to_trans(bw)
+        return self.T0_w.multiply(Tw).multiply(self.Tw_e)
 
-    def to_xyzrpy(self, trans):
+    def to_bw(self, trans):
+        """Convert an end-effector transform to its ``bw`` 6-vector.
+
+        Implements Berenson et al. 2011 Eqs. 5-6 in CGA:
+            Tw_s' = (T0_w)^-1 * T0_s * (Tw_e)^-1
+        and returns its ``Motor.log()`` (the ``bw`` coordinate system).
         """
-        Converts an end-effector transform to xyzrpy values
-        @param  trans  4x4 transform
-        @return xyzrpy 6x1 vector of Bw values
+        trans = Motor(trans)
+        Tw_s_prime = self.T0_w.inverse().multiply(trans).multiply(self.Tw_e.inverse())
+        return numpy.asarray(Tw_s_prime.log(), dtype=float)
+
+    def is_valid(self, bw, ignoreNAN=False):
         """
-        Tw = reduce(numpy.dot, [numpy.linalg.inv(self.T0_w), trans, numpy.linalg.inv(self.Tw_e)])
-        xyz, rot = Tw[0:3, 3], Tw[0:3, 0:3]
-        rpycheck, rpy = TSR.rot_within_rpy_bounds(rot, self._Bw_cont)
-        if not all(rpycheck):
-            rpy = TSR.rot_to_rpy(rot)
-        return numpy.hstack((xyz, rpy))
+        Checks if a ``bw`` 6-vector is within the TSR bounds.
 
-    def is_valid(self, xyzrpy, ignoreNAN=False):
+        @param bw 6-vector [b12, b13, b23, e1i, e2i, e3i] (Motor.log order)
+        @param ignoreNAN (optional) ignore NaN components
+        @return a 6-vector of True where the bound is satisfied
         """
-        Checks if a xyzrpy is a valid sample from the TSR.
-        Two main issues: dealing with roundoff issues for zero bounds and
-        Wraparound for rpy.
-        @param xyzrpy 6x1 vector of Bw values
-        @param ignoreNAN (optional, defaults to False) ignore NaN xyzrpy
-        @return a 6x1 vector of True if bound is valid and False if not
-        """
-        # Extract XYZ and RPY components of input and TSR.
-        Bw_xyz, Bw_rpy = self._Bw_cont[0:3, :], self._Bw_cont[3:6, :]
-        xyz, rpy = xyzrpy[0:3], xyzrpy[3:6]
-
-        # Check bounds condition on XYZ component.
-        xyzcheck = TSR.xyz_within_bounds(xyz, Bw_xyz)
-
-        # Check bounds condition on RPY component.
-        rpycheck = TSR.rpy_within_bounds(rpy, Bw_rpy)
-
-        # Concatenate the XYZ and RPY components of the check.
-        check = numpy.hstack((xyzcheck, rpycheck))
-
-        # If ignoreNAN, components with NaN values are always OK.
+        bw = numpy.asarray(bw, dtype=float)
+        check = numpy.array(
+            [
+                ((bw[i] + EPSILON) >= self._Bw_cont[i, 0]) and ((bw[i] - EPSILON) <= self._Bw_cont[i, 1])
+                for i in range(6)
+            ]
+        )
         if ignoreNAN:
-            check |= numpy.isnan(xyzrpy)
-
+            check |= numpy.isnan(bw)
         return check
 
     def contains(self, trans):
         """
-        Checks if the TSR contains the transform
-        @param  trans 4x4 transform
+        Checks if the TSR contains the transform.
+
+        @param  trans  Motor or 4x4 transform
         @return True if transform is within TSR bounds, False otherwise
         """
-        # Transform to TSR frame (same as _displacement_to_tsr)
-        # Equation 5: T0_s' = T0_s * (Tw_e)^-1
-        T0_s_prime = numpy.dot(trans, numpy.linalg.inv(self.Tw_e))
-        # Equation 6: Tw_s' = (T0_w)^-1 * T0_s'
-        Tw_s_prime = numpy.dot(numpy.linalg.inv(self.T0_w), T0_s_prime)
-
-        # Extract XYZ and rot components in the TSR frame
-        Bw_xyz, Bw_rpy = self._Bw_cont[0:3, :], self._Bw_cont[3:6, :]
-        xyz, rot = Tw_s_prime[0:3, 3], Tw_s_prime[0:3, 0:3]
-
-        # Check bounds condition on XYZ component.
-        xyzcheck = TSR.xyz_within_bounds(xyz, Bw_xyz)
-        # Check bounds condition on rot component.
-        rotcheck, rpy = TSR.rot_within_rpy_bounds(rot, Bw_rpy)
-
-        return all(numpy.hstack((xyzcheck, rotcheck)))
+        return all(self.is_valid(self.to_bw(trans)))
 
     def _displacement_to_tsr(self, trans):
         """
         Compute the displacement vector from a transform to the TSR.
 
-        Implements Section 4.2 of Berenson et al. 2011:
-            T0_s' = T0_s * (Tw_e)^-1        (Equation 5)
-            Tw_s' = (T0_w)^-1 * T0_s'       (Equation 6)
-            dw = [translation; RPY]         (Equation 7)
-            Δx_i = displacement to bounds   (Equation 8)
+        In the split parametrization the displacement is simply, per component,
+        the signed distance outside the box (0 if inside). The rotation half is
+        the rotor-bivector log, which has no Euler redundancy, so the
+        9-candidate enumeration of the legacy RPY implementation is gone.
 
-        @param trans 4x4 transform (T0_s - end-effector pose in world frame)
-        @return dx 6x1 displacement vector to TSR
-        @return dw 6x1 displacement vector in w frame (for computing bwopt)
+        @param trans Motor or 4x4 transform (T0_s — pose in world frame)
+        @return dx 6-vector displacement to TSR
+        @return dw 6-vector clamped split coords in the w frame (the bwopt seed)
         """
-        # Equation 5: T0_s' = T0_s * (Tw_e)^-1
-        T0_s_prime = numpy.dot(trans, numpy.linalg.inv(self.Tw_e))
+        dw = self.to_bw(trans)
 
-        # Equation 6: Tw_s' = (T0_w)^-1 * T0_s'
-        Tw_s_prime = numpy.dot(numpy.linalg.inv(self.T0_w), T0_s_prime)
-
-        # Equation 7: Convert to displacement vector [xyz, rpy]
-        xyz = Tw_s_prime[0:3, 3]
-        rot = Tw_s_prime[0:3, 0:3]
-        rpy = TSR.rot_to_rpy(rot)
-        numpy.hstack((xyz, rpy))
-
-        # Handle RPY redundancy - find the RPY representation that minimizes distance
-        # The paper mentions checking equivalent rotations {x4 ± π, −x5 ± π, x6 ± π}
-        best_dx = None
-        best_dw = None
-        best_norm = float("inf")
-
-        # Generate candidate RPY values (original + 8 equivalent representations)
-        rpy_candidates = [rpy]
-
-        # Add equivalent RPY representations due to Euler angle redundancy
-        # When pitch = ±π/2, there's a singularity with infinite solutions
-        # Otherwise, there are generally 2 solutions: (r, p, y) and (r±π, π-p, y±π)
-        r, p, y = rpy
-        rpy_candidates.append(numpy.array([r + pi, pi - p, y + pi]))
-        rpy_candidates.append(numpy.array([r + pi, pi - p, y - pi]))
-        rpy_candidates.append(numpy.array([r - pi, pi - p, y + pi]))
-        rpy_candidates.append(numpy.array([r - pi, pi - p, y - pi]))
-        rpy_candidates.append(numpy.array([r + pi, -pi - p, y + pi]))
-        rpy_candidates.append(numpy.array([r + pi, -pi - p, y - pi]))
-        rpy_candidates.append(numpy.array([r - pi, -pi - p, y + pi]))
-        rpy_candidates.append(numpy.array([r - pi, -pi - p, y - pi]))
-
-        for rpy_cand in rpy_candidates:
-            # Wrap RPY to bounds interval for comparison
-            rpy_wrapped = wrap_to_interval(rpy_cand, lower=self._Bw_cont[3:6, 0])
-            dw_cand = numpy.hstack((xyz, rpy_wrapped))
-
-            # Equation 8: Compute displacement to bounds
-            dx = numpy.zeros(6)
-            for i in range(6):
-                if dw_cand[i] < self._Bw_cont[i, 0]:
-                    dx[i] = dw_cand[i] - self._Bw_cont[i, 0]
-                elif dw_cand[i] > self._Bw_cont[i, 1]:
-                    dx[i] = dw_cand[i] - self._Bw_cont[i, 1]
-                # else: dx[i] = 0 (already initialized)
-
-            norm = numpy.linalg.norm(dx)
-            if norm < best_norm:
-                best_norm = norm
-                best_dx = dx
-                best_dw = dw_cand
-
-        return best_dx, best_dw
+        dx = numpy.zeros(6)
+        for i in range(6):
+            if dw[i] < self._Bw_cont[i, 0]:
+                dx[i] = dw[i] - self._Bw_cont[i, 0]
+            elif dw[i] > self._Bw_cont[i, 1]:
+                dx[i] = dw[i] - self._Bw_cont[i, 1]
+        return dx, dw
 
     def distance(self, trans, rotation_weight=1.0):
         """
         Computes the distance from the TSR to a transform.
 
-        Implements the closed-form distance calculation from Section 4.2 of
-        Berenson et al. 2011. Translation is in meters, rotation in radians.
+        Translation is in meters, rotation in radians (rotor-bivector log norm).
 
-        @param trans 4x4 transform
+        @param trans Motor or 4x4 transform
         @param rotation_weight weight for rotation vs translation (default 1.0)
-                               Higher values penalize rotation errors more.
         @return dist Distance to TSR (0 if transform is inside TSR)
-        @return bwopt Closest Bw value to trans (6x1 xyzrpy)
+        @return bwopt Closest ``bw`` value to trans (6-vector)
         """
-        # Fast path: if transform is contained, distance is 0
-        if self.contains(trans):
-            return 0.0, self.to_xyzrpy(trans)
-
-        # Compute displacement using closed-form formula from paper
         dx, dw = self._displacement_to_tsr(trans)
 
-        # Apply rotation weight (paper mentions translation/rotation can be weighted)
         dx_weighted = dx.copy()
-        dx_weighted[3:6] *= rotation_weight
+        dx_weighted[_ROT] *= rotation_weight
+        dist = float(numpy.linalg.norm(dx_weighted))
 
-        dist = numpy.linalg.norm(dx_weighted)
-
-        # Compute bwopt: the closest point in the TSR bounds
         bwopt = numpy.clip(dw, self._Bw_cont[:, 0], self._Bw_cont[:, 1])
-        # Wrap RPY back to [-pi, pi]
-        bwopt[3:6] = wrap_to_interval(bwopt[3:6])
-
         return dist, bwopt
 
     def distance_optimize(self, trans):
         """
-        Computes the Geodesic Distance from the TSR to a transform using
-        numerical optimization. This is slower but may be more accurate for
-        complex cases.
+        Computes the geodesic distance from the TSR to a transform using
+        numerical optimization. Slower but uses the full SE(3) geodesic metric.
 
-        @param trans 4x4 transform
+        @param trans Motor or 4x4 transform
         @return dist Geodesic distance to TSR
-        @return bwopt Closest Bw value to trans
+        @return bwopt Closest ``bw`` value to trans
         """
+        trans = Motor(trans)
         if self.contains(trans):
-            return 0.0, self.to_xyzrpy(trans)
+            return 0.0, self.to_bw(trans)
 
         import scipy.optimize
 
@@ -450,56 +226,79 @@ class TSR:
         )
         return dist, bwopt
 
-    def sample_xyzrpy(self, xyzrpy=NANBW):
-        """
-        Samples from Bw to generate an xyzrpy sample
-        Can specify some values optionally as NaN.
+    # ------------------------------------------------------------------
+    # sampling
+    # ------------------------------------------------------------------
 
-        @param xyzrpy   (optional) a 6-vector of Bw with float('nan') for
-                        dimensions to sample uniformly.
-        @return         an xyzrpy sample
+    def sample_bw(self, bw=NANBW):
         """
-        check = self.is_valid(xyzrpy, ignoreNAN=True)
+        Samples from Bw to generate a ``bw`` 6-vector. Components given as NaN
+        are sampled uniformly within their bound; finite components are kept.
+
+        @param bw (optional) a 6-vector with float('nan') for free dimensions
+        @return a sampled ``bw`` 6-vector
+        """
+        check = self.is_valid(bw, ignoreNAN=True)
         if not all(check):
-            raise ValueError("xyzrpy must be within bounds", check)
+            raise ValueError("bw must be within bounds", check)
 
-        Bw_sample = numpy.array(
+        return numpy.array(
             [
                 self._Bw_cont[i, 0] + (self._Bw_cont[i, 1] - self._Bw_cont[i, 0]) * numpy.random.random_sample()
                 if numpy.isnan(x)
                 else x
-                for i, x in enumerate(xyzrpy)
+                for i, x in enumerate(bw)
             ]
         )
-        # Unwrap rpy to [-pi, pi]
-        Bw_sample[3:6] = wrap_to_interval(Bw_sample[3:6])
-        return Bw_sample
 
-    def sample(self, xyzrpy=NANBW):
+    def sample(self, bw=NANBW):
         """
         Samples from Bw to generate an end-effector transform.
-        Can specify some Bw values optionally.
 
-        @param xyzrpy   (optional) a 6-vector of Bw with float('nan') for
-                        dimensions to sample uniformly.
-        @return         4x4 transform
+        @param bw (optional) a 6-vector with float('nan') for free dimensions
+        @return Motor transform
         """
-        return self.to_transform(self.sample_xyzrpy(xyzrpy))
+        return self.to_transform(self.sample_bw(bw))
+
+    # ------------------------------------------------------------------
+    # serialization
+    # ------------------------------------------------------------------
 
     def to_dict(self):
-        """Convert this TSR to a python dict."""
+        """Convert this TSR to a python dict.
+
+        Transforms are serialized as their 6-vector bivector log
+        (``Motor.get_log()``); Bw remains a 6x2 list (split coords).
+        """
         return {
-            "T0_w": self.T0_w.tolist(),
-            "Tw_e": self.Tw_e.tolist(),
+            "format": "cga-split-v1",
+            "T0_w": numpy.asarray(self.T0_w.log(), dtype=float).tolist(),
+            "Tw_e": numpy.asarray(self.Tw_e.log(), dtype=float).tolist(),
             "Bw": self.Bw.tolist(),
         }
 
     @staticmethod
     def from_dict(x):
-        """Construct a TSR from a python dict."""
+        """Construct a TSR from a python dict.
+
+        ``T0_w`` / ``Tw_e`` accept both the bivector-log (length-6) and legacy
+        4x4-matrix formats. ``Bw`` is interpreted as split coords
+        ``[tx,ty,tz,b12,b13,b23]``; dicts lacking the ``cga-split-v1`` format
+        marker predate the CGA migration and are rejected to avoid silently
+        reinterpreting Euler-RPY bounds as bivector bounds.
+        """
+        fmt = x.get("format")
+        if fmt is not None and fmt != "cga-split-v1":
+            raise ValueError(f"Unsupported TSR serialization format: {fmt!r}")
+        if fmt is None:
+            raise ValueError(
+                "TSR dict has no 'format' marker; this looks like a legacy "
+                "Euler-RPY TSR whose Bw bounds are NOT compatible with the CGA "
+                "split parametrization. Re-author it as 'cga-split-v1'."
+            )
         return TSR(
-            T0_w=numpy.array(x["T0_w"]),
-            Tw_e=numpy.array(x["Tw_e"]),
+            T0_w=_load_transform(x["T0_w"]),
+            Tw_e=_load_transform(x["Tw_e"]),
             Bw=numpy.array(x["Bw"]),
         )
 

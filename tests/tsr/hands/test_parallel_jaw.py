@@ -10,6 +10,7 @@ from numpy import pi
 
 from tsr.hands import ParallelJawGripper
 from tsr.template import TSRTemplate
+from tests.tsr._motor_helpers import to_matrix
 
 R = 0.040  # cylinder radius
 H = 0.120  # cylinder height
@@ -70,7 +71,7 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
 
     def test_tw_e_is_valid_se3(self):
         for t in self.gripper.grasp_cylinder_side(R, H):
-            Rot = t.Tw_e[:3, :3]
+            Rot = to_matrix(t.Tw_e)[:3, :3]
             np.testing.assert_allclose(Rot @ Rot.T, np.eye(3), atol=1e-10)
             np.testing.assert_allclose(np.linalg.det(Rot), 1.0, atol=1e-10)
 
@@ -86,7 +87,7 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
         object_pose = np.eye(4)
         object_pose[:3, 3] = [0.5, 0.0, 0.0]
         for t in self.gripper.grasp_cylinder_side(R, H):
-            pose = t.instantiate(object_pose).sample()
+            pose = to_matrix(t.instantiate(object_pose).sample())
             self.assertEqual(pose.shape, (4, 4))
             np.testing.assert_allclose(pose[3, :], [0, 0, 0, 1], atol=1e-10)
             Rot = pose[:3, :3]
@@ -133,20 +134,20 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
 
     def test_tw_e_is_valid_se3(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
-            Rot = t.Tw_e[:3, :3]
+            Rot = to_matrix(t.Tw_e)[:3, :3]
             np.testing.assert_allclose(Rot @ Rot.T, np.eye(3), atol=1e-10)
             np.testing.assert_allclose(np.linalg.det(Rot), 1.0, atol=1e-10)
 
     def test_z_axis_points_down(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
 
     def test_tsr_origin_at_cylinder_top(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
-            self.assertAlmostEqual(t.T_ref_tsr[2, 3], H)
+            self.assertAlmostEqual(to_matrix(t.T_ref_tsr)[2, 3], H)
 
     def test_palm_offset_decreases_with_depth(self):
-        z_offsets = [t.Tw_e[2, 3] for t in self.gripper.grasp_cylinder_top(R, H, k=3)]
+        z_offsets = [to_matrix(t.Tw_e)[2, 3] for t in self.gripper.grasp_cylinder_top(R, H, k=3)]
         self.assertEqual(sorted(z_offsets, reverse=True), z_offsets)
 
     def test_names_contain_depth_labels(self):
@@ -157,7 +158,7 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
 
     def test_instantiate_and_sample_produces_valid_pose(self):
         for t in self.gripper.grasp_cylinder_top(R, H):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             self.assertEqual(pose.shape, (4, 4))
             np.testing.assert_allclose(pose[3, :], [0, 0, 0, 1], atol=1e-10)
             Rot = pose[:3, :3]
@@ -195,20 +196,20 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
 
     def test_tw_e_is_valid_se3(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
-            Rot = t.Tw_e[:3, :3]
+            Rot = to_matrix(t.Tw_e)[:3, :3]
             np.testing.assert_allclose(Rot @ Rot.T, np.eye(3), atol=1e-10)
             np.testing.assert_allclose(np.linalg.det(Rot), 1.0, atol=1e-10)
 
     def test_z_axis_points_up(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
 
     def test_tsr_origin_at_z_zero(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
-            self.assertAlmostEqual(t.T_ref_tsr[2, 3], 0.0)
+            self.assertAlmostEqual(to_matrix(t.T_ref_tsr)[2, 3], 0.0)
 
     def test_palm_offset_decreases_with_depth(self):
-        z_offsets = [abs(t.Tw_e[2, 3]) for t in self.gripper.grasp_cylinder_bottom(R, H, k=3)]
+        z_offsets = [abs(to_matrix(t.Tw_e)[2, 3]) for t in self.gripper.grasp_cylinder_bottom(R, H, k=3)]
         self.assertEqual(sorted(z_offsets, reverse=True), z_offsets)
 
     def test_names_contain_depth_labels(self):
@@ -219,7 +220,7 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
 
     def test_instantiate_and_sample_produces_valid_pose(self):
         for t in self.gripper.grasp_cylinder_bottom(R, H):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             self.assertEqual(pose.shape, (4, 4))
             np.testing.assert_allclose(pose[3, :], [0, 0, 0, 1], atol=1e-10)
             Rot = pose[:3, :3]
@@ -246,7 +247,7 @@ class TestParallelJawGripperCylinderCombined(unittest.TestCase):
 
     def test_instantiate_and_sample_all_valid(self):
         for t in self.gripper.grasp_cylinder(R, H):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             Rot = pose[:3, :3]
             np.testing.assert_allclose(Rot @ Rot.T, np.eye(3), atol=1e-8)
 

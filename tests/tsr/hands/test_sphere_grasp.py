@@ -8,6 +8,7 @@ import unittest
 import numpy as np
 
 from tsr.hands import ParallelJawGripper
+from tests.tsr._motor_helpers import to_matrix
 
 RADIUS = 0.040  # sphere radius [m]
 FL = 0.055  # finger length
@@ -36,15 +37,15 @@ class TestGraspSphere(unittest.TestCase):
 
     def test_tw_e_is_valid_se3(self):
         for t in self.templates:
-            R = t.Tw_e[:3, :3]
+            R = to_matrix(t.Tw_e)[:3, :3]
             np.testing.assert_allclose(R @ R.T, np.eye(3), atol=1e-10)
             np.testing.assert_allclose(np.linalg.det(R), 1.0, atol=1e-10)
 
     def test_z_ee_points_inward(self):
         """z_EE column of Tw_e should point from gripper toward sphere center."""
         for t in self.templates:
-            z_ee = t.Tw_e[:3, 2]
-            trans = t.Tw_e[:3, 3]
+            z_ee = to_matrix(t.Tw_e)[:3, 2]
+            trans = to_matrix(t.Tw_e)[:3, 3]
             ro = np.linalg.norm(trans)
             self.assertGreater(ro, 0)
             np.testing.assert_allclose(trans / ro, -z_ee, atol=1e-10, err_msg=f"z_EE not inward in {t.name}")
@@ -56,7 +57,7 @@ class TestGraspSphere(unittest.TestCase):
         ro_max = RADIUS + FL - depth_min  # = FL
         ro_min = RADIUS + FL - depth_max
         for t in self.templates:
-            ro = np.linalg.norm(t.Tw_e[:3, 3])
+            ro = np.linalg.norm(to_matrix(t.Tw_e)[:3, 3])
             self.assertGreaterEqual(ro, ro_min - 1e-9)
             self.assertLessEqual(ro, ro_max + 1e-9)
 
@@ -126,7 +127,7 @@ class TestGraspSphere(unittest.TestCase):
     def test_tsr_origin_at_sphere_center(self):
         """T_ref_tsr should be identity (origin at sphere center)."""
         for t in self.templates:
-            np.testing.assert_allclose(t.T_ref_tsr, np.eye(4), atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.T_ref_tsr), np.eye(4), atol=1e-10)
 
     # ── angle_range ───────────────────────────────────────────────────────
 

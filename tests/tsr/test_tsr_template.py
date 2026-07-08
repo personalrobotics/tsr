@@ -14,6 +14,7 @@ import unittest
 import numpy as np
 import yaml
 
+from tests.tsr._motor_helpers import motor_from_log, to_matrix
 from tsr.template import TSRTemplate
 
 
@@ -59,8 +60,8 @@ class TestTSRTemplate(unittest.TestCase):
             "Grasp a cylindrical object from the side with 5cm approach distance",
         )
 
-        np.testing.assert_array_equal(self.template.T_ref_tsr, self.T_ref_tsr)
-        np.testing.assert_array_equal(self.template.Tw_e, self.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(self.template.T_ref_tsr), self.T_ref_tsr)
+        np.testing.assert_array_almost_equal(to_matrix(self.template.Tw_e), self.Tw_e)
         np.testing.assert_array_equal(self.template.Bw, self.Bw)
 
     def test_tsr_template_instantiation(self):
@@ -71,10 +72,10 @@ class TestTSRTemplate(unittest.TestCase):
 
         # Check that the instantiated TSR has the correct T0_w
         expected_T0_w = T_ref_world @ self.T_ref_tsr
-        np.testing.assert_array_equal(tsr.T0_w, expected_T0_w)
+        np.testing.assert_array_almost_equal(to_matrix(tsr.T0_w), expected_T0_w)
 
         # Check that Tw_e and Bw are preserved
-        np.testing.assert_array_equal(tsr.Tw_e, self.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(tsr.Tw_e), self.Tw_e)
         np.testing.assert_array_equal(tsr.Bw, self.Bw)
 
     def test_tsr_template_default_values(self):
@@ -132,8 +133,14 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         self.assertIsInstance(result["Bw"], list)
 
         # Check array contents
-        np.testing.assert_array_equal(np.array(result["T_ref_tsr"]), self.template.T_ref_tsr)
-        np.testing.assert_array_equal(np.array(result["Tw_e"]), self.template.Tw_e)
+        self.assertEqual(len(result["T_ref_tsr"]), 6)
+        self.assertEqual(len(result["Tw_e"]), 6)
+        np.testing.assert_array_almost_equal(
+            to_matrix(motor_from_log(result["T_ref_tsr"])), to_matrix(self.template.T_ref_tsr)
+        )
+        np.testing.assert_array_almost_equal(
+            to_matrix(motor_from_log(result["Tw_e"])), to_matrix(self.template.Tw_e)
+        )
         np.testing.assert_array_equal(np.array(result["Bw"]), self.template.Bw)
 
     def test_from_dict(self):
@@ -159,8 +166,8 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.task, "grasp")
         self.assertEqual(reconstructed.variant, "side")
 
-        np.testing.assert_array_equal(reconstructed.T_ref_tsr, self.template.T_ref_tsr)
-        np.testing.assert_array_equal(reconstructed.Tw_e, self.template.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T_ref_tsr), to_matrix(self.template.T_ref_tsr))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.template.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.template.Bw, decimal=5)
 
     def test_dict_roundtrip(self):
@@ -175,8 +182,8 @@ class TestTSRTemplateSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.task, self.template.task)
         self.assertEqual(reconstructed.variant, self.template.variant)
 
-        np.testing.assert_array_equal(reconstructed.T_ref_tsr, self.template.T_ref_tsr)
-        np.testing.assert_array_equal(reconstructed.Tw_e, self.template.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T_ref_tsr), to_matrix(self.template.T_ref_tsr))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.template.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.template.Bw, decimal=5)
 
     def test_to_yaml(self):
@@ -238,8 +245,8 @@ Bw:
         self.assertEqual(reconstructed.task, self.template.task)
         self.assertEqual(reconstructed.variant, self.template.variant)
 
-        np.testing.assert_array_equal(reconstructed.T_ref_tsr, self.template.T_ref_tsr)
-        np.testing.assert_array_equal(reconstructed.Tw_e, self.template.Tw_e)
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.T_ref_tsr), to_matrix(self.template.T_ref_tsr))
+        np.testing.assert_array_almost_equal(to_matrix(reconstructed.Tw_e), to_matrix(self.template.Tw_e))
         np.testing.assert_array_almost_equal(reconstructed.Bw, self.template.Bw, decimal=5)
 
     def test_cross_format_roundtrip(self):
@@ -321,7 +328,7 @@ class TestTSRTemplateExamples(unittest.TestCase):
         )
 
         tsr = template.instantiate(cylinder_pose)
-        pose = tsr.sample()
+        pose = to_matrix(tsr.sample())
 
         # Verify pose is a valid 4x4 homogeneous transform
         self.assertEqual(pose.shape, (4, 4))
@@ -364,7 +371,7 @@ class TestTSRTemplateExamples(unittest.TestCase):
         # Test instantiation
         table_pose = np.eye(4)  # Table at world origin
         tsr = template.instantiate(table_pose)
-        pose = tsr.sample()
+        pose = to_matrix(tsr.sample())
 
         # Verify pose is a valid 4x4 homogeneous transform
         self.assertEqual(pose.shape, (4, 4))

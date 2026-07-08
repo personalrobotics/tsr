@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+from gafropy import Motor
 
-from .tsr import TSR
+from .tsr import TSR, _load_transform
 
 
 @dataclass(frozen=True)
@@ -28,9 +29,14 @@ class TSRTemplate:
         x = palm normal (right-hand rule: x = y × z)
 
     Attributes:
-        T_ref_tsr: 4×4 transform from REFERENCE frame to TSR frame.
-        Tw_e: 4×4 transform from TSR frame to SUBJECT frame at Bw = 0 (canonical).
-        Bw: (6,2) bounds in TSR frame over [x,y,z,roll,pitch,yaw].
+        T_ref_tsr: transform (Motor) from REFERENCE frame to TSR frame.
+        Tw_e: transform (Motor) from TSR frame to SUBJECT frame at Bw = 0 (canonical).
+        Bw: (6,2) bounds in TSR frame over [tx,ty,tz,b12,b13,b23] (translation
+            box + rotor-bivector box; see ``TSR`` for the split parametrization).
+
+    Both ``T_ref_tsr`` and ``Tw_e`` are stored as ``gafropy.Motor`` objects, but
+    may be supplied at construction as a ``Motor``, a 4×4 numpy matrix, or a
+    6-vector bivector log.
         task: The task being performed (e.g., "grasp", "place", "pour").
         subject: The entity whose pose is constrained (e.g., "gripper").
         reference: The entity relative to which TSR is defined (e.g., "mug").
@@ -42,8 +48,8 @@ class TSRTemplate:
             (arctan(d_min / h_com)). None for grasp templates or analytic primitives.
     """
 
-    T_ref_tsr: np.ndarray
-    Tw_e: np.ndarray
+    T_ref_tsr: Motor
+    Tw_e: Motor
     Bw: np.ndarray
     task: str
     subject: str
@@ -54,6 +60,12 @@ class TSRTemplate:
     preshape: Optional[np.ndarray] = None
     stability_margin: Optional[float] = None
 
+    def __post_init__(self):
+        # Coerce transforms to Motor, accepting Motor / 4x4 matrix / bivector log.
+        # (frozen dataclass -> assign via object.__setattr__)
+        object.__setattr__(self, "T_ref_tsr", Motor(self.T_ref_tsr))
+        object.__setattr__(self, "Tw_e", Motor(self.Tw_e))
+
     def __repr__(self) -> str:
         parts = [f"task={self.task!r}", f"subject={self.subject!r}"]
         if self.variant:
@@ -62,28 +74,30 @@ class TSRTemplate:
             parts.append(f"margin={np.degrees(self.stability_margin):.1f}°")
         return f"TSRTemplate({', '.join(parts)})"
 
-    def instantiate(self, T_ref_world: np.ndarray) -> TSR:
+    def instantiate(self, T_ref_world) -> TSR:
         """Bind this template to a concrete reference pose in world.
 
         Args:
-            T_ref_world: 4×4 pose of the reference entity in world frame.
+            T_ref_world: pose (Motor or 4×4 matrix) of the reference entity in
+                world frame.
 
         Returns:
-            TSR whose T0_w = T_ref_world @ T_ref_tsr, Tw_e = Tw_e, Bw = Bw.
+            TSR whose T0_w = T_ref_world * T_ref_tsr, Tw_e = Tw_e, Bw = Bw.
         """
-        T0_w = T_ref_world @ self.T_ref_tsr
+        T0_w = Motor(T_ref_world).multiply(self.T_ref_tsr)
         return TSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
 
-    def sample(self, T_ref_world: np.ndarray) -> np.ndarray:
+    def sample(self, T_ref_world):
         """Bind to a reference pose and sample one end-effector pose.
 
         Shorthand for ``self.instantiate(T_ref_world).sample()``.
 
         Args:
-            T_ref_world: 4×4 pose of the reference entity in world frame.
+            T_ref_world: pose (Motor or 4×4 matrix) of the reference entity in
+                world frame.
 
         Returns:
-            4×4 sampled end-effector pose in world frame.
+            Motor sampled end-effector pose in world frame.
         """
         return self.instantiate(T_ref_world).sample()
 
@@ -95,8 +109,8 @@ class TSRTemplate:
             "task": self.task,
             "subject": self.subject,
             "reference": self.reference,
-            "T_ref_tsr": self.T_ref_tsr.tolist(),
-            "Tw_e": self.Tw_e.tolist(),
+            "T_ref_tsr": np.asarray(self.T_ref_tsr.log(), dtype=float).tolist(),
+            "Tw_e": np.asarray(self.Tw_e.log(), dtype=float).tolist(),
             "Bw": self.Bw.tolist(),
         }
         if self.variant:
@@ -121,8 +135,8 @@ class TSRTemplate:
             subject=x["subject"],
             reference=x["reference"],
             variant=x.get("variant", ""),
-            T_ref_tsr=np.array(x["T_ref_tsr"]),
-            Tw_e=np.array(x["Tw_e"]),
+            T_ref_tsr=_load_transform(x["T_ref_tsr"]),
+            Tw_e=_load_transform(x["Tw_e"]),
             Bw=np.array(x["Bw"]),
             preshape=preshape,
             stability_margin=x.get("stability_margin", None),
