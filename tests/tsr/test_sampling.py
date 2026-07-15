@@ -32,17 +32,19 @@ class TestSamplingUtilities(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Create test TSRs with different volumes
+        # Bw rows are Motor.log order: [b12, b13, b23, tx, ty, tz]
+        # (rotation 0:3, translation 3:6).
         self.tsr1 = TSR(
             T0_w=np.eye(4),
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [0, 0],  # x: fixed
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [-pi, pi],  # yaw: full rotation (2π volume)
+                    [0, 0],  # b12: fixed
+                    [0, 0],  # b13: fixed
+                    [-pi, pi],  # b23: full rotation (2π volume)
+                    [0, 0],  # tx: fixed
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed
                 ]
             ),
         )
@@ -52,12 +54,12 @@ class TestSamplingUtilities(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [-0.1, 0.1],  # x: 0.2 range
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [0, 0],  # yaw: fixed
+                    [0, 0],  # b12: fixed
+                    [0, 0],  # b13: fixed
+                    [0, 0],  # b23: fixed
+                    [-0.1, 0.1],  # tx: 0.2 range
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed
                 ]
             ),
         )
@@ -67,12 +69,12 @@ class TestSamplingUtilities(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [0, 0],  # x: fixed
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [0, 0],  # yaw: fixed (zero volume)
+                    [0, 0],  # b12: fixed
+                    [0, 0],  # b13: fixed
+                    [0, 0],  # b23: fixed
+                    [0, 0],  # tx: fixed
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed (zero volume)
                 ]
             ),
         )
@@ -171,12 +173,12 @@ class TestTemplateSampling(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [0, 0],  # x: fixed
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [-pi, pi],  # yaw: full rotation
+                    [0, 0],  # b12: fixed
+                    [0, 0],  # b13: fixed
+                    [-pi, pi],  # b23: full rotation
+                    [0, 0],  # tx: fixed
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed
                 ]
             ),
             subject="generic_gripper",
@@ -190,12 +192,12 @@ class TestTemplateSampling(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [-0.1, 0.1],  # x: 0.2 range
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [0, 0],  # yaw: fixed
+                    [0, 0],  # b12: fixed
+                    [0, 0],  # b13: fixed
+                    [0, 0],  # b23: fixed
+                    [-0.1, 0.1],  # tx: 0.2 range
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed
                 ]
             ),
             subject="generic_gripper",
@@ -271,12 +273,12 @@ class TestSamplingEdgeCases(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [-0.1, 0.1],  # x: small range
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [0, 0],  # yaw: fixed
+                    [0, 0],  # b12: fixed
+                    [0, 0],  # b13: fixed
+                    [0, 0],  # b23: fixed
+                    [-0.1, 0.1],  # tx: small range
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed
                 ]
             ),
         )
@@ -303,12 +305,12 @@ class TestSamplingEdgeCases(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [-1, 1],  # x: large range
-                    [-1, 1],  # y: large range
-                    [-1, 1],  # z: large range
-                    [-pi, pi],  # roll: full rotation
-                    [-pi, pi],  # pitch: full rotation
-                    [-pi, pi],  # yaw: full rotation
+                    [-pi, pi],  # b12: full rotation
+                    [-pi, pi],  # b13: full rotation
+                    [-pi, pi],  # b23: full rotation
+                    [-1, 1],  # tx: large range
+                    [-1, 1],  # ty: large range
+                    [-1, 1],  # tz: large range
                 ]
             ),
         )
@@ -318,12 +320,12 @@ class TestSamplingEdgeCases(unittest.TestCase):
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
-                    [0, 0],  # x: fixed
-                    [0, 0],  # y: fixed
-                    [0, 0],  # z: fixed
-                    [0, 0],  # roll: fixed
-                    [0, 0],  # pitch: fixed
-                    [-0.1, 0.1],  # yaw: small range
+                    [-0.1, 0.1],  # b12: small rotation
+                    [0, 0],  # b13: fixed
+                    [0, 0],  # b23: fixed
+                    [0, 0],  # tx: fixed
+                    [0, 0],  # ty: fixed
+                    [0, 0],  # tz: fixed
                 ]
             ),
         )

@@ -89,13 +89,17 @@ class TSR(Constraint):
 
     @property
     def volume(self) -> float:
-        """Union-sampling weight: the summed width of the ``Bw`` box.
+        """Union-sampling weight: summed Bw width, rotation rows clamped to 2π.
 
-        Equals ``sum(Bw[:, 1] - Bw[:, 0])`` — the same quantity the sampling
-        helpers historically read directly off ``Bw``.
+        Rows 0:3 are the rotor-bivector (rotation) DOF in Motor.log order; a full
+        turn is 2π, so they are clamped there to keep a free rotation from
+        dominating the weight. Rows 3:6 (translation) are summed as-is.
         """
         import numpy as _np
-        return float(_np.sum(self.Bw[:, 1] - self.Bw[:, 0]))
+        widths = _np.asarray(self.Bw[:, 1] - self.Bw[:, 0], dtype=float)
+        widths[0:3] = _np.minimum(widths[0:3], 2.0 * _np.pi)
+        widths = _np.maximum(widths, 0.0)
+        return float(_np.sum(widths))
 
     # ------------------------------------------------------------------
     # bw <-> transform
