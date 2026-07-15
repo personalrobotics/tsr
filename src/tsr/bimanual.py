@@ -37,7 +37,11 @@ class BimanualWitness:
 
 
 def _interval_sum(Bw: np.ndarray) -> float:
-    return float(np.sum(Bw[:, 1] - Bw[:, 0]))
+    """Summed Bw width with rotation rows (0:3) clamped to 2π; matches TSR.volume."""
+    widths = np.asarray(Bw[:, 1] - Bw[:, 0], dtype=float)
+    widths[0:3] = np.minimum(widths[0:3], 2.0 * np.pi)
+    widths = np.maximum(widths, 0.0)
+    return float(np.sum(widths))
 
 
 class BimanualTSR:

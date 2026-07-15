@@ -61,3 +61,14 @@ def test_volume_sums_present_components():
     both = BimanualTSR(absolute=abs_tsr, relative=rel_tsr)
     abs_only = BimanualTSR(absolute=abs_tsr)
     assert both.volume == pytest.approx(abs_only.volume)
+
+
+def test_volume_clamps_rotation_but_not_translation():
+    # BimanualTSR.volume must match TSR.volume: rotation rows (0:3) clamp to 2π,
+    # translation rows (3:6) are summed as-is.
+    Bw = np.zeros((6, 2))
+    Bw[0] = [-10.0, 10.0]  # rotation row, width 20 >> 2π -> clamps to 2π
+    Bw[3] = [-5.0, 5.0]  # translation row, width 10 -> unclamped
+    bt = BimanualTSR(absolute=TSR(T0_w=np.eye(4), Tw_e=np.eye(4), Bw=Bw))
+    # 2π (clamped rotation) + 10.0 (full translation)
+    assert bt.volume == pytest.approx(np.pi * 2.0 + 10.0)
