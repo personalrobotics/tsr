@@ -87,6 +87,16 @@ class TSR(Constraint):
         free_str = ",".join(free) if free else "fixed"
         return f"TSR(free=[{free_str}], T0_w.t={t0.round(3)}, Tw_e.t={te.round(3)})"
 
+    @property
+    def volume(self) -> float:
+        """Union-sampling weight: the summed width of the ``Bw`` box.
+
+        Equals ``sum(Bw[:, 1] - Bw[:, 0])`` — the same quantity the sampling
+        helpers historically read directly off ``Bw``.
+        """
+        import numpy as _np
+        return float(_np.sum(self.Bw[:, 1] - self.Bw[:, 0]))
+
     # ------------------------------------------------------------------
     # bw <-> transform
     # ------------------------------------------------------------------

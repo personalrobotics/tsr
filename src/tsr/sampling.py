@@ -66,7 +66,7 @@ def weights_from_tsrs(tsrs: Sequence[TSR]) -> np.ndarray:
     """
     if len(tsrs) == 0:
         raise ValueError("Expected at least one TSR.")
-    w = np.array([_interval_sum(t.Bw) for t in tsrs], dtype=float)
+    w = np.array([t.volume for t in tsrs], dtype=float)
     if not np.any(w > 0.0):
         w = np.ones_like(w)
     return w
