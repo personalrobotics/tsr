@@ -44,5 +44,6 @@ from .sampling import (
 # Templates
 from .template import TSRTemplate
 from .tsr import TSR
+from .bimanual import BimanualPose, BimanualTSR, BimanualWitness
 from .tsr_chain import TSRChain
 from .utils import EPSILON, geodesic_distance, geodesic_error, wrap_to_interval
