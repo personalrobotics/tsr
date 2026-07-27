@@ -102,5 +102,7 @@ line-length = 120
 select = ["F", "E", "W", "I"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/tsr/__init__.py" = ["F401"]
+# The top-level __init__ is grouped by architecture layer (see docs/ARCHITECTURE.md),
+# not alphabetically, so exempt it from import re-sorting (I001).
+"src/tsr/__init__.py" = ["F401", "I001"]
 "src/tsr/**/__init__.py" = ["F401"]

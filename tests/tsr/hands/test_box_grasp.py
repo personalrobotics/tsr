@@ -105,9 +105,9 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
             self.assertAlmostEqual(t.T_ref_tsr[2, 3], SZ)
 
-    def test_preshape_exceeds_aperture_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_box_top(SX, SY, SZ, preshape=self.gripper.max_aperture + 0.01)
+    def test_preshape_exceeds_aperture_returns_empty(self):
+        # Infeasible (object too wide for the jaws) returns [], not raise.
+        self.assertEqual(self.gripper.grasp_box_top(SX, SY, SZ, preshape=self.gripper.max_aperture + 0.01), [])
 
     def test_zero_dim_raises(self):
         with self.assertRaises(ValueError):
@@ -233,9 +233,8 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
             self.assertAlmostEqual(t.Bw[1, 1], (SY / 2 - clearance))
             self.assertEqual(t.Bw[2, 0], t.Bw[2, 1])  # z fixed (span)
 
-    def test_preshape_exceeds_aperture_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_box_face_x(SX, SY, SZ, preshape=self.gripper.max_aperture + 0.01)
+    def test_preshape_exceeds_aperture_returns_empty(self):
+        self.assertEqual(self.gripper.grasp_box_face_x(SX, SY, SZ, preshape=self.gripper.max_aperture + 0.01), [])
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_face_x(SX, SY, SZ):

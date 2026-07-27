@@ -588,6 +588,28 @@ class GripperBase(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement grasp_torus_span")
 
+    # ------------------------------------------------------------------
+    # Shared input validation (factory contract)
+    #
+    # Convention across all grasp_* factories:
+    #   * Invalid *inputs* (a programming error) raise ValueError.
+    #   * Geometric *infeasibility* (object too big for the gripper, etc.)
+    #     returns an empty list — never an exception. Callers can iterate
+    #     over many objects without try/except.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _check_depth_count(k: int) -> None:
+        """Validate the discrete-depth count. Raises ValueError for k < 1."""
+        if k < 1:
+            raise ValueError(f"k (number of approach depths) must be >= 1, got {k}")
+
+    @staticmethod
+    def _check_angle_range(angle_range: Tuple[float, float]) -> None:
+        """Validate a (min, max) yaw range. Raises if reversed (min > max)."""
+        if angle_range[0] > angle_range[1]:
+            raise ValueError(f"angle_range must be (min, max) with min <= max, got {angle_range}")
+
     def renderer(self):
         """Return a SubjectRenderer for use with TSRVisualizer.
 

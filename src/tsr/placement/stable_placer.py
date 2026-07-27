@@ -64,11 +64,16 @@ class StablePlacer:
             bw[4] = pitch_range
         return bw
 
-    def _tw_e(self, R: np.ndarray, com_height: float) -> np.ndarray:
-        """Build 4×4 Tw_e from rotation R and COM height above the surface."""
+    def _tw_e(self, R: np.ndarray, origin_height: float) -> np.ndarray:
+        """Build 4×4 Tw_e from rotation R and the object-frame origin height.
+
+        ``origin_height`` is the z of the object-frame origin above the surface,
+        chosen so the resting face sits at z=0. For the centered primitives below
+        the origin is the geometric center, so this is the relevant half-extent.
+        """
         T = np.eye(4)
         T[:3, :3] = R
-        T[2, 3] = float(com_height)
+        T[2, 3] = float(origin_height)
         return T
 
     def _template(self, name, description, variant, Tw_e, Bw, subject, stability_margin=None) -> TSRTemplate:
@@ -285,7 +290,7 @@ class StablePlacer:
         poses = [p for p in poses if p[2] >= min_margin_rad]
 
         templates = []
-        for idx, (R, com_height, margin_rad) in enumerate(poses):
+        for idx, (R, origin_height, margin_rad) in enumerate(poses):
             deg = float(np.degrees(margin_rad))
             templates.append(
                 self._template(
@@ -295,7 +300,7 @@ class StablePlacer:
                         f"(stability margin {deg:.1f}°) on {self.reference}."
                     ),
                     variant=f"face-{idx + 1}",
-                    Tw_e=self._tw_e(R, com_height),
+                    Tw_e=self._tw_e(R, origin_height),
                     Bw=self._bw(),
                     subject=subject,
                     stability_margin=float(margin_rad),

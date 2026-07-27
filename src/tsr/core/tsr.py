@@ -11,6 +11,14 @@ from .utils import EPSILON, geodesic_distance, wrap_to_interval
 
 NANBW = numpy.ones(6) * float("nan")
 
+# Gimbal-lock detection threshold for RPY extraction. Only treat a rotation as a
+# true singularity when cos(pitch) is within this of zero (|rot[2,0]| ~ 1). Away
+# from the singularity cos(pitch) > 0 and arctan2 is scale-invariant, so the
+# general formula stays accurate right up to it; snapping pitch to +/-pi/2 too
+# early (the old EPSILON=1e-3 threshold) discarded up to ~0.04 rad of rotation
+# and made contains() reject poses that sample() produced. See docs/REVIEW.md C1.
+_GIMBAL_EPSILON = 1e-9
+
 
 class TSR:
     """
@@ -70,22 +78,25 @@ class TSR:
         @return rpy (3,) rpy
         """
         rpy = numpy.zeros(3)
-        if not (abs(abs(rot[2, 0]) - 1) < EPSILON):
-            p = -numpy.arcsin(rot[2, 0])
-            rpy[0] = numpy.arctan2((rot[2, 1] / numpy.cos(p)), (rot[2, 2] / numpy.cos(p)))
+        # Clip to [-1, 1] so arcsin never returns NaN from roundoff.
+        r20 = float(numpy.clip(rot[2, 0], -1.0, 1.0))
+        if abs(abs(r20) - 1.0) >= _GIMBAL_EPSILON:
+            # Not a singularity: cos(pitch) > 0, so arctan2 is accurate.
+            p = -numpy.arcsin(r20)
+            cp = numpy.cos(p)
+            rpy[0] = numpy.arctan2(rot[2, 1] / cp, rot[2, 2] / cp)
             rpy[1] = p
-            rpy[2] = numpy.arctan2((rot[1, 0] / numpy.cos(p)), (rot[0, 0] / numpy.cos(p)))
+            rpy[2] = numpy.arctan2(rot[1, 0] / cp, rot[0, 0] / cp)
+        elif r20 < 0:
+            # rot[2,0] = -1 -> pitch = +pi/2 (roll and yaw are coupled; fix yaw=0)
+            rpy[0] = numpy.arctan2(rot[0, 1], rot[0, 2])
+            rpy[1] = pi / 2
+            rpy[2] = 0.0
         else:
-            if abs(rot[2, 0] + 1) < EPSILON:
-                r_offset = numpy.arctan2(rot[0, 1], rot[0, 2])
-                rpy[0] = r_offset
-                rpy[1] = pi / 2
-                rpy[2] = 0.0
-            else:
-                r_offset = numpy.arctan2(-rot[0, 1], -rot[0, 2])
-                rpy[0] = r_offset
-                rpy[1] = -pi / 2
-                rpy[2] = 0.0
+            # rot[2,0] = +1 -> pitch = -pi/2
+            rpy[0] = numpy.arctan2(-rot[0, 1], -rot[0, 2])
+            rpy[1] = -pi / 2
+            rpy[2] = 0.0
         return rpy
 
     @staticmethod
@@ -189,9 +200,10 @@ class TSR:
         @return check a (3,) vector of True if within and False if outside
         @return rpy the rpy consistent with the bound or None if nothing is
         """
-        if not (abs(abs(rot[2, 0]) - 1) < EPSILON):
+        r20 = float(numpy.clip(rot[2, 0], -1.0, 1.0))
+        if abs(abs(r20) - 1.0) >= _GIMBAL_EPSILON:
             # Not a singularity. Two pitch solutions
-            psol = -numpy.arcsin(rot[2, 0])
+            psol = -numpy.arcsin(r20)
             for p in [psol, (pi - psol)]:
                 rpy = numpy.zeros(3)
                 rpy[0] = numpy.arctan2((rot[2, 1] / numpy.cos(p)), (rot[2, 2] / numpy.cos(p)))
@@ -202,7 +214,7 @@ class TSR:
                     return rpycheck, rpy
             return rpycheck, None
         else:
-            if abs(rot[2, 0] + 1) < EPSILON:
+            if r20 < 0:
                 r_offset = numpy.arctan2(rot[0, 1], rot[0, 2])
                 # Valid rotation: [y + r_offset, pi/2, y]
                 # check the four r-y Bw corners
@@ -344,7 +356,6 @@ class TSR:
         xyz = Tw_s_prime[0:3, 3]
         rot = Tw_s_prime[0:3, 0:3]
         rpy = TSR.rot_to_rpy(rot)
-        numpy.hstack((xyz, rpy))
 
         # Handle RPY redundancy - find the RPY representation that minimizes distance
         # The paper mentions checking equivalent rotations {x4 ± π, −x5 ± π, x6 ± π}

@@ -66,10 +66,19 @@ class ParallelJawGripper(GripperBase):
         return self.clearance_fraction * graspable_depth
 
     def _validate(self, cylinder_radius: float, preshape: float) -> None:
+        # Invalid input -> raise. (An over-wide preshape is geometric
+        # infeasibility, handled by the caller returning []; see _infeasible.)
         if cylinder_radius <= 0:
             raise ValueError("cylinder_radius must be > 0")
-        if preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+
+    def _infeasible(self, preshape: float, object_span: float) -> bool:
+        """True if this grasp is geometrically infeasible (caller returns []).
+
+        Infeasible when the jaws can't open wide enough for the object
+        (``preshape > max_aperture``) or can't straddle it
+        (``preshape <= object_span``, the object's grasped width).
+        """
+        return preshape > self.max_aperture or preshape <= object_span
 
     def grasp_cylinder_side(
         self,
@@ -109,12 +118,14 @@ class ParallelJawGripper(GripperBase):
         Returns [] if preshape <= cylinder diameter. Raises ValueError for
         invalid geometry.
         """
+        self._check_depth_count(k)
+        self._check_angle_range(angle_range)
         if clearance is None:
             clearance = self._default_clearance(min(self.finger_length, cylinder_radius))
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
-        if preshape <= 2.0 * cylinder_radius:
+        if self._infeasible(preshape, 2.0 * cylinder_radius):
             return []
         h0, h1 = clearance, cylinder_height - clearance
         if h1 <= h0:
@@ -211,12 +222,14 @@ class ParallelJawGripper(GripperBase):
         the rim (shallowest) to palm a clearance above the rim (deepest).
         Full yaw covers all finger orientations.
         """
+        self._check_depth_count(k)
+        self._check_angle_range(angle_range)
         if clearance is None:
             clearance = self._default_clearance(self.finger_length)
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
-        if preshape <= 2.0 * cylinder_radius:
+        if self._infeasible(preshape, 2.0 * cylinder_radius):
             return []
 
         if not name:
@@ -292,12 +305,14 @@ class ParallelJawGripper(GripperBase):
         bottom face (shallowest) to palm a clearance below it (deepest).
         Full yaw covers all finger orientations.
         """
+        self._check_depth_count(k)
+        self._check_angle_range(angle_range)
         if clearance is None:
             clearance = self._default_clearance(self.finger_length)
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape)
-        if preshape <= 2.0 * cylinder_radius:
+        if self._infeasible(preshape, 2.0 * cylinder_radius):
             return []
 
         if not name:
@@ -384,10 +399,11 @@ class ParallelJawGripper(GripperBase):
         origin.  Returns [] if the finger span can't fit around the object or
         the required preshape exceeds max_aperture.
         """
+        self._check_depth_count(k)
         if preshape_user is not None:
             preshape = preshape_user
-            if preshape <= span_dim:
-                return []  # fingers can't straddle the object
+            if self._infeasible(preshape, span_dim):
+                return []  # too wide for the jaws or can't straddle the object
         else:
             preshape = span_dim + clearance
             if preshape > self.max_aperture:
@@ -454,7 +470,7 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+            return []  # object too wide for the jaws — infeasible
         hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
         if hx <= 0 or hy <= 0:
             raise ValueError("box face too small for the given clearance")
@@ -520,7 +536,7 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+            return []  # object too wide for the jaws — infeasible
         hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
         if hx <= 0 or hy <= 0:
             raise ValueError("box face too small for the given clearance")
@@ -585,7 +601,7 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+            return []  # object too wide for the jaws — infeasible
         hy = box_y / 2.0 - clearance
         hz_half = box_z / 2.0 - clearance
         if hy <= 0:
@@ -663,7 +679,7 @@ class ParallelJawGripper(GripperBase):
             clearance = self._default_clearance(self.finger_length)
         self._validate_box(box_x, box_y, box_z)
         if preshape is not None and preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
+            return []  # object too wide for the jaws — infeasible
         hx = box_x / 2.0 - clearance
         hz_half = box_z / 2.0 - clearance
         if hx <= 0:
@@ -746,15 +762,15 @@ class ParallelJawGripper(GripperBase):
         Returns [] if preshape <= sphere diameter. Raises ValueError for
         invalid geometry.
         """
+        self._check_depth_count(k)
+        self._check_angle_range(angle_range)
+        if object_radius <= 0:
+            raise ValueError("object_radius must be > 0")
         if clearance is None:
             clearance = self._default_clearance(min(self.finger_length, object_radius))
         if preshape is None:
             preshape = 2.0 * object_radius + clearance
-        if object_radius <= 0:
-            raise ValueError("object_radius must be > 0")
-        if preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
-        if preshape <= 2.0 * object_radius:
+        if self._infeasible(preshape, 2.0 * object_radius):
             return []
 
         if not name:
@@ -880,14 +896,16 @@ class ParallelJawGripper(GripperBase):
         diameter or finger_length ≤ tube_radius (finger too short to reach
         tube centerline). Raises ValueError for invalid geometry.
         """
+        self._check_depth_count(k)
+        self._check_angle_range(angle_range)
+        if n_minor < 1:
+            raise ValueError(f"n_minor must be >= 1, got {n_minor}")
+        self._validate_torus(torus_radius, tube_radius)
         if clearance is None:
             clearance = self._default_clearance(min(self.finger_length, tube_radius))
         if preshape is None:
             preshape = 2.0 * tube_radius + clearance
-        self._validate_torus(torus_radius, tube_radius)
-        if preshape > self.max_aperture:
-            raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
-        if preshape <= 2.0 * tube_radius:
+        if self._infeasible(preshape, 2.0 * tube_radius):
             return []
 
         if not name:
@@ -988,18 +1006,14 @@ class ParallelJawGripper(GripperBase):
         2*(R+r). Full yaw freedom covers all finger orientations. Silently
         returns [] if the outer diameter + clearance exceeds max_aperture.
         """
+        self._check_depth_count(k)
+        self._validate_torus(torus_radius, tube_radius)
         if clearance is None:
             clearance = self._default_clearance(self.finger_length)
         if preshape is None:
             preshape = 2.0 * (torus_radius + tube_radius) + clearance
-            if preshape > self.max_aperture:
-                return []  # torus too large for hardware — skip silently
-        else:
-            if preshape <= 2.0 * (torus_radius + tube_radius):
-                return []  # user preshape can't straddle outer diameter
-            if preshape > self.max_aperture:
-                raise ValueError(f"preshape {preshape:.3f}m > max_aperture {self.max_aperture:.3f}m")
-        self._validate_torus(torus_radius, tube_radius)
+        if self._infeasible(preshape, 2.0 * (torus_radius + tube_radius)):
+            return []  # too large for hardware or can't straddle outer diameter
 
         if not name:
             name = f"{reference.title()} Torus Span Grasp"

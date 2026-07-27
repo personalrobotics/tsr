@@ -31,9 +31,9 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
     def test_preshape_too_small_returns_empty(self):
         self.assertEqual(self.gripper.grasp_cylinder_side(R, H, preshape=2 * R - 0.001), [])
 
-    def test_preshape_exceeds_aperture_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_side(R, H, preshape=self.gripper.max_aperture + 0.01)
+    def test_preshape_exceeds_aperture_returns_empty(self):
+        # Infeasible (object too wide for the jaws) returns [], not raise.
+        self.assertEqual(self.gripper.grasp_cylinder_side(R, H, preshape=self.gripper.max_aperture + 0.01), [])
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
@@ -115,9 +115,8 @@ class TestParallelJawGripperCylinderTop(unittest.TestCase):
     def test_preshape_too_small_returns_empty(self):
         self.assertEqual(self.gripper.grasp_cylinder_top(R, H, preshape=2 * R - 0.001), [])
 
-    def test_preshape_exceeds_aperture_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_top(R, H, preshape=self.gripper.max_aperture + 0.01)
+    def test_preshape_exceeds_aperture_returns_empty(self):
+        self.assertEqual(self.gripper.grasp_cylinder_top(R, H, preshape=self.gripper.max_aperture + 0.01), [])
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
@@ -177,9 +176,8 @@ class TestParallelJawGripperCylinderBottom(unittest.TestCase):
     def test_preshape_too_small_returns_empty(self):
         self.assertEqual(self.gripper.grasp_cylinder_bottom(R, H, preshape=2 * R - 0.001), [])
 
-    def test_preshape_exceeds_aperture_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_bottom(R, H, preshape=self.gripper.max_aperture + 0.01)
+    def test_preshape_exceeds_aperture_returns_empty(self):
+        self.assertEqual(self.gripper.grasp_cylinder_bottom(R, H, preshape=self.gripper.max_aperture + 0.01), [])
 
     def test_zero_radius_raises(self):
         with self.assertRaises(ValueError):
