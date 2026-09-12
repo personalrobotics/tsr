@@ -9,12 +9,12 @@ from collections import defaultdict
 from typing import Iterator, Tuple
 
 import numpy as np
-from gafropy import Rotor, Vector
+from gafro import Rotor, Vector
 from scipy.spatial import ConvexHull
 
 
 def _rotor_to_align(a: np.ndarray, b: np.ndarray) -> Rotor:
-    """Return a gafropy ``Rotor`` R such that ``R a = b`` (both unit vectors).
+    """Return a gafro ``Rotor`` R such that ``R a = b`` (both unit vectors).
 
     Pure CGA via ``Vector.get_rotor``; the antiparallel case (no unique shortest
     arc) is a 180° rotation about an axis perpendicular to ``a``, expressed as a
@@ -86,7 +86,7 @@ def stable_poses_mesh(
 
     Yields:
         (rotor, com_height, stability_margin) for each stable face:
-        - rotor (gafropy.Rotor): rotation s.t. face outward-normal → -z (face
+        - rotor (gafro.Rotor): rotation s.t. face outward-normal → -z (face
           rests on table).
         - com_height (float): perpendicular distance from COM to face / table height.
         - stability_margin (float): arctan(d_min / com_height) in radians.

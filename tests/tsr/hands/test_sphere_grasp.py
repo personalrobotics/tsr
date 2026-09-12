@@ -7,8 +7,8 @@ import unittest
 
 import numpy as np
 
-from tsr.hands import ParallelJawGripper
 from tests.tsr._motor_helpers import to_matrix
+from tsr.hands import ParallelJawGripper
 
 RADIUS = 0.040  # sphere radius [m]
 FL = 0.055  # finger length

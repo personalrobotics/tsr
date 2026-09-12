@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from gafropy import Motor
+from gafro import Motor
 
 from .tsr import TSR, _load_transform
+from .utils import as_motor
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,7 @@ class TSRTemplate:
         Bw: (6,2) bounds in TSR frame over [tx,ty,tz,b12,b13,b23] (translation
             box + rotor-bivector box; see ``TSR`` for the split parametrization).
 
-    Both ``T_ref_tsr`` and ``Tw_e`` are stored as ``gafropy.Motor`` objects, but
+    Both ``T_ref_tsr`` and ``Tw_e`` are stored as ``gafro.Motor`` objects, but
     may be supplied at construction as a ``Motor``, a 4×4 numpy matrix, or a
     6-vector bivector log.
         task: The task being performed (e.g., "grasp", "place", "pour").
@@ -63,8 +64,8 @@ class TSRTemplate:
     def __post_init__(self):
         # Coerce transforms to Motor, accepting Motor / 4x4 matrix / bivector log.
         # (frozen dataclass -> assign via object.__setattr__)
-        object.__setattr__(self, "T_ref_tsr", Motor(self.T_ref_tsr))
-        object.__setattr__(self, "Tw_e", Motor(self.Tw_e))
+        object.__setattr__(self, "T_ref_tsr", as_motor(self.T_ref_tsr))
+        object.__setattr__(self, "Tw_e", as_motor(self.Tw_e))
 
     def __repr__(self) -> str:
         parts = [f"task={self.task!r}", f"subject={self.subject!r}"]
@@ -84,7 +85,7 @@ class TSRTemplate:
         Returns:
             TSR whose T0_w = T_ref_world * T_ref_tsr, Tw_e = Tw_e, Bw = Bw.
         """
-        T0_w = Motor(T_ref_world).multiply(self.T_ref_tsr)
+        T0_w = as_motor(T_ref_world).multiply(self.T_ref_tsr)
         return TSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
 
     def sample(self, T_ref_world):

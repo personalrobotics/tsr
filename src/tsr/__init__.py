@@ -14,6 +14,11 @@ Usage:
 """
 
 # Template I/O
+from .bimanual import BimanualPose, BimanualTSR, BimanualWitness
+from .multiarm import CircleTSR, SphereTSR
+
+# Constraints
+from .constraints import Constraint, PlaneConstraint, SphereConstraint
 from .io import (
     get_package_templates,
     list_available_templates,
@@ -24,9 +29,6 @@ from .io import (
     save_template,
     save_template_collection,
 )
-
-# Constraints
-from .constraints import Constraint, PlaneConstraint, SphereConstraint
 
 # Placement
 from .placement import StablePlacer
@@ -44,6 +46,5 @@ from .sampling import (
 # Templates
 from .template import TSRTemplate
 from .tsr import TSR
-from .bimanual import BimanualPose, BimanualTSR, BimanualWitness
 from .tsr_chain import TSRChain
 from .utils import EPSILON, geodesic_distance, geodesic_error, wrap_to_interval

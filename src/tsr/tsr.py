@@ -3,12 +3,11 @@
 
 import numpy
 import numpy.random
+from gafro import Motor
 from numpy import pi
 
-from gafropy import Motor
-
 from .constraints.base import Constraint
-from .utils import EPSILON, geodesic_distance
+from .utils import EPSILON, as_motor, geodesic_distance, position
 
 # bw / Bw are in gafro ``Motor.log()`` order: [b12, b13, b23, e1i, e2i, e3i] =
 # [rotor bivector (3), translation (3)]. Index helpers keep that explicit.
@@ -24,7 +23,7 @@ def _load_transform(value):
     Returns a ``Motor``. Length-6 values are read as a bivector log; 4x4 nested
     lists are read as the legacy matrix format.
     """
-    return Motor(numpy.asarray(value, dtype=float))
+    return as_motor(numpy.asarray(value, dtype=float))
 
 
 class TSR(Constraint):
@@ -34,7 +33,7 @@ class TSR(Constraint):
     A TSR is defined by a transform T0_w to the TSR frame, a transform Tw_e
     from the TSR frame to the end-effector, and a bounding box Bw over 6 DoFs.
 
-    **Coordinate system (CGA split).** Every rigid transform is a gafropy
+    **Coordinate system (CGA split).** Every rigid transform is a gafro
     ``Motor`` ``M = Translator(t) * Rotor(r)``. The 6-vector ``bw`` and the box
     ``Bw`` are split accordingly:
 
@@ -60,8 +59,8 @@ class TSR(Constraint):
         if Bw is None:
             Bw = numpy.zeros((6, 2))
 
-        self.T0_w = Motor(T0_w)
-        self.Tw_e = Motor(Tw_e)
+        self.T0_w = as_motor(T0_w)
+        self.Tw_e = as_motor(Tw_e)
         self.Bw = numpy.array(Bw, dtype=float)
 
         if self.Bw.shape != (6, 2):
@@ -82,8 +81,8 @@ class TSR(Constraint):
     def __repr__(self) -> str:
         _DOF = ("b12", "b13", "b23", "x", "y", "z")
         free = [_DOF[i] for i in range(6) if not numpy.isclose(self.Bw[i, 0], self.Bw[i, 1])]
-        t0 = numpy.asarray(self.T0_w.get_translator().to_array())
-        te = numpy.asarray(self.Tw_e.get_translator().to_array())
+        t0 = position(self.T0_w.get_translator())
+        te = position(self.Tw_e.get_translator())
         free_str = ",".join(free) if free else "fixed"
         return f"TSR(free=[{free_str}], T0_w.t={t0.round(3)}, Tw_e.t={te.round(3)})"
 
@@ -138,7 +137,7 @@ class TSR(Constraint):
             Tw_s' = (T0_w)^-1 * T0_s * (Tw_e)^-1
         and returns its ``Motor.log()`` (the ``bw`` coordinate system).
         """
-        trans = Motor(trans)
+        trans = as_motor(trans)
         Tw_s_prime = self.T0_w.inverse().multiply(trans).multiply(self.Tw_e.inverse())
         return numpy.asarray(Tw_s_prime.log(), dtype=float)
 
@@ -222,7 +221,7 @@ class TSR(Constraint):
         @return dist Geodesic distance to TSR
         @return bwopt Closest ``bw`` value to trans
         """
-        trans = Motor(trans)
+        trans = as_motor(trans)
         if self.contains(trans):
             return 0.0, self.to_bw(trans)
 

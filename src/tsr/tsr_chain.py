@@ -4,11 +4,10 @@
 import logging
 
 import numpy
-
-from gafropy import Motor
+from gafro import Motor
 
 from .tsr import NANBW, TSR
-from .utils import EPSILON, geodesic_distance
+from .utils import EPSILON, as_motor, geodesic_distance
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +196,7 @@ class TSRChain:
         """
         import scipy.optimize
 
-        trans = Motor(trans)
+        trans = as_motor(trans)
 
         def objective(bw_list):
             bw_stack = bw_list.reshape(len(self.TSRs), 6)

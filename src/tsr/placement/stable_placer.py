@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import List
 
 import numpy as np
-from gafropy import Motor, Rotor
+from gafro import Motor, Rotor
 
 from ..template import TSRTemplate
 from ._stable_poses import _rotor_to_align, stable_poses_mesh

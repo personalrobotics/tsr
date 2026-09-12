@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from gafropy import Motor
+from gafro import Motor
+
 from tsr import TSR
 from tsr.bimanual import BimanualPose, BimanualTSR
 

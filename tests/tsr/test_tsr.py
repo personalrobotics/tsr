@@ -4,7 +4,7 @@
 from unittest import TestCase
 
 import numpy
-from gafropy import Motor
+from gafro import Motor
 from numpy import pi
 
 from tests.tsr._motor_helpers import to_matrix
@@ -377,7 +377,7 @@ class TsrTest(TestCase):
         from tests.tsr._motor_helpers import motor_from_split, motor_split
 
         rng = numpy.random.default_rng(0)
-        from gafropy import Motor
+        from gafro import Motor
 
         for _ in range(200):
             M = Motor.Random()

@@ -11,9 +11,9 @@ import unittest
 import numpy as np
 from numpy import pi
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.tsr import TSR
 from tsr.tsr_chain import TSRChain
-from tests.tsr._motor_helpers import to_matrix
 
 
 class TestTSRChainMethods(unittest.TestCase):

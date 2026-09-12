@@ -3,23 +3,19 @@
 
 """Test-only Motor helpers.
 
-The ``tsr`` package no longer ships a transform-coercion module — its public
-boundary is the polymorphic ``gafropy.Motor`` constructor and Motor methods.
-The tests, however, assert against 4x4 matrices and the CGA split coordinates,
-so these thin gafropy wrappers live here, in the test tree, purely to keep the
-assertions readable. They are not part of the ``tsr`` public API.
+The tests assert against 4x4 matrices and the CGA split coordinates, so these
+thin wrappers live here, in the test tree, purely to keep the assertions
+readable. They are not part of the ``tsr`` public API. Coercion itself is
+delegated to ``tsr.utils.as_motor`` (gafro's ``Motor`` constructor, unlike
+gafropy's, is not polymorphic).
 """
 
 from __future__ import annotations
 
 import numpy as np
+from gafro import Motor, Rotor
 
-from gafropy import Motor, Rotor
-
-
-def as_motor(x) -> Motor:
-    """Coerce a Motor / 4x4 matrix / 6-vector bivector log into a Motor."""
-    return Motor(x) if isinstance(x, Motor) else Motor(np.asarray(x, dtype=float))
+from tsr.utils import as_motor  # noqa: F401  (re-exported for the test tree)
 
 
 def to_matrix(m) -> np.ndarray:

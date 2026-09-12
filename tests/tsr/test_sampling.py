@@ -13,6 +13,7 @@ import unittest
 import numpy as np
 from numpy import pi
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.sampling import (
     choose_tsr,
     choose_tsr_index,
@@ -23,7 +24,6 @@ from tsr.sampling import (
 )
 from tsr.template import TSRTemplate
 from tsr.tsr import TSR
-from tests.tsr._motor_helpers import to_matrix
 
 
 class TestSamplingUtilities(unittest.TestCase):

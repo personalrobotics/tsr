@@ -8,8 +8,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 import numpy as np
-
-from gafropy import Motor, Vector
+from gafro import Motor, Vector
 
 from tsr.template import TSRTemplate
 
@@ -33,7 +32,7 @@ def _align_rotor(a: np.ndarray, b: np.ndarray) -> "object":
         perp /= np.linalg.norm(perp)
         # 180° about ``perp``; its bivector generator in [e12,e13,e23] is the dual
         # [z,-y,x] scaled by pi.
-        from gafropy import Rotor
+        from gafro import Rotor
 
         return Rotor.exp(float(np.pi * perp[2]), float(-np.pi * perp[1]), float(np.pi * perp[0]))
     return Vector(float(a[0]), float(a[1]), float(a[2])).get_rotor(
@@ -49,12 +48,12 @@ def _rotor_from_columns(x_axis, y_axis, z_axis):
     world-y onto the second column (``r2``). Rotating about ``x`` keeps the first
     column in place, so the composition reproduces the full frame.
     """
-    from gafropy import Motor, Rotor, Vector
+    from gafro import Motor, Rotor, Vector
 
     x = np.asarray(x_axis, float)
     y = np.asarray(y_axis, float)
     r1 = _align_rotor(np.array([1.0, 0.0, 0.0]), x)
-    yv = Motor.from_rotor(r1).apply_to_vector(Vector(0.0, 1.0, 0.0))
+    yv = Motor.from_rotor(r1).transform_vector(Vector(0.0, 1.0, 0.0))
     y_rot = np.array([yv.x(), yv.y(), yv.z()])
     # Signed angle from y_rot to y about the axis x (right-hand rule).
     cos_a = float(np.clip(np.dot(y_rot, y), -1.0, 1.0))

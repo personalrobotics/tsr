@@ -4,7 +4,7 @@ Plane Constraint Example: the new geometric-primitive constraint.
 
 A ``PlaneConstraint`` keeps the end-effector *origin* on a CGA plane (and,
 optionally, pins its orientation). Unlike a box-shaped ``TSR``, it is defined
-directly by a gafropy geometric primitive (:class:`gafropy.Plane`).
+directly by a gafropy geometric primitive (:class:`gafro.Plane`).
 
 This example demonstrates:
 - Building a plane constraint from a point + normal (and from a raw gafropy Plane)
@@ -22,7 +22,7 @@ so it plugs into the same planner seam (``distance`` / ``to_transform`` /
 import numpy as np
 from numpy import pi
 
-from gafropy import Motor, Plane, Point, Rotor
+from gafro import Motor, Plane, Point, Rotor
 from tsr import Constraint, PlaneConstraint
 
 
@@ -59,7 +59,7 @@ def main():
     # You can also wrap a gafropy Plane directly (here: the y=0 plane via 3 points).
     raw_plane = Plane(Point(0, 0, 0), Point(1, 0, 0), Point(0, 0, 1))
     wall = PlaneConstraint(raw_plane)
-    print(f"   from gafropy.Plane: {wall}")
+    print(f"   from gafro.Plane: {wall}")
 
     # ------------------------------------------------------------------
     # 2. Distance: 0 on the plane, perpendicular offset otherwise.

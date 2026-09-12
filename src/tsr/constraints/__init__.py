@@ -18,7 +18,7 @@ pose when it is not. Every constraint exposes the same small duck-typed seam the
 The legacy :class:`~tsr.tsr.TSR` (a 6-DoF box in the CGA-split frame) is one
 concrete :class:`Constraint`. :class:`PlaneConstraint` and
 :class:`SphereConstraint` are geometric-primitive siblings that keep the
-end-effector origin on a CGA :class:`gafropy.Plane` / :class:`gafropy.Sphere`.
+end-effector origin on a CGA :class:`gafro.Plane` / :class:`gafro.Sphere`.
 """
 
 from .base import Constraint

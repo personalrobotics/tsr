@@ -3,7 +3,7 @@
 
 """Plane constraint: keep the end-effector origin on a CGA plane.
 
-Wraps a :class:`gafropy.Plane` (a grade-1 vector in CGA, the dual of the
+Wraps a :class:`gafro.Plane` (a grade-1 vector in CGA, the dual of the
 "flat" point-at-infinity object). The constraint is satisfied when the
 end-effector *position* lies on the plane; orientation can be left free or
 pinned to a reference rotor.
@@ -18,9 +18,9 @@ the seam identical to :class:`~tsr.tsr.TSR` (``distance`` -> witness ->
 from __future__ import annotations
 
 import numpy as np
+from gafro import Motor, Plane, Point, Rotor
 
-from gafropy import Motor, Plane, Point, Rotor
-
+from ..utils import as_motor, position
 from .base import Constraint
 
 
@@ -30,9 +30,9 @@ def _motor_from_translation_rotor(xyz, rotor):
 
 
 class PlaneConstraint(Constraint):
-    """Constrain the end-effector origin to a :class:`gafropy.Plane`.
+    """Constrain the end-effector origin to a :class:`gafro.Plane`.
 
-    @param plane          the gafropy ``Plane`` defining the manifold.
+    @param plane          the gafro ``Plane`` defining the manifold.
     @param orientation    optional reference orientation as a rotor-bivector log
                           3-vector ``[b12, b13, b23]`` (axis*angle). When given,
                           the constraint also pins orientation to this rotor and
@@ -82,8 +82,8 @@ class PlaneConstraint(Constraint):
 
     def _ee_point(self, trans) -> tuple[Motor, Point, np.ndarray]:
         """Return ``(motor, ee_point, ee_xyz)`` for a pose ``trans``."""
-        m = Motor(trans)
-        xyz = np.asarray(m.get_translator().to_array(), dtype=float)
+        m = as_motor(trans)
+        xyz = position(m.get_translator())
         return m, Point(float(xyz[0]), float(xyz[1]), float(xyz[2])), xyz
 
     def _project_point(self, xyz: np.ndarray) -> np.ndarray:
@@ -94,7 +94,7 @@ class PlaneConstraint(Constraint):
         orthogonal projection of the point onto the plane.
         """
         foot = self.plane.project(Point(*(float(c) for c in xyz)))
-        return np.asarray(foot.to_array(), dtype=float)
+        return position(foot)
 
     def distance(self, trans, rotation_weight: float = 1.0) -> tuple[float, Motor]:
         m, ee, xyz = self._ee_point(trans)
@@ -119,7 +119,7 @@ class PlaneConstraint(Constraint):
         return float(dist), witness
 
     def to_transform(self, witness: Motor) -> Motor:
-        return Motor(witness)
+        return as_motor(witness)
 
     def sample(self) -> Motor:
         """Draw a world-frame pose on the plane.

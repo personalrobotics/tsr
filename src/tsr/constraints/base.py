@@ -18,7 +18,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from gafropy import Motor
+from gafro import Motor
 
 
 class Constraint(ABC):

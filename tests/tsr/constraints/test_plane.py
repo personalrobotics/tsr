@@ -7,10 +7,10 @@
 import unittest
 
 import numpy as np
+from gafro import Motor, Plane, Point
 
-from gafropy import Motor, Plane, Point
-from tsr import Constraint, PlaneConstraint, TSR
-from tests.tsr._motor_helpers import as_motor, motor_split
+from tests.tsr._motor_helpers import motor_split
+from tsr import TSR, Constraint, PlaneConstraint
 
 
 def _pose_at(x, y, z, biv=(0.0, 0.0, 0.0)) -> Motor:

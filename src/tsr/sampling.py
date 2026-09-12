@@ -145,7 +145,7 @@ def choose_tsr(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -
 
 
 def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None):
-    """Weighted-select a TSR and return a sampled transform (gafropy ``Motor``).
+    """Weighted-select a TSR and return a sampled transform (gafro ``Motor``).
 
     This function combines TSR selection and sampling into a single operation.
     It first selects a TSR using weighted random sampling (based on volume),

@@ -7,10 +7,10 @@
 import unittest
 
 import numpy as np
+from gafro import Motor, Point, Sphere
 
-from gafropy import Motor, Point, Sphere
-from tsr import Constraint, SphereConstraint
 from tests.tsr._motor_helpers import motor_split
+from tsr import Constraint, SphereConstraint
 
 
 def _pose_at(x, y, z, biv=(0.0, 0.0, 0.0)) -> Motor:

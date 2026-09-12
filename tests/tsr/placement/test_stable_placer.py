@@ -8,9 +8,9 @@ import unittest
 import numpy as np
 from numpy import pi
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.placement import StablePlacer
 from tsr.template import TSRTemplate
-from tests.tsr._motor_helpers import to_matrix
 
 TX = 0.30
 TY = 0.20

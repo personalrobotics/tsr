@@ -3,7 +3,7 @@
 
 """Sphere constraint: keep the end-effector origin on a CGA sphere shell.
 
-Wraps a :class:`gafropy.Sphere` (a grade-1 vector in CGA). The constraint is
+Wraps a :class:`gafro.Sphere` (a grade-1 vector in CGA). The constraint is
 satisfied when the end-effector *position* lies on the spherical surface (a
 fixed distance ``radius`` from the center); orientation can be left free or
 pinned to a reference rotor.
@@ -18,9 +18,9 @@ and :class:`~tsr.tsr.TSR` (``distance`` -> witness -> ``to_transform``).
 from __future__ import annotations
 
 import numpy as np
+from gafro import Motor, Point, Rotor, Sphere
 
-from gafropy import Motor, Point, Rotor, Sphere
-
+from ..utils import as_motor, position
 from .base import Constraint
 
 
@@ -30,9 +30,9 @@ def _motor_from_translation_rotor(xyz, rotor):
 
 
 class SphereConstraint(Constraint):
-    """Constrain the end-effector origin to a :class:`gafropy.Sphere` shell.
+    """Constrain the end-effector origin to a :class:`gafro.Sphere` shell.
 
-    @param sphere         the gafropy ``Sphere`` defining the manifold.
+    @param sphere         the gafro ``Sphere`` defining the manifold.
     @param orientation    optional reference orientation as a rotor-bivector log
                           3-vector ``[b12, b13, b23]`` (axis*angle). When given,
                           the constraint also pins orientation to this rotor and
@@ -65,8 +65,8 @@ class SphereConstraint(Constraint):
 
     def _ee_point(self, trans) -> tuple[Motor, Point, np.ndarray]:
         """Return ``(motor, ee_point, ee_xyz)`` for a pose ``trans``."""
-        m = Motor(trans)
-        xyz = np.asarray(m.get_translator().to_array(), dtype=float)
+        m = as_motor(trans)
+        xyz = position(m.get_translator())
         return m, Point(float(xyz[0]), float(xyz[1]), float(xyz[2])), xyz
 
     def _project_point(self, xyz: np.ndarray) -> np.ndarray:
@@ -80,12 +80,12 @@ class SphereConstraint(Constraint):
         shell, ``project`` returns NaN); there we pick an arbitrary but
         deterministic shell point along +x.
         """
-        center = np.asarray(self.sphere.get_center().to_array(), dtype=float)
+        center = position(self.sphere.get_center())
         if np.linalg.norm(xyz - center) < 1e-9:
             radius = float(self.sphere.get_radius())
             return center + np.array([radius, 0.0, 0.0])
         foot = self.sphere.project(Point(*(float(c) for c in xyz)))
-        return np.asarray(foot.to_array(), dtype=float)
+        return position(foot)
 
     def distance(self, trans, rotation_weight: float = 1.0) -> tuple[float, Motor]:
         m, _, xyz = self._ee_point(trans)
@@ -111,7 +111,7 @@ class SphereConstraint(Constraint):
         return float(dist), witness
 
     def to_transform(self, witness: Motor) -> Motor:
-        return Motor(witness)
+        return as_motor(witness)
 
     def sample(self) -> Motor:
         """Draw a world-frame pose on the sphere shell.
@@ -120,7 +120,7 @@ class SphereConstraint(Constraint):
         the center) onto it, and uses the pinned orientation (or identity when
         unconstrained).
         """
-        center = np.asarray(self.sphere.get_center().to_array(), dtype=float)
+        center = position(self.sphere.get_center())
         # Random direction away from the center; projecting it lands on the shell.
         offset = np.random.uniform(-1.0, 1.0, size=3)
         if np.linalg.norm(offset) < 1e-9:
@@ -151,7 +151,7 @@ class SphereConstraint(Constraint):
         return SphereConstraint(sphere, orientation=x.get("orientation"))
 
     def __repr__(self) -> str:
-        c = np.asarray(self.sphere.get_center().to_array(), dtype=float).round(3)
+        c = position(self.sphere.get_center()).round(3)
         r = round(float(self.sphere.get_radius()), 3)
         pinned = "free" if self._rotor is None else "pinned"
         return f"SphereConstraint(center={c.tolist()}, radius={r}, orientation={pinned})"

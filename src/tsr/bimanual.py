@@ -17,8 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from gafro import Motor
 
-from gafropy import Motor
 from tsr.tsr import TSR
 
 

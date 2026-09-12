@@ -13,9 +13,9 @@ import unittest
 
 import numpy as np
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.hands import ParallelJawGripper
 from tsr.template import TSRTemplate
-from tests.tsr._motor_helpers import to_matrix
 
 # Small cube — all 2 orientations per face valid
 SX, SY, SZ = 0.060, 0.060, 0.060

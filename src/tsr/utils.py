@@ -2,11 +2,43 @@
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
 import numpy as np
+from gafro import Motor
 from numpy import pi
 
-from gafropy import Motor
-
 EPSILON = 0.001
+
+
+
+def position(obj) -> np.ndarray:
+    """Euclidean position of a gafro ``Point`` / ``Translator`` as ``[x, y, z]``.
+
+    ``to_array()`` on these types yields the CGA coefficient vector, not a
+    position: a ``Point`` is the 5-component conformal vector and a
+    ``Translator`` is 4 components carrying *halved, negated* translation. The
+    ``x()/y()/z()`` accessors are the Euclidean values, so read those.
+    """
+    return np.array([obj.x(), obj.y(), obj.z()], dtype=float)
+
+
+def as_motor(value) -> Motor:
+    """Coerce a transform to a gafro ``Motor``.
+
+    gafropy's ``Motor(x)`` constructor was polymorphic; gafro's takes no such
+    argument, so the coercion lives here and is shared package-wide. Accepts:
+
+    * a ``Motor`` (returned unchanged),
+    * a length-6 bivector log ``[t.., b12, b13, b23]`` (via ``Motor.exp``),
+    * a 4x4 homogeneous transform (via ``Motor.from_matrix``).
+    """
+    if isinstance(value, Motor):
+        return value
+    arr = np.asarray(value, dtype=float)
+    if arr.shape == (6,):
+        return Motor.exp(*arr)
+    if arr.shape == (4, 4):
+        return Motor.from_matrix(arr)
+    raise ValueError(f"cannot interpret shape {arr.shape} as a Motor (want (6,) log or (4,4) matrix)")
+
 
 
 def wrap_to_interval(angles: np.ndarray, lower: np.ndarray = None) -> np.ndarray:
@@ -42,7 +74,7 @@ def geodesic_error(t1, t2) -> np.ndarray:
         error: 4-vector [dx, dy, dz, rotation_angle]
                where dx, dy, dz are in meters and rotation_angle is in radians
     """
-    m1, m2 = Motor(t1), Motor(t2)
+    m1, m2 = as_motor(t1), as_motor(t2)
 
     # Translation error (in world frame), from the translators directly.
     p1, p2 = m1.get_translator(), m2.get_translator()

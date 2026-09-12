@@ -29,12 +29,12 @@ from typing import Callable, List, Sequence
 
 import numpy as np
 
-from gafropy import Motor
+from .utils import as_motor
 
 
 def _to_matrix(pose) -> np.ndarray:
     """4x4 transformation matrix of a Motor / 4x4 pose (viz interop boundary)."""
-    return np.asarray(Motor(pose).to_transformation_matrix(), dtype=float)
+    return np.asarray(as_motor(pose).to_transformation_matrix(), dtype=float)
 
 try:
     import matplotlib.cm as cm
@@ -99,7 +99,7 @@ class TSRVisualizer:
     ) -> None:
         """Render one subject renderer at multiple poses and save to out.
 
-        Each pose may be a ``gafropy.Motor`` or a 4x4 numpy matrix.
+        Each pose may be a ``gafro.Motor`` or a 4x4 numpy matrix.
         """
         if colors is None:
             colors = _plasma_colors(len(poses))

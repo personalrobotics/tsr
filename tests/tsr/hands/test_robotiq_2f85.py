@@ -7,8 +7,8 @@ import unittest
 
 import numpy as np
 
-from tsr.hands import ParallelJawGripper, Robotiq2F85
 from tests.tsr._motor_helpers import to_matrix
+from tsr.hands import ParallelJawGripper, Robotiq2F85
 
 
 class TestRobotiq2F85(unittest.TestCase):
