@@ -168,7 +168,7 @@ import numpy as np
 #   Tw_e : transform — TSR frame to end-effector at Bw=0
 #   Bw   : 6×2 bounds — [x, y, z, roll, pitch, yaw]
 #
-# Transforms are gafropy.Motor objects internally. T0_w / Tw_e (and any
+# Transforms are gafro.Motor objects internally. T0_w / Tw_e (and any
 # transform passed to contains/distance/to_xyzrpy) may be given as a Motor
 # OR a 4×4 numpy matrix; methods that return a pose return a Motor.
 # Use tsr.to_matrix(pose) to get a 4×4 matrix when you need one.
@@ -186,7 +186,7 @@ Bw[5, :] = [-np.pi, np.pi]    # yaw: free
 
 tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 
-pose     = tsr.sample()             # random SE(3) pose (a gafropy.Motor)
+pose     = tsr.sample()             # random SE(3) pose (a gafro.Motor)
 distance, _ = tsr.distance(pose)   # distance to nearest valid pose
 is_valid = tsr.contains(pose)      # containment check
 

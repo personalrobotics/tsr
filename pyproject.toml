@@ -33,10 +33,10 @@ dependencies = [
     "numpy>=1.24.0",
     "scipy>=1.10.0",
     "pyyaml>=6.0.1",
-    # gafropy provides the geometric-algebra Motor type used for all transforms.
-    # It is the C++-backed package from the parent repository (not on PyPI);
-    # install it from the gafropy source tree / its built wheel.
-    "gafropy",
+    # gafro provides the geometric-algebra Motor type used for all transforms.
+    # It is not published on PyPI; build and install the bindings from the gafro
+    # source tree (pip install /path/to/gafro/bindings/python) before this package.
+    "gafro>=0.1.9",
 ]
 
 [project.optional-dependencies]

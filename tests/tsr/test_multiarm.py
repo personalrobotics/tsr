@@ -65,6 +65,37 @@ class TestDegenerateDilation(unittest.TestCase):
         with self.assertRaises(ValueError):
             dilation_log(_ZeroDilator())
 
+    def test_detects_a_wholly_non_finite_decomposition(self):
+        """A perfectly level four-point grasp makes the *whole* decomposition NaN.
+
+        Checking only the dilator ratio misses it: the translator and rotor come
+        back NaN too, and NaN comparisons are False, so the ratio test passes.
+        """
+        class _NanPart:
+            @staticmethod
+            def x():
+                return float("nan")
+
+            y = z = x
+
+            @staticmethod
+            def to_array():
+                return np.array([float("nan"), float("nan")])
+
+            @staticmethod
+            def log():
+                return _NanPart()
+
+        class _NanDecomposition:
+            get_translator = get_rotor = get_dilator = staticmethod(lambda: _NanPart())
+
+        class _NanSimilarity:
+            get_canonical_decomposition = staticmethod(lambda: _NanDecomposition())
+
+        from tsr.multiarm import is_degenerate
+
+        assert is_degenerate(_NanSimilarity())
+
     def test_ordinary_scales_are_unaffected(self):
         for scale in (0.1, 1.0, 9.0):
             self.assertTrue(np.isfinite(dilation_log(dilator_from_log(np.log(scale)))))

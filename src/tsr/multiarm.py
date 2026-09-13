@@ -107,10 +107,19 @@ def is_degenerate(similarity) -> bool:
     ``ValueError`` from :func:`dilation_log`.
     """
     try:
-        dilation_log(similarity.get_canonical_decomposition().get_dilator())
-    except ValueError:
+        decomposition = similarity.get_canonical_decomposition()
+        # A perfectly symmetric, exactly coplanar contact set makes the whole
+        # decomposition non-finite, not just the dilator, so check all of it.
+        translator = decomposition.get_translator()
+        if not np.all(np.isfinite([translator.x(), translator.y(), translator.z()])):
+            return True
+        if not np.all(np.isfinite(np.asarray(decomposition.get_rotor().log().to_array()))):
+            return True
+        if not np.all(np.isfinite(np.asarray(decomposition.get_dilator().to_array()))):
+            return True
+        return not np.isfinite(dilation_log(decomposition.get_dilator()))
+    except (ValueError, RuntimeError):
         return True
-    return False
 
 
 def sphere_from_center_radius(center, radius: float) -> "Sphere":

@@ -53,6 +53,12 @@ class BimanualTSR:
         self.absolute = absolute
         self.relative = relative
 
+    def __repr__(self) -> str:
+        active = [name for name, component in (("absolute", self.absolute),
+                                               ("relative", self.relative))
+                  if component is not None]
+        return f"BimanualTSR(active=[{','.join(active)}])"
+
     def sample(self) -> BimanualPose:
         return BimanualPose(
             absolute=self.absolute.sample() if self.absolute is not None else None,
