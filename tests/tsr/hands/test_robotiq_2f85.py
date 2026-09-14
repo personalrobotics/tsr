@@ -7,6 +7,7 @@ import unittest
 
 import numpy as np
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.hands import ParallelJawGripper, Robotiq2F85
 
 
@@ -38,12 +39,12 @@ class TestRobotiq2F85(unittest.TestCase):
 
         self.assertEqual(len(t_base), len(t_robotiq))
         for tb, tr in zip(t_base, t_robotiq):
-            np.testing.assert_allclose(tr.Tw_e, tb.Tw_e, atol=1e-10)
+            np.testing.assert_allclose(to_matrix(tr.Tw_e), to_matrix(tb.Tw_e), atol=1e-10)
 
     def test_tw_e_is_valid_se3(self):
         templates = self.gripper.grasp_cylinder_side(0.033, 0.115)
         for t in templates:
-            R = t.Tw_e[:3, :3]
+            R = to_matrix(t.Tw_e)[:3, :3]
             np.testing.assert_allclose(R @ R.T, np.eye(3), atol=1e-10)
             np.testing.assert_allclose(np.linalg.det(R), 1.0, atol=1e-10)
 

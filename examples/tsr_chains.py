@@ -78,13 +78,13 @@ def main():
     # Sample poses along the door opening trajectory
     print("\n   Sampled gripper poses while opening door:")
     for i in range(4):
-        pose = door_chain.sample()
+        pose = (door_chain.sample()).to_transformation_matrix()
         pos = pose[0:3, 3]
         print(f"      {i + 1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
 
     # Check if a pose satisfies the chain
     print("\n   Containment check:")
-    test_pose = door_chain.sample()
+    test_pose = (door_chain.sample()).to_transformation_matrix()
     is_valid = door_chain.contains(test_pose)
     print(f"      Sampled pose valid: {is_valid}")
 

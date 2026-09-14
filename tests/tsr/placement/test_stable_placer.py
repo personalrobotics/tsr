@@ -8,6 +8,7 @@ import unittest
 import numpy as np
 from numpy import pi
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.placement import StablePlacer
 from tsr.template import TSRTemplate
 
@@ -31,8 +32,8 @@ def _check_common(test, templates, subject, reference, count=None):
         test.assertEqual(t.subject, subject)
         test.assertEqual(t.reference, reference)
         test.assertEqual(t.Bw.shape, (6, 2))
-        _valid_se3(t.Tw_e)
-        _valid_se3(t.T_ref_tsr)
+        _valid_se3(to_matrix(t.Tw_e))
+        _valid_se3(to_matrix(t.T_ref_tsr))
 
 
 def _check_bw_standard(test, t):
@@ -68,12 +69,12 @@ class TestStablePlacerCylinder(unittest.TestCase):
     def test_com_height_is_half_height(self):
         H = 0.12
         for t in self.placer.place_cylinder(0.04, H):
-            np.testing.assert_allclose(t.Tw_e[2, 3], H / 2)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[2, 3], H / 2)
 
     def test_neg_z_face_has_identity_rotation(self):
         t = self.placer.place_cylinder(0.04, 0.12)[0]
         self.assertEqual(t.variant, "-z")
-        np.testing.assert_allclose(t.Tw_e[:3, :3], np.eye(3), atol=1e-10)
+        np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, :3], np.eye(3), atol=1e-10)
 
     def test_bw_standard_all_templates(self):
         for t in self.placer.place_cylinder(0.04, 0.12):
@@ -83,13 +84,13 @@ class TestStablePlacerCylinder(unittest.TestCase):
         table_pose = np.eye(4)
         table_pose[2, 3] = 0.75
         t = self.placer.place_cylinder(0.04, 0.12)[0]
-        pose = t.instantiate(table_pose).sample()
+        pose = to_matrix(t.instantiate(table_pose).sample())
         self.assertEqual(pose.shape, (4, 4))
         np.testing.assert_allclose(pose[3], [0, 0, 0, 1], atol=1e-10)
         _valid_se3(pose)
         # COM z ≈ table_z + height/2 when Bw[xy] = 0
         tsr = t.instantiate(table_pose)
-        pose_at_zero = tsr.sample()  # any sample; just check it's reachable
+        pose_at_zero = to_matrix(tsr.sample())  # any sample; just check it's reachable
         self.assertGreater(pose_at_zero[2, 3], 0.75)  # above table
 
 
@@ -114,7 +115,7 @@ class TestStablePlacerBox(unittest.TestCase):
     def test_com_heights_match_half_extents(self):
         # Each unique height appears twice (once per face in each opposing pair).
         LX, LY, LZ = 0.10, 0.08, 0.06
-        heights = sorted(t.Tw_e[2, 3] for t in self.placer.place_box(LX, LY, LZ))
+        heights = sorted(to_matrix(t.Tw_e)[2, 3] for t in self.placer.place_box(LX, LY, LZ))
         expected = sorted([LX / 2, LX / 2, LY / 2, LY / 2, LZ / 2, LZ / 2])
         np.testing.assert_allclose(heights, expected, atol=1e-10)
 
@@ -124,12 +125,12 @@ class TestStablePlacerBox(unittest.TestCase):
 
     def test_tw_e_valid_se3_all_templates(self):
         for t in self.placer.place_box(0.10, 0.08, 0.06):
-            _valid_se3(t.Tw_e)
+            _valid_se3(to_matrix(t.Tw_e))
 
     def test_instantiate_and_sample(self):
         table_pose = np.eye(4)
         for t in self.placer.place_box(0.10, 0.08, 0.06):
-            pose = t.instantiate(table_pose).sample()
+            pose = to_matrix(t.instantiate(table_pose).sample())
             self.assertEqual(pose.shape, (4, 4))
             np.testing.assert_allclose(pose[3], [0, 0, 0, 1], atol=1e-10)
             _valid_se3(pose)
@@ -149,7 +150,7 @@ class TestStablePlacerSphere(unittest.TestCase):
     def test_com_height_equals_radius(self):
         r = 0.05
         t = self.placer.place_sphere(r)[0]
-        np.testing.assert_allclose(t.Tw_e[2, 3], r)
+        np.testing.assert_allclose(to_matrix(t.Tw_e)[2, 3], r)
 
     def test_all_orientations_free(self):
         t = self.placer.place_sphere(0.05)[0]
@@ -159,7 +160,7 @@ class TestStablePlacerSphere(unittest.TestCase):
 
     def test_tw_e_identity_rotation(self):
         t = self.placer.place_sphere(0.05)[0]
-        np.testing.assert_allclose(t.Tw_e[:3, :3], np.eye(3), atol=1e-10)
+        np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, :3], np.eye(3), atol=1e-10)
 
 
 class TestStablePlacerTorus(unittest.TestCase):
@@ -172,7 +173,7 @@ class TestStablePlacerTorus(unittest.TestCase):
     def test_com_height_equals_minor_radius(self):
         r = 0.015
         for t in self.placer.place_torus(0.05, r):
-            np.testing.assert_allclose(t.Tw_e[2, 3], r)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[2, 3], r)
 
     def test_minor_geq_major_raises(self):
         with self.assertRaises(ValueError):
@@ -185,7 +186,7 @@ class TestStablePlacerTorus(unittest.TestCase):
     def test_neg_z_face_has_identity_rotation(self):
         t = self.placer.place_torus(0.05, 0.01)[0]
         self.assertEqual(t.variant, "-z")
-        np.testing.assert_allclose(t.Tw_e[:3, :3], np.eye(3), atol=1e-10)
+        np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, :3], np.eye(3), atol=1e-10)
 
     def test_bw_standard_all_templates(self):
         for t in self.placer.place_torus(0.05, 0.01):
@@ -225,7 +226,7 @@ class TestStablePlacerMesh(unittest.TestCase):
 
     def test_cube_com_heights_equal_half_side(self):
         for t in self.placer.place_mesh(self.cube_verts, self.cube_com):
-            np.testing.assert_allclose(t.Tw_e[2, 3], self.L, atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[2, 3], self.L, atol=1e-10)
 
     def test_bw_standard_all_templates(self):
         for t in self.placer.place_mesh(self.cube_verts, self.cube_com):
@@ -242,7 +243,7 @@ class TestStablePlacerMesh(unittest.TestCase):
     def test_instantiate_and_sample(self):
         table_pose = np.eye(4)
         for t in self.placer.place_mesh(self.cube_verts, self.cube_com):
-            pose = t.instantiate(table_pose).sample()
+            pose = to_matrix(t.instantiate(table_pose).sample())
             self.assertEqual(pose.shape, (4, 4))
             np.testing.assert_allclose(pose[3], [0, 0, 0, 1], atol=1e-10)
             _valid_se3(pose)
@@ -374,7 +375,7 @@ class TestNewAPI(unittest.TestCase):
         table_pose = np.eye(4)
         table_pose[2, 3] = 0.75
         for t in self.placer.place_mesh(self.cube_verts, self.cube_com):
-            pose = t.sample(table_pose)
+            pose = to_matrix(t.sample(table_pose))
             _valid_se3(pose)
 
     def test_sample_matches_instantiate_sample(self):
@@ -382,8 +383,8 @@ class TestNewAPI(unittest.TestCase):
         table_pose[2, 3] = 0.75
         t = self.placer.place_cylinder(0.04, 0.12)[0]
         # Both paths should produce valid SE(3) poses (values differ due to sampling)
-        _valid_se3(t.sample(table_pose))
-        _valid_se3(t.instantiate(table_pose).sample())
+        _valid_se3(to_matrix(t.sample(table_pose)))
+        _valid_se3(to_matrix(t.instantiate(table_pose).sample()))
 
     # -- __repr__ ----------------------------------------------------------
 
@@ -403,11 +404,12 @@ class TestNewAPI(unittest.TestCase):
         from tsr.tsr import TSR
 
         tsr = TSR()
-        tsr.Bw[0] = [-1.0, 1.0]  # x free
-        tsr.Bw[5] = [-np.pi, np.pi]  # yaw free
+        # Rotation-first (Motor.log) order: rows 0:3 = b12,b13,b23; rows 3:6 = x,y,z.
+        tsr.Bw[0] = [-1.0, 1.0]  # b12 free
+        tsr.Bw[5] = [-np.pi, np.pi]  # z (translation) free
         r = repr(tsr)
-        self.assertIn("x", r)
-        self.assertIn("yaw", r)
+        self.assertIn("b12", r)
+        self.assertIn("z", r)
 
     # -- stability_margin round-trips through serialization ----------------
 

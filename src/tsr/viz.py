@@ -29,6 +29,13 @@ from typing import Callable, List, Sequence
 
 import numpy as np
 
+from .utils import as_motor
+
+
+def _to_matrix(pose) -> np.ndarray:
+    """4x4 transformation matrix of a Motor / 4x4 pose (viz interop boundary)."""
+    return np.asarray(as_motor(pose).to_transformation_matrix(), dtype=float)
+
 try:
     import matplotlib.cm as cm
     import pyvista as pv
@@ -86,11 +93,14 @@ class TSRVisualizer:
         self,
         reference_renderer: ReferenceRenderer,
         subject_renderer: SubjectRenderer,
-        poses: Sequence[np.ndarray],
+        poses: Sequence,
         out: str | Path,
         colors: Sequence[tuple] | None = None,
     ) -> None:
-        """Render one subject renderer at multiple poses and save to out."""
+        """Render one subject renderer at multiple poses and save to out.
+
+        Each pose may be a ``gafro.Motor`` or a 4x4 numpy matrix.
+        """
         if colors is None:
             colors = _plasma_colors(len(poses))
         subjects = [(subject_renderer, pose, col) for pose, col in zip(poses, colors)]
@@ -121,7 +131,8 @@ class TSRVisualizer:
         reference_renderer(pl)
 
         for renderer, pose, color in subjects:
-            renderer(pl, pose, color)
+            # Accept Motor or 4x4; renderers operate on 4x4 matrices.
+            renderer(pl, _to_matrix(pose), color)
 
         D = self.camera_dist
         az = np.radians(self.camera_az)

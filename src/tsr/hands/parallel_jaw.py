@@ -8,12 +8,73 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 import numpy as np
+from gafro import Motor, Vector
 
 from tsr.template import TSRTemplate
 
 from .base import GripperBase
 
 _DEPTH_LABELS = {1: ["mid"], 2: ["shallow", "deep"], 3: ["shallow", "mid", "deep"]}
+
+
+def _align_rotor(a: np.ndarray, b: np.ndarray) -> "object":
+    """Rotor taking unit vector ``a`` onto unit vector ``b`` (shortest arc).
+
+    ``Vector.get_rotor`` returns NaN for antiparallel inputs (its formula
+    degenerates at ``a·b = -1``); there we use a 180° rotation about an axis
+    perpendicular to ``a``, built as a rotor exponential of that bivector.
+    """
+    a = np.asarray(a, float)
+    b = np.asarray(b, float)
+    if float(np.dot(a, b)) < -1.0 + 1e-9:
+        perp = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        perp = perp - np.dot(perp, a) * a
+        perp /= np.linalg.norm(perp)
+        # 180° about ``perp``; its bivector generator in [e12,e13,e23] is the dual
+        # [z,-y,x] scaled by pi.
+        from gafro import Rotor
+
+        return Rotor.exp(float(np.pi * perp[2]), float(-np.pi * perp[1]), float(np.pi * perp[0]))
+    return Vector(float(a[0]), float(a[1]), float(a[2])).get_rotor(
+        Vector(float(b[0]), float(b[1]), float(b[2]))
+    )
+
+
+def _rotor_from_columns(x_axis, y_axis, z_axis):
+    """Rotor mapping the world frame onto the orthonormal columns ``[x|y|z]``.
+
+    Pure CGA: align world-x onto the first column (``r1``), then rotate *about*
+    the now-fixed first column by the signed angle that carries the rotated
+    world-y onto the second column (``r2``). Rotating about ``x`` keeps the first
+    column in place, so the composition reproduces the full frame.
+    """
+    from gafro import Motor, Rotor, Vector
+
+    x = np.asarray(x_axis, float)
+    y = np.asarray(y_axis, float)
+    r1 = _align_rotor(np.array([1.0, 0.0, 0.0]), x)
+    yv = Motor.from_rotor(r1).transform_vector(Vector(0.0, 1.0, 0.0))
+    y_rot = np.array([yv.x(), yv.y(), yv.z()])
+    # Signed angle from y_rot to y about the axis x (right-hand rule).
+    cos_a = float(np.clip(np.dot(y_rot, y), -1.0, 1.0))
+    sin_a = float(np.dot(np.cross(y_rot, y), x))
+    angle = np.arctan2(sin_a, cos_a)
+    # Rotation about x by ``angle``: bivector generator = angle * dual(x) =
+    # angle * [x_z, -x_y, x_x] in [e12, e13, e23].
+    r2 = Rotor.exp(float(angle * x[2]), float(-angle * x[1]), float(angle * x[0]))
+    return r2.multiply(r1)
+
+
+def _motor_from_axes(x_axis, y_axis, z_axis, t):
+    """Motor for an EE frame given its orthonormal basis columns and translation.
+
+    Replaces the old matrix-based ``motor_from_frame``: builds the rotation as a
+    CGA Rotor (no matrix/quaternion) and composes it with the translation.
+    """
+    t = np.asarray(t, dtype=float).reshape(3)
+    return Motor.from_translation_rotor(
+        float(t[0]), float(t[1]), float(t[2]), _rotor_from_columns(x_axis, y_axis, z_axis)
+    )
 
 
 def _depth_label(k: int, i: int) -> str:
@@ -124,8 +185,7 @@ class ParallelJawGripper(GripperBase):
             name = f"{reference.title()} Cylinder Side Grasp"
 
         z_mid, z_half = (h0 + h1) / 2.0, (h1 - h0) / 2.0
-        T_ref_tsr = np.eye(4)
-        T_ref_tsr[2, 3] = z_mid
+        T_ref_tsr = Motor.from_translation(0.0, 0.0, z_mid)
 
         Bw = np.array(
             [
@@ -159,21 +219,12 @@ class ParallelJawGripper(GripperBase):
         for i, d in enumerate(depths):
             ro = cylinder_radius + self.finger_length - d
             dlabel = _depth_label(k, i)
-            Tw_e_0 = np.array(
-                [
-                    [0.0, 0.0, -1.0, ro],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
+            # z_EE = (-1,0,0) approaches the axis; y_EE = ±(0,1,0) finger opening.
+            Tw_e_0 = _motor_from_axes(
+                x_axis=[0.0, 0.0, 1.0], y_axis=[0.0, 1.0, 0.0], z_axis=[-1.0, 0.0, 0.0], t=[ro, 0.0, 0.0]
             )
-            Tw_e_pi = np.array(
-                [
-                    [0.0, 0.0, -1.0, ro],
-                    [0.0, -1.0, 0.0, 0.0],
-                    [-1.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
+            Tw_e_pi = _motor_from_axes(
+                x_axis=[0.0, 0.0, -1.0], y_axis=[0.0, -1.0, 0.0], z_axis=[-1.0, 0.0, 0.0], t=[ro, 0.0, 0.0]
             )
             for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
                 t_desc = description or (
@@ -222,8 +273,7 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Cylinder Top Grasp"
 
-        T_ref_tsr = np.eye(4)
-        T_ref_tsr[2, 3] = cylinder_height
+        T_ref_tsr = Motor.from_translation(0.0, 0.0, cylinder_height)
 
         Bw = np.array(
             [
@@ -254,13 +304,8 @@ class ParallelJawGripper(GripperBase):
                 f"palm {h_palm * 1000:.0f}mm above rim, preshape {preshape * 1000:.0f}mm"
             )
             # z_EE = [0,0,-1] (approach down); x = y × z = [0,1,0]×[0,0,-1] = [-1,0,0]
-            Tw_e = np.array(
-                [
-                    [-1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, -1.0, h_palm],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
+            Tw_e = _motor_from_axes(
+                x_axis=[-1.0, 0.0, 0.0], y_axis=[0.0, 1.0, 0.0], z_axis=[0.0, 0.0, -1.0], t=[0.0, 0.0, h_palm]
             )
             templates.append(
                 TSRTemplate(
@@ -304,7 +349,7 @@ class ParallelJawGripper(GripperBase):
             name = f"{reference.title()} Cylinder Bottom Grasp"
 
         del cylinder_height  # bottom face is always at z=0; accepted for interface symmetry
-        T_ref_tsr = np.eye(4)
+        T_ref_tsr = Motor.from_translation(0.0, 0.0, 0.0)
 
         Bw = np.array(
             [
@@ -335,14 +380,7 @@ class ParallelJawGripper(GripperBase):
                 f"palm {h_palm * 1000:.0f}mm below bottom, preshape {preshape * 1000:.0f}mm"
             )
             # z_EE = [0,0,+1] (approach up); identity rotation
-            Tw_e = np.array(
-                [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, -h_palm],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            )
+            Tw_e = Motor.from_translation(0.0, 0.0, -h_palm)
             templates.append(
                 TSRTemplate(
                     Tw_e=Tw_e,
@@ -362,7 +400,7 @@ class ParallelJawGripper(GripperBase):
 
     def _box_face_templates(
         self,
-        T_ref_tsr: np.ndarray,
+        T_ref_tsr,
         y_ee: np.ndarray,
         z_ee: np.ndarray,
         span_dim: float,
@@ -397,7 +435,7 @@ class ParallelJawGripper(GripperBase):
         Bw[slide_bw_row, 0] = -slide_half
         Bw[slide_bw_row, 1] = slide_half
 
-        R = np.column_stack([np.cross(y_ee, z_ee), y_ee, z_ee])
+        x_ee = np.cross(y_ee, z_ee)  # palm normal: frame columns are [x|y|z]
 
         depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
         common = dict(
@@ -412,9 +450,8 @@ class ParallelJawGripper(GripperBase):
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
             dlabel = _depth_label(k, i)
-            Tw_e = np.eye(4)
-            Tw_e[:3, :3] = R
-            Tw_e[:3, 3] = -z_ee * h_palm  # palm is h_palm outside the face
+            # palm is h_palm outside the face
+            Tw_e = _motor_from_axes(x_ee, y_ee, z_ee, -z_ee * h_palm)
             t_desc = description or (
                 f"{dlabel.capitalize()} {face_label} grasp on {reference}: "
                 f"standoff {h_palm * 1000:.0f}mm, preshape {preshape * 1000:.0f}mm"
@@ -462,8 +499,7 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Box Top Grasp"
 
-        T = np.eye(4)
-        T[2, 3] = box_z
+        T = Motor.from_translation(0.0, 0.0, box_z)
         z_ee = np.array([0.0, 0.0, -1.0])
 
         kw = dict(
@@ -529,7 +565,7 @@ class ParallelJawGripper(GripperBase):
             name = f"{reference.title()} Box Bottom Grasp"
 
         del box_z  # bottom face is always at z=0; accepted for API symmetry
-        T = np.eye(4)
+        T = Motor.from_translation(0.0, 0.0, 0.0)
         z_ee = np.array([0.0, 0.0, 1.0])
 
         kw = dict(
@@ -596,12 +632,8 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
 
-        T_pos = np.eye(4)
-        T_pos[0, 3] = box_x / 2.0
-        T_pos[2, 3] = box_z / 2.0
-        T_neg = np.eye(4)
-        T_neg[0, 3] = -box_x / 2.0
-        T_neg[2, 3] = box_z / 2.0
+        T_pos = Motor.from_translation(box_x / 2.0, 0.0, box_z / 2.0)
+        T_neg = Motor.from_translation(-box_x / 2.0, 0.0, box_z / 2.0)
 
         kw = dict(
             preshape_user=preshape,
@@ -674,12 +706,8 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
 
-        T_pos = np.eye(4)
-        T_pos[1, 3] = box_y / 2.0
-        T_pos[2, 3] = box_z / 2.0
-        T_neg = np.eye(4)
-        T_neg[1, 3] = -box_y / 2.0
-        T_neg[2, 3] = box_z / 2.0
+        T_pos = Motor.from_translation(0.0, box_y / 2.0, box_z / 2.0)
+        T_neg = Motor.from_translation(0.0, -box_y / 2.0, box_z / 2.0)
 
         kw = dict(
             preshape_user=preshape,
@@ -760,7 +788,7 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Sphere Grasp"
 
-        T_ref_tsr = np.eye(4)  # origin at sphere center
+        T_ref_tsr = Motor.from_translation(0.0, 0.0, 0.0)  # origin at sphere center
 
         Bw = np.array(
             [
@@ -793,14 +821,9 @@ class ParallelJawGripper(GripperBase):
             ro = object_radius + self.finger_length - d
             dlabel = _depth_label(k, i)
             # Approach along -x in TSR frame; standoff ro baked into Tw_e.
-            # Bw roll/pitch/yaw rotates this to any direction on the sphere.
-            Tw_e = np.array(
-                [
-                    [0.0, 0.0, -1.0, ro],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
+            # The Bw rotor-bivector box rotates this to any direction on the sphere.
+            Tw_e = _motor_from_axes(
+                x_axis=[0.0, 0.0, 1.0], y_axis=[0.0, 1.0, 0.0], z_axis=[-1.0, 0.0, 0.0], t=[ro, 0.0, 0.0]
             )
             t_desc = description or (
                 f"{dlabel.capitalize()} sphere grasp on {reference}: "
@@ -893,7 +916,7 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Torus Side Grasp"
 
-        T_ref_tsr = np.eye(4)  # origin at torus center
+        T_ref_tsr = Motor.from_translation(0.0, 0.0, 0.0)  # origin at torus center
 
         Bw = np.array(
             [
@@ -938,21 +961,11 @@ class ParallelJawGripper(GripperBase):
                 # y_EE ⊥ z_EE in span{x̂,ẑ}: y_EE = (−sinα, 0, cosα)
                 # x_EE = y_EE × z_EE = (0, −1, 0)  [same for all α]
                 # Flip π: y_EE = (+sinα, 0, −cosα), x_EE = (0, +1, 0)
-                Tw_e_0 = np.array(
-                    [
-                        [0.0, -sa, -ca, tx],
-                        [-1.0, 0.0, 0.0, 0.0],
-                        [0.0, ca, -sa, tz],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ]
+                Tw_e_0 = _motor_from_axes(
+                    x_axis=[0.0, -1.0, 0.0], y_axis=[-sa, 0.0, ca], z_axis=[-ca, 0.0, -sa], t=[tx, 0.0, tz]
                 )
-                Tw_e_pi = np.array(
-                    [
-                        [0.0, sa, -ca, tx],
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, -ca, -sa, tz],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ]
+                Tw_e_pi = _motor_from_axes(
+                    x_axis=[0.0, 1.0, 0.0], y_axis=[sa, 0.0, -ca], z_axis=[-ca, 0.0, -sa], t=[tx, 0.0, tz]
                 )
                 for Tw_e, flip_label in ((Tw_e_0, "flip 0°"), (Tw_e_pi, "flip 180°")):
                     t_desc = description or (
@@ -1015,15 +1028,9 @@ class ParallelJawGripper(GripperBase):
             dlabel = _depth_label(k, i)
 
             # Top: z_EE = [0,0,-1]; TSR origin at tube top (z = +tube_r)
-            T_top = np.eye(4)
-            T_top[2, 3] = tube_radius
-            Tw_e_top = np.array(
-                [
-                    [-1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, -1.0, h_palm],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
+            T_top = Motor.from_translation(0.0, 0.0, tube_radius)
+            Tw_e_top = _motor_from_axes(
+                x_axis=[-1.0, 0.0, 0.0], y_axis=[0.0, 1.0, 0.0], z_axis=[0.0, 0.0, -1.0], t=[0.0, 0.0, h_palm]
             )
             t_desc = description or (
                 f"{dlabel.capitalize()} torus span top on {reference}: "
@@ -1044,16 +1051,8 @@ class ParallelJawGripper(GripperBase):
             )
 
             # Bottom: z_EE = [0,0,+1]; TSR origin at tube bottom (z = -tube_r)
-            T_bot = np.eye(4)
-            T_bot[2, 3] = -tube_radius
-            Tw_e_bot = np.array(
-                [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, -h_palm],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            )
+            T_bot = Motor.from_translation(0.0, 0.0, -tube_radius)
+            Tw_e_bot = Motor.from_translation(0.0, 0.0, -h_palm)
             t_desc = description or (
                 f"{dlabel.capitalize()} torus span bottom on {reference}: "
                 f"palm {h_palm * 1000:.0f}mm below torus, preshape {preshape * 1000:.0f}mm"

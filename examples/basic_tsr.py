@@ -22,7 +22,8 @@ def main():
     # A TSR is defined by three components:
     # - T0_w: Transform from world to TSR frame (where is the object?)
     # - Tw_e: Transform from TSR frame to end-effector (gripper orientation)
-    # - Bw: 6x2 bounds matrix [x, y, z, roll, pitch, yaw]
+    # - Bw: 6x2 bounds matrix in Motor.log() order
+    #       [b12, b13, b23, tx, ty, tz] (rotor bivector first, then translation)
 
     # Example: Grasp a mug from the side
     # Place the TSR frame at the mug's position
@@ -39,10 +40,11 @@ def main():
         ]
     )
 
-    # Bounds: allow any rotation around the mug (yaw), small z tolerance
+    # Bounds: allow any rotation around the mug (yaw = b23, row 2), small z
+    # tolerance (z = row 5). Rows are in Motor.log() order (bivector, translation).
     Bw = np.zeros((6, 2))
-    Bw[2, :] = [-0.02, 0.02]  # z: +/- 2cm
-    Bw[5, :] = [-pi, pi]  # yaw: full rotation around mug
+    Bw[2, :] = [-pi, pi]  # b23: full rotation around mug (yaw)
+    Bw[5, :] = [-0.02, 0.02]  # z: +/- 2cm
 
     # Create the TSR
     tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
@@ -51,14 +53,14 @@ def main():
     print("\n1. Sampling poses")
     print("-" * 30)
     for i in range(3):
-        pose = tsr.sample()
+        pose = tsr.sample().to_transformation_matrix()
         pos = pose[0:3, 3]
         print(f"   Sample {i + 1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
 
     # Check if a pose is valid
     print("\n2. Containment check")
     print("-" * 30)
-    sampled_pose = tsr.sample()
+    sampled_pose = tsr.sample().to_transformation_matrix()
     print(f"   Sampled pose valid: {tsr.contains(sampled_pose)}")
 
     random_pose = np.eye(4)

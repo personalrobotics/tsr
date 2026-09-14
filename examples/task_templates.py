@@ -21,7 +21,7 @@ def print_section(title):
 def show_template(label, category, filename, object_pose, object_label):
     t = load_package_template(category, filename)
     tsr = t.instantiate(object_pose)
-    pose = tsr.sample()
+    pose = (tsr.sample()).to_transformation_matrix()
     pos = pose[:3, 3]
     print(f"  {label}")
     print(f"    {t.name}")

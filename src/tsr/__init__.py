@@ -13,8 +13,12 @@ Usage:
     from tsr import sample_from_tsrs
 """
 
-# Core math
 # Template I/O
+from .bimanual import BimanualPose, BimanualTSR, BimanualWitness
+from .multiarm import CircleTSR, SphereTSR
+
+# Constraints
+from .constraints import Constraint, PlaneConstraint, SphereConstraint
 from .io import (
     get_package_templates,
     list_available_templates,

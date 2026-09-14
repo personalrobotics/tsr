@@ -19,11 +19,15 @@ def _interval_sum(Bw: np.ndarray) -> float:
     widths of all bounds, with rotational bounds clamped to 2π to avoid
     infinite volumes from full rotations.
 
+    Rows 0:3 are the rotor-bivector (rotation) DOF in Motor.log order and are
+    clamped to 2π; rows 3:6 (translation) are summed as-is. This mirrors
+    :attr:`tsr.tsr.TSR.volume` exactly.
+
     Args:
         Bw: (6,2) bounds matrix where each row [i,:] is [min, max] for dimension i
 
     Returns:
-        Sum of interval widths, with rotational bounds clamped to 2π
+        Sum of interval widths, with rotational bounds (rows 0:3) clamped to 2π
 
     Raises:
         ValueError: If Bw is not shape (6,2)
@@ -31,7 +35,7 @@ def _interval_sum(Bw: np.ndarray) -> float:
     if Bw.shape != (6, 2):
         raise ValueError(f"Bw must be shape (6,2), got {Bw.shape}")
     widths = np.asarray(Bw[:, 1] - Bw[:, 0], dtype=float)
-    widths[3:6] = np.minimum(widths[3:6], 2.0 * pi)
+    widths[0:3] = np.minimum(widths[0:3], 2.0 * pi)
     widths = np.maximum(widths, 0.0)
     return float(np.sum(widths))
 
@@ -55,9 +59,10 @@ def weights_from_tsrs(tsrs: Sequence[TSR]) -> np.ndarray:
         ValueError: If tsrs is empty
 
     Examples:
-        >>> # Create TSRs with different volumes
+        >>> # Create TSRs with different volumes. Row 2 (b23) is a rotation DOF,
+        >>> # so [-pi, pi] there is a full 2π turn.
         >>> tsr1 = TSR(T0_w=np.eye(4), Tw_e=np.eye(4),
-        ...            Bw=np.array([[0,0], [0,0], [0,0], [0,0], [0,0], [-pi,pi]]))
+        ...            Bw=np.array([[0,0], [0,0], [-pi,pi], [0,0], [0,0], [0,0]]))
         >>> tsr2 = TSR(T0_w=np.eye(4), Tw_e=np.eye(4),
         ...            Bw=np.array([[0,0], [0,0], [0,0], [0,0], [0,0], [0,0]]))
         >>> weights = weights_from_tsrs([tsr1, tsr2])
@@ -66,7 +71,7 @@ def weights_from_tsrs(tsrs: Sequence[TSR]) -> np.ndarray:
     """
     if len(tsrs) == 0:
         raise ValueError("Expected at least one TSR.")
-    w = np.array([_interval_sum(t.Bw) for t in tsrs], dtype=float)
+    w = np.array([t.volume for t in tsrs], dtype=float)
     if not np.any(w > 0.0):
         w = np.ones_like(w)
     return w
@@ -87,9 +92,9 @@ def choose_tsr_index(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = N
         Index of selected TSR (0 <= index < len(tsrs))
 
     Examples:
-        >>> # Create TSRs with different volumes
+        >>> # Create TSRs with different volumes. Row 2 (b23) is a rotation DOF.
         >>> tsr1 = TSR(T0_w=np.eye(4), Tw_e=np.eye(4),
-        ...            Bw=np.array([[0,0], [0,0], [0,0], [0,0], [0,0], [-pi,pi]]))
+        ...            Bw=np.array([[0,0], [0,0], [-pi,pi], [0,0], [0,0], [0,0]]))
         >>> tsr2 = TSR(T0_w=np.eye(4), Tw_e=np.eye(4),
         ...            Bw=np.array([[0,0], [0,0], [0,0], [0,0], [0,0], [0,0]]))
         >>>
@@ -125,9 +130,9 @@ def choose_tsr(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -
         Selected TSR object
 
     Examples:
-        >>> # Create TSRs with different volumes
+        >>> # Create TSRs with different volumes. Row 2 (b23) is a rotation DOF.
         >>> tsr1 = TSR(T0_w=np.eye(4), Tw_e=np.eye(4),
-        ...            Bw=np.array([[0,0], [0,0], [0,0], [0,0], [0,0], [-pi,pi]]))
+        ...            Bw=np.array([[0,0], [0,0], [-pi,pi], [0,0], [0,0], [0,0]]))
         >>> tsr2 = TSR(T0_w=np.eye(4), Tw_e=np.eye(4),
         ...            Bw=np.array([[0,0], [0,0], [0,0], [0,0], [0,0], [0,0]]))
         >>>
@@ -139,19 +144,23 @@ def choose_tsr(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -
     return tsrs[choose_tsr_index(tsrs, rng)]
 
 
-def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None) -> np.ndarray:
-    """Weighted-select a TSR and return a sampled 4×4 transform.
+def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = None):
+    """Weighted-select a TSR and return a sampled transform (gafro ``Motor``).
 
     This function combines TSR selection and sampling into a single operation.
     It first selects a TSR using weighted random sampling (based on volume),
     then samples a pose from that TSR.
+
+    ``Bw`` rows are ``[b12, b13, b23, tx, ty, tz]`` (Motor.log order): a
+    rotor-bivector box (axis*angle) followed by a translation box. ``[-pi, pi]``
+    on a bivector row (0:3) is a full turn about that axis.
 
     Args:
         tsrs: Sequence of TSR objects
         rng: Optional random number generator. If None, uses default RNG.
 
     Returns:
-        4×4 transformation matrix representing a valid pose from one of the TSRs
+        A ``Motor`` representing a valid pose from one of the TSRs.
 
     Examples:
         >>> # Create multiple TSRs for different grasp approaches
@@ -162,10 +171,8 @@ def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = N
         >>>
         >>> # Sample from multiple TSRs
         >>> pose = sample_from_tsrs([side_tsr, top_tsr])
-        >>> pose.shape
+        >>> pose.to_transformation_matrix().shape
         (4, 4)
-        >>> np.allclose(pose[3, :], [0, 0, 0, 1])  # Valid transform
-        True
     """
     return choose_tsr(tsrs, rng).sample()
 
@@ -211,7 +218,7 @@ def sample_from_templates(
     templates: Sequence["TSRTemplate"],
     T_ref_world: np.ndarray,
     rng: Optional[np.random.Generator] = None,
-) -> np.ndarray:
+):
     """Instantiate templates, weighted-select one TSR, and sample a transform.
 
     This function combines template instantiation, TSR selection, and sampling
@@ -224,7 +231,7 @@ def sample_from_templates(
         rng: Optional random number generator. If None, uses default RNG.
 
     Returns:
-        4×4 transformation matrix representing a valid pose from one of the templates
+        A ``Motor`` representing a valid pose from one of the templates.
 
     Examples:
         >>> # Create templates for different grasp approaches
@@ -242,10 +249,8 @@ def sample_from_templates(
         >>> # Sample from templates
         >>> object_pose = np.array([[1,0,0,0.5], [0,1,0,0], [0,0,1,0.3], [0,0,0,1]])
         >>> pose = sample_from_templates([side_template, top_template], object_pose)
-        >>> pose.shape
+        >>> pose.to_transformation_matrix().shape
         (4, 4)
-        >>> np.allclose(pose[3, :], [0, 0, 0, 1])  # Valid transform
-        True
     """
     tsrs = instantiate_templates(templates, T_ref_world)
     return sample_from_tsrs(tsrs, rng)

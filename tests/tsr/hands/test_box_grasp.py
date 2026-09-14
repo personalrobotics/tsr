@@ -13,6 +13,7 @@ import unittest
 
 import numpy as np
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.hands import ParallelJawGripper
 from tsr.template import TSRTemplate
 
@@ -37,11 +38,11 @@ class TestBoxFaceTemplatesHelper(unittest.TestCase):
 
     def test_all_tw_e_valid_se3_small_cube(self):
         for t in self.gripper.grasp_box(SX, SY, SZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_all_tw_e_valid_se3_tall_box(self):
         for t in self.gripper.grasp_box(TX, TY, TZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_bw_exactly_one_translational_dof(self):
         """Each template has freedom in exactly one Bw row (the slide direction)."""
@@ -61,8 +62,8 @@ class TestBoxFaceTemplatesHelper(unittest.TestCase):
     def test_palm_offset_is_h_palm_outside_face(self):
         """Translation in Tw_e is -z_EE * h_palm (palm outside the face)."""
         for t in self.gripper.grasp_box(SX, SY, SZ):
-            z_ee = t.Tw_e[:3, 2]
-            trans = t.Tw_e[:3, 3]
+            z_ee = to_matrix(t.Tw_e)[:3, 2]
+            trans = to_matrix(t.Tw_e)[:3, 3]
             # trans should be antiparallel to z_ee
             h_palm = np.linalg.norm(trans)
             if h_palm > 1e-12:
@@ -99,11 +100,11 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_z_axis_points_down(self):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, -1.0], atol=1e-10)
 
     def test_tsr_origin_at_box_top(self):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
-            self.assertAlmostEqual(t.T_ref_tsr[2, 3], SZ)
+            self.assertAlmostEqual(to_matrix(t.T_ref_tsr)[2, 3], SZ)
 
     def test_preshape_exceeds_aperture_raises(self):
         with self.assertRaises(ValueError):
@@ -115,11 +116,11 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_palm_offset_decreases_with_depth(self):
         # h_palm = finger_length - d; as depth index increases, h_palm decreases
-        names_zs = [(t.name, t.Tw_e[2, 3]) for t in self.gripper.grasp_box_top(SX, SY, SZ, k=3) if "span-x" in t.name]
+        names_zs = [(t.name, to_matrix(t.Tw_e)[2, 3]) for t in self.gripper.grasp_box_top(SX, SY, SZ, k=3) if "span-x" in t.name]
         z_vals = [z for _, z in names_zs]
         self.assertEqual(sorted(z_vals, reverse=True), z_vals)
 
@@ -154,7 +155,7 @@ class TestParallelJawGripperBoxTop(unittest.TestCase):
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_top(SX, SY, SZ):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             _check_se3(self, pose[:3, :3])
 
 
@@ -167,19 +168,19 @@ class TestParallelJawGripperBoxBottom(unittest.TestCase):
 
     def test_z_axis_points_up(self):
         for t in self.gripper.grasp_box_bottom(SX, SY, SZ):
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, 0.0, 1.0], atol=1e-10)
 
     def test_tsr_origin_at_z_zero(self):
         for t in self.gripper.grasp_box_bottom(SX, SY, SZ):
-            self.assertAlmostEqual(t.T_ref_tsr[2, 3], 0.0)
+            self.assertAlmostEqual(to_matrix(t.T_ref_tsr)[2, 3], 0.0)
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box_bottom(SX, SY, SZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_bottom(SX, SY, SZ):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             _check_se3(self, pose[:3, :3])
 
 
@@ -207,13 +208,13 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
         pos_x = [t for t in templates if "+x" in t.name]
         neg_x = [t for t in templates if "-x" in t.name]
         for t in pos_x:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [-1.0, 0.0, 0.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [-1.0, 0.0, 0.0], atol=1e-10)
         for t in neg_x:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [+1.0, 0.0, 0.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [+1.0, 0.0, 0.0], atol=1e-10)
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box_face_x(SX, SY, SZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_span_y_slides_in_z_only(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
@@ -239,7 +240,7 @@ class TestParallelJawGripperBoxFaceX(unittest.TestCase):
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_face_x(SX, SY, SZ):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             _check_se3(self, pose[:3, :3])
 
 
@@ -261,13 +262,13 @@ class TestParallelJawGripperBoxFaceY(unittest.TestCase):
         pos_y = [t for t in templates if "+y" in t.name]
         neg_y = [t for t in templates if "-y" in t.name]
         for t in pos_y:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, -1.0, 0.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, -1.0, 0.0], atol=1e-10)
         for t in neg_y:
-            np.testing.assert_allclose(t.Tw_e[:3, 2], [0.0, +1.0, 0.0], atol=1e-10)
+            np.testing.assert_allclose(to_matrix(t.Tw_e)[:3, 2], [0.0, +1.0, 0.0], atol=1e-10)
 
     def test_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box_face_y(SX, SY, SZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_span_x_slides_in_z_only(self):
         clearance = self.gripper.clearance_fraction * self.gripper.finger_length
@@ -280,7 +281,7 @@ class TestParallelJawGripperBoxFaceY(unittest.TestCase):
 
     def test_instantiate_and_sample_valid(self):
         for t in self.gripper.grasp_box_face_y(SX, SY, SZ):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             _check_se3(self, pose[:3, :3])
 
 
@@ -312,7 +313,7 @@ class TestParallelJawGripperBoxCombined(unittest.TestCase):
 
     def test_all_tw_e_valid_se3(self):
         for t in self.gripper.grasp_box(SX, SY, SZ):
-            _check_se3(self, t.Tw_e[:3, :3])
+            _check_se3(self, to_matrix(t.Tw_e)[:3, :3])
 
     def test_task_subject_reference(self):
         templates = self.gripper.grasp_box(SX, SY, SZ, subject="ee", reference="book")
@@ -323,5 +324,5 @@ class TestParallelJawGripperBoxCombined(unittest.TestCase):
 
     def test_instantiate_and_sample_all_valid(self):
         for t in self.gripper.grasp_box(SX, SY, SZ):
-            pose = t.instantiate(np.eye(4)).sample()
+            pose = to_matrix(t.instantiate(np.eye(4)).sample())
             _check_se3(self, pose[:3, :3])

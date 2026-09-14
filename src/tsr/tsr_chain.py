@@ -2,12 +2,12 @@
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
 import logging
-from functools import reduce
 
 import numpy
+from gafro import Motor
 
 from .tsr import NANBW, TSR
-from .utils import EPSILON, geodesic_distance
+from .utils import EPSILON, as_motor, geodesic_distance
 
 logger = logging.getLogger(__name__)
 
@@ -87,29 +87,29 @@ class TSRChain:
         x_dict = yaml.safe_load(x)
         return TSRChain.from_dict(x_dict)
 
-    def is_valid(self, xyzrpy_list, ignoreNAN=False):
+    def is_valid(self, bw_list, ignoreNAN=False):
         """
-        Checks if a xyzrpy list is a valid sample from the TSR.
-        @param xyzrpy_list a list of xyzrpy values
-        @param ignoreNAN (optional, defaults to False) ignore NaN xyzrpy
+        Checks if a ``bw`` list is a valid sample from the TSR chain.
+        @param bw_list a list of ``bw`` 6-vectors (split coords)
+        @param ignoreNAN (optional, defaults to False) ignore NaN components
         @return a list of 6x1 vector of True if bound is valid and False if not
         """
 
         if len(self.TSRs) == 0:
             raise ValueError("Cannot validate against empty TSR chain!")
 
-        if len(xyzrpy_list) != len(self.TSRs):
+        if len(bw_list) != len(self.TSRs):
             raise ValueError("Sample must be of equal length to TSR chain!")
 
         check = []
         for idx in range(len(self.TSRs)):
-            check.append(self.TSRs[idx].is_valid(xyzrpy_list[idx], ignoreNAN))
+            check.append(self.TSRs[idx].is_valid(bw_list[idx], ignoreNAN))
 
         return check
 
-    def to_transform(self, xyzrpy_list):
+    def to_transform(self, bw_list):
         """
-        Converts a xyzrpy list into an end-effector transform.
+        Converts a ``bw`` list into an end-effector transform.
 
         This implements TSR chain composition as described in Section 5.1 of
         Berenson et al. 2011:
@@ -117,29 +117,29 @@ class TSRChain:
 
         The final transform is: T0_sample = Cn.T0_w * Cn.Tw_sample * Cn.Tw_e
 
-        @param xyzrpy_list  a list of xyzrpy values, one per TSR in the chain
-        @return trans       4x4 transform
+        @param bw_list  a list of ``bw`` 6-vectors, one per TSR in the chain
+        @return trans   Motor transform
         """
         if len(self.TSRs) == 0:
             raise ValueError("Cannot compute transform for empty TSR chain")
 
-        if len(xyzrpy_list) != len(self.TSRs):
-            raise ValueError(f"xyzrpy_list length ({len(xyzrpy_list)}) must match number of TSRs ({len(self.TSRs)})")
+        if len(bw_list) != len(self.TSRs):
+            raise ValueError(f"bw_list length ({len(bw_list)}) must match number of TSRs ({len(self.TSRs)})")
 
         # Clamp values to bounds (required by the L-BFGS-B optimiser that drives
         # distance(); values slightly outside bounds are normal during line search).
-        xyzrpy_list_clamped = []
+        bw_list_clamped = []
         for idx in range(len(self.TSRs)):
-            xyzrpy = numpy.array(xyzrpy_list[idx])
+            bw = numpy.array(bw_list[idx])
             Bw = self.TSRs[idx]._Bw_cont
-            xyzrpy_clamped = numpy.clip(xyzrpy, Bw[:, 0], Bw[:, 1])
-            if not numpy.allclose(xyzrpy, xyzrpy_clamped):
+            bw_clamped = numpy.clip(bw, Bw[:, 0], Bw[:, 1])
+            if not numpy.allclose(bw, bw_clamped):
                 logger.debug(
-                    "TSRChain.to_transform: xyzrpy[%d] clamped to Bw (delta=%s)",
+                    "TSRChain.to_transform: bw[%d] clamped to Bw (delta=%s)",
                     idx,
-                    xyzrpy - xyzrpy_clamped,
+                    bw - bw_clamped,
                 )
-            xyzrpy_list_clamped.append(xyzrpy_clamped)
+            bw_list_clamped.append(bw_clamped)
 
         # Compute the chained transform WITHOUT modifying original TSR objects
         # Start with the first TSR's T0_w
@@ -147,66 +147,72 @@ class TSRChain:
 
         for idx in range(len(self.TSRs)):
             tsr = self.TSRs[idx]
-            xyzrpy = xyzrpy_list_clamped[idx]
+            bw = bw_list_clamped[idx]
 
-            # Convert xyzrpy to transform in w frame
-            Tw_sample = TSR.xyzrpy_to_trans(xyzrpy)
+            # bw is in Motor.log() order; exp maps it to a transform in the w frame
+            Tw_sample = Motor.exp(*(float(v) for v in bw))
 
             # Compute end-effector transform: T0_w_current * Tw_sample * Tw_e
-            T0_w_current = reduce(numpy.dot, [T0_w_current, Tw_sample, tsr.Tw_e])
+            T0_w_current = T0_w_current.multiply(Tw_sample).multiply(tsr.Tw_e)
 
         return T0_w_current
 
-    def sample_xyzrpy(self, xyzrpy_list=None):
+    def sample_bw(self, bw_list=None):
         """
-        Samples from Bw to generate a list of xyzrpy samples
-        Can specify some values optionally as NaN.
+        Samples from Bw to generate a list of ``bw`` samples.
+        Can specify some components optionally as NaN.
 
-        @param xyzrpy_list   (optional) a list of Bw with float('nan') for
-                        dimensions to sample uniformly.
-        @return sample  a list of sampled xyzrpy
+        @param bw_list   (optional) a list of ``bw`` 6-vectors with float('nan')
+                        for dimensions to sample uniformly.
+        @return sample  a list of sampled ``bw`` 6-vectors
         """
 
-        if xyzrpy_list is None:
-            xyzrpy_list = [NANBW] * len(self.TSRs)
+        if bw_list is None:
+            bw_list = [NANBW] * len(self.TSRs)
 
         sample = []
         for idx in range(len(self.TSRs)):
-            sample.append(self.TSRs[idx].sample_xyzrpy(xyzrpy_list[idx]))
+            sample.append(self.TSRs[idx].sample_bw(bw_list[idx]))
 
         return sample
 
-    def sample(self, xyzrpy_list=None):
+    def sample(self, bw_list=None):
         """
         Samples from the Bw chain to generate an end-effector transform.
         Can specify some Bw values optionally.
 
-        @param xyzrpy_list   (optional) a list of xyzrpy with float('nan') for
-                             dimensions to sample uniformly.
-        @return T0_w         4x4 transform
+        @param bw_list   (optional) a list of ``bw`` 6-vectors with float('nan')
+                             for dimensions to sample uniformly.
+        @return T0_w         Motor transform
         """
-        return self.to_transform(self.sample_xyzrpy(xyzrpy_list))
+        return self.to_transform(self.sample_bw(bw_list))
 
     def distance(self, trans):
         """
         Computes the Geodesic Distance from the TSR chain to a transform
-        @param trans 4x4 transform
+        @param trans Motor or 4x4 transform
         @return dist Geodesic distance to TSR
-        @return bwopt Closest Bw value to trans output as a list of xyzrpy
+        @return bwopt Closest Bw value to trans output as a list of ``bw`` vecs
         """
         import scipy.optimize
 
-        def objective(xyzrpy_list):
-            xyzrpy_stack = xyzrpy_list.reshape(len(self.TSRs), 6)
-            tsr_trans = self.to_transform(xyzrpy_stack)
+        trans = as_motor(trans)
+
+        def objective(bw_list):
+            bw_stack = bw_list.reshape(len(self.TSRs), 6)
+            tsr_trans = self.to_transform(bw_stack)
             return geodesic_distance(tsr_trans, trans)
 
+        # Seed each TSR's block from its own closest-bw witness (TSR.distance
+        # returns the box-clamped projection of ``trans``), not the box midpoint.
+        # This puts L-BFGS-B's start at (or near) the true minimum, so its
+        # finite-difference search converges reliably even near box corners.
         bwinit = []
         bwbounds = []
-        for idx in range(len(self.TSRs)):
-            Bw = self.TSRs[idx].Bw
-            bwinit.extend((Bw[:, 0] + Bw[:, 1]) / 2)
-            bwbounds.extend([(Bw[i, 0], Bw[i, 1]) for i in range(6)])
+        for tsr in self.TSRs:
+            _, bwseed = tsr.distance(trans)
+            bwinit.extend(bwseed)
+            bwbounds.extend([(tsr.Bw[i, 0], tsr.Bw[i, 1]) for i in range(6)])
 
         bwopt, dist, info = scipy.optimize.fmin_l_bfgs_b(
             objective, bwinit, fprime=None, args=(), bounds=bwbounds, approx_grad=True
@@ -222,7 +228,7 @@ class TSRChain:
         For multi-TSR chains, the transform must satisfy all constraints
         simultaneously (AND semantics).
 
-        @param  trans 4x4 transform
+        @param  trans Motor or 4x4 transform
         @return       True if inside and False if not
         """
         if len(self.TSRs) == 0:
@@ -230,12 +236,12 @@ class TSRChain:
         dist, _ = self.distance(trans)
         return abs(dist) < EPSILON
 
-    def to_xyzrpy(self, trans):
+    def to_bw(self, trans):
         """
-        Converts an end-effector transform to a list of xyzrpy values
-        @param  trans  4x4 transform
-        @return xyzrpy_list list of xyzrpy values
+        Converts an end-effector transform to a list of ``bw`` 6-vectors.
+        @param  trans  Motor or 4x4 transform
+        @return bw_list list of ``bw`` 6-vectors (split coords)
         """
-        _, xyzrpy_array = self.distance(trans)
+        _, bw_array = self.distance(trans)
         # Convert numpy array to list of arrays
-        return [xyzrpy_array[i] for i in range(len(self.TSRs))]
+        return [bw_array[i] for i in range(len(self.TSRs))]

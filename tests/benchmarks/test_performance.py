@@ -65,7 +65,7 @@ class PerformanceBenchmark(unittest.TestCase):
         # Benchmark core sampling
         start_time = time.time()
         for _ in range(num_samples):
-            self.tsr.sample_xyzrpy()
+            self.tsr.sample_bw()
         sampling_time = time.time() - start_time
 
         print("Sampling Benchmark:")

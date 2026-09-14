@@ -9,28 +9,30 @@ from collections import defaultdict
 from typing import Iterator, Tuple
 
 import numpy as np
+from gafro import Rotor, Vector
 from scipy.spatial import ConvexHull
 
 
-def _rotation_to_align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Return rotation matrix R such that R @ a = b (both unit vectors)."""
+def _rotor_to_align(a: np.ndarray, b: np.ndarray) -> Rotor:
+    """Return a gafro ``Rotor`` R such that ``R a = b`` (both unit vectors).
+
+    Pure CGA via ``Vector.get_rotor``; the antiparallel case (no unique shortest
+    arc) is a 180° rotation about an axis perpendicular to ``a``, expressed as a
+    rotor exponential of the perpendicular bivector.
+    """
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
-    v = np.cross(a, b)
-    c = float(np.dot(a, b))
-    s = float(np.linalg.norm(v))
-    if s < 1e-12:
-        return np.eye(3) if c > 0 else _rotation_180_perp(a)
-    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-    return np.eye(3) + vx + vx @ vx * (1.0 - c) / (s * s)
-
-
-def _rotation_180_perp(a: np.ndarray) -> np.ndarray:
-    """180° rotation around an axis perpendicular to unit vector a."""
-    perp = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-    perp = perp - np.dot(perp, a) * a
-    perp /= np.linalg.norm(perp)
-    return 2.0 * np.outer(perp, perp) - np.eye(3)
+    if float(np.dot(a, b)) < -1.0 + 1e-9:
+        perp = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        perp = perp - np.dot(perp, a) * a
+        perp /= np.linalg.norm(perp)
+        # 180° about ``perp``: bivector generator = pi * (Hodge dual of perp).
+        # dual of [x,y,z] in [e12,e13,e23] coords is [z, -y, x].
+        biv = np.pi * np.array([perp[2], -perp[1], perp[0]])
+        return Rotor.exp(float(biv[0]), float(biv[1]), float(biv[2]))
+    return Vector(float(a[0]), float(a[1]), float(a[2])).get_rotor(
+        Vector(float(b[0]), float(b[1]), float(b[2]))
+    )
 
 
 def _dist_point_to_segment_2d(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
@@ -83,8 +85,9 @@ def stable_poses_mesh(
         com:      (3,) center of mass in the same frame.
 
     Yields:
-        (R, com_height, stability_margin) for each stable face:
-        - R (3×3): rotation s.t. face outward-normal → -z (face rests on table).
+        (rotor, com_height, stability_margin) for each stable face:
+        - rotor (gafro.Rotor): rotation s.t. face outward-normal → -z (face
+          rests on table).
         - com_height (float): perpendicular distance from COM to face / table height.
         - stability_margin (float): arctan(d_min / com_height) in radians.
     """
@@ -141,5 +144,5 @@ def stable_poses_mesh(
         d_min = _polygon_edge_dist_2d(p_2d, poly)
         stability_margin = float(np.arctan2(d_min, com_height))
 
-        R = _rotation_to_align(n, _neg_z)
-        yield R, com_height, stability_margin
+        rotor = _rotor_to_align(n, _neg_z)
+        yield rotor, com_height, stability_margin

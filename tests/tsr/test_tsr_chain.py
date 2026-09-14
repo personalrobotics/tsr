@@ -11,6 +11,7 @@ import unittest
 import numpy as np
 from numpy import pi
 
+from tests.tsr._motor_helpers import to_matrix
 from tsr.tsr import TSR
 from tsr.tsr_chain import TSRChain
 
@@ -114,7 +115,7 @@ class TestTSRChainMethods(unittest.TestCase):
             np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
 
-        transform = self.chain.to_transform(xyzrpy_list)
+        transform = to_matrix(self.chain.to_transform(xyzrpy_list))
 
         # Should return a 4x4 transform matrix
         self.assertEqual(transform.shape, (4, 4))
@@ -125,10 +126,10 @@ class TestTSRChainMethods(unittest.TestCase):
             self.chain.to_transform([np.array([0.1, 0.1, 0.1, 0, 0, 0])])
 
     def test_sample_xyzrpy(self):
-        """Test TSRChain.sample_xyzrpy() method."""
+        """Test TSRChain.sample_bw() method."""
         # Test sampling without input
         np.random.seed(42)
-        result = self.chain.sample_xyzrpy()
+        result = self.chain.sample_bw()
 
         # Should return a list of xyzrpy arrays
         self.assertIsInstance(result, list)
@@ -144,7 +145,7 @@ class TestTSRChainMethods(unittest.TestCase):
             np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
         np.random.seed(42)
-        result_with_input = self.chain.sample_xyzrpy(input_xyzrpy)
+        result_with_input = self.chain.sample_bw(input_xyzrpy)
 
         # Should return the input when valid
         np.testing.assert_array_almost_equal(result_with_input[0], input_xyzrpy[0])
@@ -154,7 +155,7 @@ class TestTSRChainMethods(unittest.TestCase):
         """Test TSRChain.sample() method."""
         # Test sampling without input
         np.random.seed(42)
-        result = self.chain.sample()
+        result = to_matrix(self.chain.sample())
 
         # Should return a 4x4 transform matrix
         self.assertEqual(result.shape, (4, 4))
@@ -166,7 +167,7 @@ class TestTSRChainMethods(unittest.TestCase):
             np.array([0.01, 0.01, 0.01, pi / 6, pi / 6, pi / 3]),
         ]
         np.random.seed(42)
-        result_with_input = self.chain.sample(input_xyzrpy)
+        result_with_input = to_matrix(self.chain.sample(input_xyzrpy))
 
         # Should return a transform matrix
         self.assertEqual(result_with_input.shape, (4, 4))
@@ -193,9 +194,12 @@ class TestTSRChainMethods(unittest.TestCase):
         self.assertIsInstance(bwopt, np.ndarray)
         self.assertEqual(bwopt.shape, (len(self.chain.TSRs), 6))
 
-        # Test with transform that should be far from the chain
+        # Test with transform that should be far from the chain. The chain's
+        # translation envelope (Motor.log rows 3:6) spans roughly ±0.5 m and the
+        # composed rotation contributes a constant floor, so the far transform
+        # must clear that envelope by a wide margin to read as strictly farther.
         far_transform = np.eye(4)
-        far_transform[:3, 3] = [1.0, 1.0, 1.0]
+        far_transform[:3, 3] = [3.0, 3.0, 3.0]
 
         far_result = self.chain.distance(far_transform)
         far_distance, far_bwopt = far_result
@@ -218,14 +222,14 @@ class TestTSRChainMethods(unittest.TestCase):
         self.assertFalse(self.chain.contains(not_contained_transform))
 
     def test_to_xyzrpy(self):
-        """Test TSRChain.to_xyzrpy() method."""
+        """Test TSRChain.to_bw() method."""
         # Create a transform that should be within the first TSR bounds
         transform = np.eye(4)
         transform[:3, 3] = [0.005, 0.005, 0.005]
 
         # For single TSR chain, this should work
         single_chain = TSRChain(tsr=self.tsr1)
-        result = single_chain.to_xyzrpy(transform)
+        result = single_chain.to_bw(transform)
 
         # Should return a list of xyzrpy arrays
         self.assertIsInstance(result, list)
@@ -252,7 +256,7 @@ class TestTSRChainMethods(unittest.TestCase):
             pass  # Current implementation doesn't raise ValueError
 
         # sample_xyzrpy should return empty list
-        result = empty_chain.sample_xyzrpy()
+        result = empty_chain.sample_bw()
         self.assertEqual(result, [])
 
         # sample should raise ValueError
@@ -282,7 +286,7 @@ class TestTSRChainMethods(unittest.TestCase):
 
         # to_xyzrpy should raise ValueError
         try:
-            empty_chain.to_xyzrpy(np.eye(4))
+            empty_chain.to_bw(np.eye(4))
         except ValueError:
             pass  # Expected behavior
         except Exception:
@@ -300,10 +304,10 @@ class TestTSRChainMethods(unittest.TestCase):
         check = single_chain.is_valid([xyzrpy])
         self.assertTrue(all(all(c) for c in check))
 
-        transform = single_chain.to_transform([xyzrpy])
+        transform = to_matrix(single_chain.to_transform([xyzrpy]))
         self.assertEqual(transform.shape, (4, 4))
 
-        sample_result = single_chain.sample_xyzrpy()
+        sample_result = single_chain.sample_bw()
         self.assertEqual(len(sample_result), 1)
         self.assertEqual(sample_result[0].shape, (6,))
 
@@ -335,36 +339,41 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
         )
         chain = TSRChain(tsr=tsr)
 
+        # Seed for determinism: chain.contains() routes through an L-BFGS-B
+        # geodesic optimisation whose residual floor is sample-dependent, while
+        # tsr.contains() is a direct box check (the ground truth).
+        np.random.seed(0)
         for _ in range(10):
             t = tsr.sample()
             self.assertEqual(chain.contains(t), tsr.contains(t))
 
     def test_multi_tsr_rejects_partial_satisfaction(self):
         """Multi-TSR chain: a transform satisfying only one TSR should be rejected."""
-        # TSR1: allows x in [-0.1, 0.1], everything else at 0
+        # Rotation-first (Motor.log) order: rows 0:3 = bivector, rows 3:6 = x,y,z.
+        # TSR1: allows x (row 3) in [-0.1, 0.1], everything else at 0
         tsr1 = TSR(
             Bw=np.array(
                 [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
                     [-0.1, 0.1],
-                    [0, 0],
-                    [0, 0],
-                    [0, 0],
                     [0, 0],
                     [0, 0],
                 ]
             )
         )
-        # TSR2: allows y in [-0.1, 0.1], everything else at 0
+        # TSR2: allows y (row 4) in [-0.1, 0.1], everything else at 0
         tsr2 = TSR(
             T0_w=np.eye(4),
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
                     [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
                     [-0.1, 0.1],
-                    [0, 0],
-                    [0, 0],
-                    [0, 0],
                     [0, 0],
                 ]
             ),
@@ -373,7 +382,7 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
 
         # A transform generated by tsr1 alone (x=0.05, y=0):
         # This satisfies tsr1 but NOT the composed chain
-        t1_only = tsr1.to_transform(np.array([0.05, 0, 0, 0, 0, 0]))
+        t1_only = tsr1.to_transform(np.array([0, 0, 0, 0.05, 0, 0]))
         self.assertTrue(tsr1.contains(t1_only))  # tsr1 alone: yes
         # The chain composes the TSRs, so the result depends on both
         # The key test: contains should be consistent with distance
@@ -413,7 +422,7 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
         # Test with various transforms
         transforms = [
             np.eye(4),
-            chain.sample(),
+            to_matrix(chain.sample()),
         ]
         far = np.eye(4)
         far[0, 3] = 5.0
