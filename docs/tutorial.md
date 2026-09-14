@@ -63,7 +63,10 @@ A TSR is defined by three components:
 
 This 4×4 homogeneous transformation matrix positions the TSR frame in the world. It represents the reference entity's pose — where the constraint region is located.
 
-$$T_0^w = \begin{bmatrix} R_{3\times3} & t_{3\times1} \\ 0_{1\times3} & 1 \end{bmatrix}$$
+$$T_0^w = \begin{bmatrix}
+R_{3\times3} & t_{3\times1} \\
+0_{1\times3} & 1
+\end{bmatrix}$$
 
 **Example**: For grasping a mug, $T_0^w$ is the mug's pose. For placing on a table, it is the table surface's pose.
 

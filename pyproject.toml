@@ -53,7 +53,7 @@ viz = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.6.0",
+    "ruff==0.6.0",
 ]
 
 [project.urls]
