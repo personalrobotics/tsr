@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Siddhartha Srinivasa
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Optional
 
 import numpy as np
 
-from .tsr import TSR
+from .core import TSR
 
 
 @dataclass(frozen=True)

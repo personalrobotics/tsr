@@ -1,16 +1,19 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Siddhartha Srinivasa
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
 
 """GripperBase: abstract base class for gripper hand models."""
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
 import numpy as np
 
 from tsr.template import TSRTemplate
+
+logger = logging.getLogger(__name__)
 
 
 class GripperBase(ABC):
@@ -587,6 +590,55 @@ class GripperBase(ABC):
             Empty list if max_aperture cannot span the outer diameter.
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement grasp_torus_span")
+
+    # ------------------------------------------------------------------
+    # Shared factory contract
+    #
+    # Across all grasp_* factories:
+    #   * An exception reports an INVALID REQUEST — arguments that are
+    #     nonsensical on their own (non-positive size, k < 1, reversed
+    #     angle_range). Callers should never trigger these in correct code.
+    #   * An empty list reports an EMPTY FEASIBLE SET — valid arguments that
+    #     simply admit no grasp (object too wide for the jaws, band too thin,
+    #     etc.). Callers can sweep many objects without try/except.
+    #
+    # Infeasibility carries a machine-readable reason; the *public* factory
+    # method emits a single debug log at its boundary via ``_empty`` rather
+    # than logging at each internal early return.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _check_depth_count(k: int) -> None:
+        """Validate the discrete-depth count. Raises ValueError for k < 1."""
+        if k < 1:
+            raise ValueError(f"k (number of approach depths) must be >= 1, got {k}")
+
+    @staticmethod
+    def _check_angle_range(angle_range: Tuple[float, float]) -> None:
+        """Validate a (min, max) yaw range. Raises if reversed (min > max)."""
+        if angle_range[0] > angle_range[1]:
+            raise ValueError(f"angle_range must be (min, max) with min <= max, got {angle_range}")
+
+    def _infeasibility_reason(self, preshape: float, object_span: float) -> Optional[str]:
+        """Why a grasp of ``object_span`` at ``preshape`` is infeasible, else None.
+
+        ``"exceeds_aperture"`` — the jaws cannot open wide enough;
+        ``"cannot_straddle"`` — the opening is not wider than the object.
+        """
+        if preshape > self.max_aperture:
+            return "exceeds_aperture"
+        if preshape <= object_span:
+            return "cannot_straddle"
+        return None
+
+    def _empty(self, method: str, reason: str, **context) -> List[TSRTemplate]:
+        """Return [] and log, once at debug level, why the feasible set is empty."""
+        if context:
+            ctx = ", ".join(f"{k}={v:g}" if isinstance(v, (int, float)) else f"{k}={v}" for k, v in context.items())
+            logger.debug("%s.%s: empty feasible set (%s; %s)", type(self).__name__, method, reason, ctx)
+        else:
+            logger.debug("%s.%s: empty feasible set (%s)", type(self).__name__, method, reason)
+        return []
 
     def renderer(self):
         """Return a SubjectRenderer for use with TSRVisualizer.

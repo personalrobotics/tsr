@@ -53,7 +53,6 @@ class TestRobotiq2F85(unittest.TestCase):
         self.assertGreater(len(templates), 0)
 
     def test_cannot_grasp_wide_object(self):
-        """Objects wider than max_aperture should raise."""
-        with self.assertRaises(ValueError):
-            # Preshape 95 mm > max_aperture 85 mm
-            self.gripper.grasp_cylinder_side(0.048, 0.115, preshape=0.095)
+        """Objects wider than max_aperture are infeasible -> return []."""
+        # Preshape 95 mm > max_aperture 85 mm
+        self.assertEqual(self.gripper.grasp_cylinder_side(0.048, 0.115, preshape=0.095), [])

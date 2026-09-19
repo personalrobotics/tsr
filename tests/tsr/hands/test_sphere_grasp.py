@@ -107,19 +107,18 @@ class TestGraspSphere(unittest.TestCase):
         ts = self.gripper.grasp_sphere(RADIUS, preshape=2 * RADIUS - 0.001)
         self.assertEqual(ts, [])
 
-    def test_raises_when_preshape_exceeds_max_aperture(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_sphere(RADIUS, preshape=MA + 0.001)
+    def test_returns_empty_when_preshape_exceeds_max_aperture(self):
+        # Infeasible (object too wide for the jaws) returns [], not raise.
+        self.assertEqual(self.gripper.grasp_sphere(RADIUS, preshape=MA + 0.001), [])
 
     def test_raises_for_nonpositive_radius(self):
         with self.assertRaises(ValueError):
             self.gripper.grasp_sphere(0.0)
 
-    def test_large_sphere_raises(self):
-        # auto-computed preshape = 2r + clearance > max_aperture → ValueError
-        # (same behavior as grasp_cylinder_side for oversized objects)
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_sphere(object_radius=MA)  # 2r = 0.28 > 0.14
+    def test_large_sphere_returns_empty(self):
+        # auto-computed preshape = 2r + clearance > max_aperture → [] (infeasible),
+        # same contract as grasp_cylinder_side for oversized objects.
+        self.assertEqual(self.gripper.grasp_sphere(object_radius=MA), [])  # 2r = 0.28 > 0.14
 
     # ── TSR origin ────────────────────────────────────────────────────────
 

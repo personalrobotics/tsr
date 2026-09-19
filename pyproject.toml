@@ -3,11 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tsr"
-version = "1.0.0"
-description = "Python package for using Task Space Regions"
+name = "sstsr"
+version = "2.0.0"
+description = "Task Space Regions for grasp and placement planning (import as `tsr`)"
 readme = "README.md"
-license = "MIT"
+license = "BSD-2-Clause"
 authors = [
     {name = "Siddhartha Srinivasa", email = "siddhartha.srinivasa@gmail.com"}
 ]
@@ -19,12 +19,14 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
@@ -39,6 +41,7 @@ dependencies = [
 test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "hypothesis>=6.112",
     "build>=1.0.0",
 ]
 viz = [
@@ -49,7 +52,7 @@ viz = [
 
 [dependency-groups]
 dev = [
-    "ruff==0.6.0",
+    "ruff>=0.6.0",
 ]
 
 [project.urls]
@@ -101,5 +104,7 @@ line-length = 120
 select = ["F", "E", "W", "I"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/tsr/__init__.py" = ["F401"]
+# The top-level __init__ is grouped by architecture layer (see docs/ARCHITECTURE.md),
+# not alphabetically, so exempt it from import re-sorting (I001).
+"src/tsr/__init__.py" = ["F401", "I001"]
 "src/tsr/**/__init__.py" = ["F401"]

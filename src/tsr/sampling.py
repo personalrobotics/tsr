@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Siddhartha Srinivasa
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import List, Optional, Sequence
 import numpy as np
 from numpy import pi
 
+from .core import TSR
 from .template import TSRTemplate
-from .tsr import TSR
 
 
 def _interval_sum(Bw: np.ndarray) -> float:

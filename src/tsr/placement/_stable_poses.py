@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Siddhartha Srinivasa
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
 
 """Stable-pose detection helpers for tsr.placement."""
 
@@ -9,7 +9,7 @@ from collections import defaultdict
 from typing import Iterator, Tuple
 
 import numpy as np
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, QhullError
 
 
 def _rotation_to_align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -83,14 +83,30 @@ def stable_poses_mesh(
         com:      (3,) center of mass in the same frame.
 
     Yields:
-        (R, com_height, stability_margin) for each stable face:
+        (R, origin_height, stability_margin) for each stable face:
         - R (3×3): rotation s.t. face outward-normal → -z (face rests on table).
-        - com_height (float): perpendicular distance from COM to face / table height.
-        - stability_margin (float): arctan(d_min / com_height) in radians.
+        - origin_height (float): height of the OBJECT-FRAME ORIGIN above the
+          table when this face rests on it (= perpendicular distance from the
+          origin to the face plane). Placing the origin here makes the resting
+          face sit at z=0 regardless of where the COM is. Equals the COM height
+          only when the COM lies on the face normal through the origin.
+        - stability_margin (float): arctan(d_min / com_height) in radians, where
+          com_height is the perpendicular COM-to-face distance (the physically
+          relevant lever arm).
     """
     vertices = np.asarray(vertices, dtype=float)
     com = np.asarray(com, dtype=float)
-    hull = ConvexHull(vertices)
+    if vertices.ndim != 2 or vertices.shape[1] != 3:
+        raise ValueError(f"vertices must have shape (N, 3), got {vertices.shape}")
+    if vertices.shape[0] < 4:
+        raise ValueError(f"need at least 4 vertices for a 3D convex hull, got {vertices.shape[0]}")
+    try:
+        hull = ConvexHull(vertices)
+    except QhullError as e:
+        raise ValueError(
+            "could not build a 3D convex hull from the given vertices; they may be "
+            "coplanar, collinear, or otherwise degenerate"
+        ) from e
 
     # Group triangles that share the same outward normal into one face.
     face_groups: dict = defaultdict(list)
@@ -110,9 +126,14 @@ def stable_poses_mesh(
         d = float(hull.equations[simplex_indices[0], 3])
 
         # COM height above this face (positive = COM on the interior side).
+        # Used for the stability lever arm (the margin), NOT for placement.
         com_height = -(np.dot(n, com) + d)
         if com_height < 1e-10:
             continue  # degenerate or COM outside hull
+
+        # Height of the object-frame ORIGIN above this face. Placing the origin
+        # here makes the resting face sit at table z=0 for any COM (see C2).
+        origin_height = -d
 
         # Collect all unique vertex indices for this face.
         verts_idx = set()
@@ -142,4 +163,4 @@ def stable_poses_mesh(
         stability_margin = float(np.arctan2(d_min, com_height))
 
         R = _rotation_to_align(n, _neg_z)
-        yield R, com_height, stability_margin
+        yield R, origin_height, stability_margin

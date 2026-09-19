@@ -132,9 +132,9 @@ class TestGraspTorusSide(unittest.TestCase):
         ts = self.gripper.grasp_torus_side(SR, Sr, preshape=2 * Sr - 0.001)
         self.assertEqual(ts, [])
 
-    def test_raises_when_preshape_exceeds_max_aperture(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_torus_side(SR, Sr, preshape=MA + 0.001)
+    def test_returns_empty_when_preshape_exceeds_max_aperture(self):
+        # Infeasible (object too wide for the jaws) returns [], not raise.
+        self.assertEqual(self.gripper.grasp_torus_side(SR, Sr, preshape=MA + 0.001), [])
 
     def test_returns_empty_when_finger_too_short_to_reach_centerline(self):
         # finger_length must be > tube_radius to reach the tube center from outside
