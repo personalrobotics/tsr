@@ -15,12 +15,20 @@ def wrap_to_interval(angles: np.ndarray, lower: np.ndarray = None) -> np.ndarray
         angles: (N,) array of angles (in radians)
         lower: (N,) array of lower bounds; defaults to -pi if None
 
+    Guarantees the result lies in the half-open interval [lower, lower + 2*pi).
+
     Returns:
         wrapped: (N,) array of wrapped angles
     """
     if lower is None:
         lower = -pi * np.ones_like(angles)
-    return (angles - lower) % (2 * pi) + lower
+    two_pi = 2 * pi
+    frac = np.asarray((angles - lower) % two_pi, dtype=float)
+    # Floating-point guard: for a tiny-negative (angles - lower), numpy's modulo
+    # can round up to exactly 2*pi, which would push the result to lower + 2*pi
+    # and out of the half-open interval. Map that boundary back to 0 (i.e. lower).
+    frac = np.where(frac >= two_pi, 0.0, frac)
+    return frac + lower
 
 
 def rotation_angle(R: np.ndarray) -> float:

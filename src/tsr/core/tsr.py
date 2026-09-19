@@ -172,8 +172,11 @@ class TSR:
         @param Bw bounds on rpy
         @return check a (3,) vector of True if within and False if outside
         """
-        # Unwrap rpy to Bw_cont.
-        rpy = wrap_to_interval(rpy, lower=Bw[:3, 0])
+        # Unwrap rpy to Bw_cont. Shift the wrap origin down by EPSILON so a value
+        # sitting within tolerance *below* the lower bound (e.g. a -1e-9 roundoff
+        # against a point bound) stays next to the bound instead of wrapping a full
+        # 2*pi up to the top of the interval and failing the check.
+        rpy = wrap_to_interval(rpy, lower=Bw[:3, 0] - EPSILON)
 
         # Check bounds condition on RPY component.
         rpycheck = [False] * 3

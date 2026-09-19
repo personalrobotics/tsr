@@ -39,9 +39,9 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.gripper.grasp_cylinder_side(0.0, H)
 
-    def test_narrow_height_raises(self):
-        with self.assertRaises(ValueError):
-            self.gripper.grasp_cylinder_side(R, 0.001)
+    def test_narrow_height_returns_empty(self):
+        # Graspable band vanishes after clearance -> infeasible -> [] (not raise).
+        self.assertEqual(self.gripper.grasp_cylinder_side(R, 0.001), [])
 
     def test_default_preshape_is_2r_plus_clearance(self):
         clearance = self.gripper.clearance_fraction * min(self.gripper.finger_length, R)

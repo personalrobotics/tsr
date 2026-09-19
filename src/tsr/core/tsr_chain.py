@@ -204,7 +204,10 @@ class TSRChain:
         bwinit = []
         bwbounds = []
         for idx in range(len(self.TSRs)):
-            Bw = self.TSRs[idx].Bw
+            # Use the continuous bounds: _Bw_cont guarantees lower <= upper even
+            # for outer (wrapping) rotation intervals, which L-BFGS-B requires
+            # (raw Bw can have lower > upper and crashes the optimiser).
+            Bw = self.TSRs[idx]._Bw_cont
             bwinit.extend((Bw[:, 0] + Bw[:, 1]) / 2)
             bwbounds.extend([(Bw[i, 0], Bw[i, 1]) for i in range(6)])
 
@@ -227,6 +230,11 @@ class TSRChain:
         """
         if len(self.TSRs) == 0:
             return False
+        # A single-TSR chain is exactly one TSR: use the closed-form check, which
+        # is exact and avoids the optimiser stalling at the non-smooth geodesic
+        # minimum (arccos kink at angle 0).
+        if len(self.TSRs) == 1:
+            return self.TSRs[0].contains(trans)
         dist, _ = self.distance(trans)
         return abs(dist) < EPSILON
 

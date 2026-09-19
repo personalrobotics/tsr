@@ -38,10 +38,24 @@ These are exercised exhaustively by the Hypothesis property tests.
 
 Every `grasp_*` / `place_*` factory method obeys one uniform contract:
 
-- **Returns `List[TSRTemplate]`.** An **empty list means geometrically
-  infeasible** (e.g. the object is too large for the gripper) — never an error.
-  Callers can sweep many objects without `try`/`except`.
-- **Raises `ValueError` only for invalid inputs** (non-positive sizes,
-  `k < 1`, reversed `angle_range`).
+> **An exception reports an invalid request. An empty list reports an empty
+> feasible set.**
+
+- **`raise ValueError`** only when an argument is nonsensical on its own — a
+  non-positive size, `k < 1`, a reversed `angle_range`. These indicate a bug in
+  the caller and must never be silently swallowed.
+- **Return `[]`** whenever valid arguments simply admit no grasp — the object is
+  wider than the jaws, or a positive-but-large clearance leaves no band. A 6 mm
+  cylinder and a 0.5 m clearance are both *valid*; they just yield an empty
+  feasible set. Treating one physical infeasibility differently from another
+  would recreate the inconsistency this contract removes. Callers can sweep many
+  objects without `try`/`except`.
+- **Observability:** infeasibility carries a machine-readable reason
+  (`exceeds_aperture`, `cannot_straddle`, `insufficient_clearance_band`,
+  `finger_too_short`). The *public* factory method emits a single
+  `logger.debug` at its boundary (not at each internal early return), so an empty
+  result is diagnosable without turning it into an exception. If debug logs prove
+  insufficient, add an explicit diagnostic-result API — exceptions do not carry
+  that responsibility.
 - Templates carry `task` / `subject` / `reference` metadata and the canonical
   gripper frame convention (`z` = approach, `y` = finger opening, `x = y × z`).

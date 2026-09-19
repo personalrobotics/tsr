@@ -7,7 +7,7 @@ name = "tsr"
 version = "1.0.0"
 description = "Python package for using Task Space Regions"
 readme = "README.md"
-license = "MIT"
+license = "BSD-2-Clause"
 authors = [
     {name = "Siddhartha Srinivasa", email = "siddhartha.srinivasa@gmail.com"}
 ]
@@ -19,7 +19,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
