@@ -15,7 +15,7 @@ PyPI release. Every "CONFIRMED" item below was reproduced with an executable pro
 | C6 | Low | `tsr.py:347` dead no-op `numpy.hstack(...)` | CONFIRMED |
 | C7 | Med | Oversized-object policy inconsistent (raise vs `[]`) across shapes | CONFIRMED |
 | A1 | **High (release)** | `pyproject` name/version still `tsr`/`1.0.0` | — |
-| A2 | **High (release)** | CI triggers on `main`; default branch is `master` (CI never runs) | CONFIRMED |
+| A2 | — | ~~CI triggers on `main`; default is `master`~~ — FALSE ALARM (stale local refs; remote default is `main`, CI is correct) | RETRACTED |
 | A3 | Med | `__init__` docstring advertises non-existent `TaskCategory/TaskType/EntityClass` | CONFIRMED |
 | A4 | Med | README says BSD-2-Clause; LICENSE/pyproject say MIT (contradiction) | CONFIRMED |
 | A5 | Med | README install uses git URL, not `pip install sstsr` | — |
@@ -72,8 +72,9 @@ object, while `_box_face_templates`/`grasp_torus_span` **return `[]`**. Pick one
 document it. The equality threshold itself is consistent (no off-by-one).
 
 ## Architecture / packaging (detail)
-- **A2 (High):** `ci.yml` runs on `main`; repo default is `master` and `origin/main` is stale →
-  no CI on the branch that matters. Fix `main`→`master` (3 places).
+- **A2 (RETRACTED):** initially flagged as "CI runs on `main` but the default is `master`," based on
+  stale local remote-tracking refs. The remote default branch is in fact `main` (actively developed),
+  and there is no `master` on the remote — so `ci.yml` triggering on `main` is correct. No change.
 - **A1/A5:** flip `pyproject` to `name="sstsr"`, `version="2.0.0"`; README install → `pip install
   sstsr` (`import tsr`), `sstsr[viz]` extra.
 - **A3:** delete the `TaskCategory/TaskType/EntityClass` docstring line (names don't exist).

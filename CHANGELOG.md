@@ -59,5 +59,7 @@ already taken); the import name is unchanged — `import tsr`.
   architecture-enforcement test (`tsr.core` has no upward imports; `import tsr`
   pulls no heavy viz dependencies).
 - Added `docs/REVIEW.md` (pre-release review) and `docs/ARCHITECTURE.md`.
+- Removed the dead top-level `templates/` duplicate and the vestigial
+  `MANIFEST.in` (hatchling bundles the packaged `tsr/templates/` automatically).
 
 [2.0.0]: https://github.com/personalrobotics/tsr/releases/tag/v2.0.0
