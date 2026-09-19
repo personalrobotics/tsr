@@ -26,13 +26,18 @@ Based on the IJRR paper ["Task Space Regions: A Framework for Pose-Constrained M
 
 ## Installation
 
+The distribution is named **`sstsr`** on PyPI; the import name is `tsr`.
+
 ```bash
-uv add git+https://github.com/personalrobotics/tsr.git
+pip install sstsr      # or: uv add sstsr
+```
+```python
+import tsr             # the import name is unchanged
 ```
 
 For visualization support:
 ```bash
-uv add "tsr[viz] @ git+https://github.com/personalrobotics/tsr.git"
+pip install "sstsr[viz]"     # or: uv add "sstsr[viz]"
 ```
 
 For development:
