@@ -1,4 +1,0 @@
-include templates/**/*.yaml
-include templates/**/*.yml
-include templates/README.md
-recursive-include templates *
