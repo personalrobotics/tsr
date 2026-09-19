@@ -16,6 +16,7 @@ already taken); the import name is unchanged — `import tsr`.
 - Grasp/hand classes (`ParallelJawGripper`, `Robotiq2F85`, `Robotiq2F140`,
   `FrankaHand`) are now exported at the top level alongside `StablePlacer`.
 - `tsr.__version__` is now available.
+- Tested on Python 3.10–3.14 (classifiers and CI matrix extended to 3.13 and 3.14).
 
 ### Breaking changes
 - **`TablePlacer` removed** — use `tsr.placement.StablePlacer`.
