@@ -5,77 +5,131 @@
 
 Clause 8 of the geometric grasp contract (docs/ARCHITECTURE.md, issue #66)
 requires that every template a factory returns declares its grasp mode
-*structurally* — tests and oracles must read this record, never parse the
-human-readable ``name``. The record is a small frozen dataclass carried on
-``TSRTemplate.provenance`` and round-tripped through the template's
-dict/JSON/YAML serialization.
+*structurally* — tests and oracles read this record, never parse the
+human-readable ``name``. The record is a closed, immutable, lossless value
+object carried on ``TSRTemplate.provenance`` and round-tripped through the
+template's dict/JSON/YAML serialization.
+
+Field frames and meanings (single definition each; see docs/ARCHITECTURE.md):
+
+* Fingers always open along ``±y_EE`` (a library invariant), so the closing line
+  is read from the *pose*, not from this record. The record instead classifies
+  the grasp in the **object/reference frame** for coverage and oracle dispatch.
+* ``depth`` is the **insertion depth from the approached primitive surface**
+  along the approach axis, in metres (``>= 0``). Uniform across every primitive
+  and mode; consumed by the analytic oracle.
+* ``approach`` is the object-relative side/family the **hand occupies**
+  (``"+z"``, ``"-x"``, ``"radial"``, ``"tube"``), not the sign of ``z_EE``.
+* ``span_axis`` is the object-relative direction along which the two pad contacts
+  are separated (:data:`SPAN_AXES`): an object axis for boxes, or a yaw-free
+  family (``"tangential"``/``"diameter"``) for radial/spherical grasps.
+* ``primitive``, ``mode``, ``depth``, and torus ``params.minor_angle`` are the
+  oracle-consumed fields; ``approach``, ``span_axis``, ``variant``, and
+  ``depth_index``/``depth_count`` classify coverage and symmetry only.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from types import MappingProxyType
+from typing import Any, Dict, Mapping, Union
 
-# Allowed vocabularies, kept small and closed so the oracle and property tests
-# can switch on them exhaustively.
 PRIMITIVES = ("box", "cylinder", "sphere", "torus")
-# Approach families a factory may emit. "side" wraps radially; "top"/"bottom"
-# approach a face along ±z; "face" is a box face; "span" grips a whole ring;
-# "equatorial" is a sphere approach in a plane through the center.
-MODES = ("side", "top", "bottom", "face", "span", "equatorial")
+
+# Allowed modes per primitive — validated as (primitive, mode) pairs, never as
+# two independent strings. "side" wraps radially; "top"/"bottom" approach a face
+# along the object ±z; "face" is a box face; "span" grips a whole torus ring;
+# "surface" is a full-SO(3) sphere grasp (approach from any direction).
+_MODES_BY_PRIMITIVE = {
+    "box": ("top", "bottom", "face"),
+    "cylinder": ("side", "top", "bottom"),
+    "sphere": ("surface",),
+    "torus": ("side", "span"),
+}
+MODES = tuple(sorted({m for modes in _MODES_BY_PRIMITIVE.values() for m in modes}))
+
+# Object-relative contact-span directions. Object axes for boxes; yaw-free
+# families for radial/spherical grasps (the specific diameter/tangent rotates
+# with the free yaw, so no single object axis applies).
+SPAN_AXES = ("x", "y", "z", "tangential", "diameter")
+
+JSONScalar = Union[str, int, float, bool]
+
+
+def _require_int(value: object, name: str) -> int:
+    """Return a true (non-boolean) int, else raise. No silent narrowing."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be a non-boolean integer, got {value!r}")
+    return value
 
 
 @dataclass(frozen=True)
 class GraspProvenance:
     """Machine-readable description of how a grasp template was generated.
 
-    Attributes:
-        primitive: The solid family — one of :data:`PRIMITIVES`.
-        mode: The approach family — one of :data:`MODES`.
-        approach: Label of the approach side/axis in the reference frame, e.g.
-            ``"+z"``, ``"-x"``, or ``"outer"`` (torus). Descriptive, not parsed
-            for geometry.
-        opening_axis: The finger-opening axis this template grips along, as a
-            reference/EE-frame label (``"x"``, ``"y"``, ``"z"``).
-        depth_index: 0-based index of this discrete approach depth.
-        depth_count: Number of discrete depths requested (``k``); ``depth_index``
-            is in ``range(depth_count)``.
-        depth: The standoff / finger-reach value baked into this template [m].
-        variant: Symmetry variant that produces a geometrically distinct pose at
-            the same (mode, depth), e.g. a 180° roll flip. Empty when unused.
-        params: Primitive-specific extras that don't fit the common fields, e.g.
-            ``{"minor_index": 0, "minor_angle": 0.0}`` for a torus side grasp or
-            ``{"slide_axis": "y"}`` for a box face. Values must be JSON/YAML
-            scalars (str/int/float/bool) so the record round-trips.
+    See the module docstring for each field's coordinate frame and meaning. All
+    fields are validated on construction; ``params`` is defensively copied into an
+    immutable mapping so a valid record can never be mutated or serialize lossily.
     """
 
     primitive: str
     mode: str
     approach: str
-    opening_axis: str
+    span_axis: str
     depth_index: int
     depth_count: int
     depth: float
     variant: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
+    params: Mapping[str, JSONScalar] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.primitive not in PRIMITIVES:
+        if self.primitive not in _MODES_BY_PRIMITIVE:
             raise ValueError(f"unknown primitive {self.primitive!r}; expected one of {PRIMITIVES}")
-        if self.mode not in MODES:
-            raise ValueError(f"unknown mode {self.mode!r}; expected one of {MODES}")
-        if not (0 <= self.depth_index < self.depth_count):
+        allowed = _MODES_BY_PRIMITIVE[self.primitive]
+        if self.mode not in allowed:
+            raise ValueError(f"mode {self.mode!r} is not valid for primitive {self.primitive!r}; allowed {allowed}")
+        if not self.approach:
+            raise ValueError("approach must be a non-empty label")
+        if self.span_axis not in SPAN_AXES:
+            raise ValueError(f"unknown span_axis {self.span_axis!r}; expected one of {SPAN_AXES}")
+
+        _require_int(self.depth_index, "depth_index")
+        _require_int(self.depth_count, "depth_count")
+        if self.depth_count < 1 or not (0 <= self.depth_index < self.depth_count):
             raise ValueError(f"depth_index {self.depth_index} out of range for depth_count {self.depth_count}")
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize to a plain dict of JSON/YAML scalars."""
-        d = {
+        depth = float(self.depth)
+        if not math.isfinite(depth) or depth < 0.0:
+            raise ValueError(f"depth must be finite and >= 0, got {self.depth!r}")
+
+        # Validate params are JSON scalars (finite floats), then freeze a copy so
+        # the caller's dict cannot later mutate this "frozen" record.
+        frozen: Dict[str, JSONScalar] = {}
+        for key, val in dict(self.params).items():
+            if not isinstance(key, str):
+                raise ValueError(f"params keys must be str, got {key!r}")
+            if isinstance(val, bool) or isinstance(val, (str, int)):
+                frozen[key] = val
+            elif isinstance(val, float):
+                if not math.isfinite(val):
+                    raise ValueError(f"params[{key!r}] must be a finite float, got {val!r}")
+                frozen[key] = val
+            else:
+                raise ValueError(
+                    f"params[{key!r}] must be a JSON scalar (str/int/float/bool), got {type(val).__name__}"
+                )
+        object.__setattr__(self, "params", MappingProxyType(frozen))
+
+    def to_dict(self) -> Dict[str, JSONScalar]:
+        """Serialize to a plain dict of JSON/YAML scalars (lossless)."""
+        d: Dict[str, Any] = {
             "primitive": self.primitive,
             "mode": self.mode,
             "approach": self.approach,
-            "opening_axis": self.opening_axis,
-            "depth_index": int(self.depth_index),
-            "depth_count": int(self.depth_count),
+            "span_axis": self.span_axis,
+            "depth_index": self.depth_index,
+            "depth_count": self.depth_count,
             "depth": float(self.depth),
         }
         if self.variant:
@@ -85,16 +139,16 @@ class GraspProvenance:
         return d
 
     @staticmethod
-    def from_dict(x: Dict[str, Any]) -> "GraspProvenance":
-        """Reconstruct from :meth:`to_dict` output."""
+    def from_dict(x: Mapping[str, Any]) -> "GraspProvenance":
+        """Reconstruct from :meth:`to_dict` output, validating (not narrowing)."""
         return GraspProvenance(
             primitive=x["primitive"],
             mode=x["mode"],
             approach=x["approach"],
-            opening_axis=x["opening_axis"],
-            depth_index=int(x["depth_index"]),
-            depth_count=int(x["depth_count"]),
-            depth=float(x["depth"]),
+            span_axis=x["span_axis"],
+            depth_index=x["depth_index"],
+            depth_count=x["depth_count"],
+            depth=x["depth"],
             variant=x.get("variant", ""),
             params=dict(x.get("params", {})),
         )

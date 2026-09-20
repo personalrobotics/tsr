@@ -108,9 +108,9 @@ preshape `a`, clearance `c`, and **every** pose admitted by a returned template:
 6. The contact normals oppose the closing directions within tolerance.
 7. The whole continuous TSR region (`Bw` extrema, midpoint, and interior)
    preserves clauses 2–6.
-8. The template declares its primitive, mode, approach side, finger-opening
-   axis, depth index/value, and symmetry variant **structurally**, via
-   `TSRTemplate.provenance` (`GraspProvenance`). Tests and oracles read that
+8. The template declares its primitive, mode, hand-occupied approach, object-frame
+   span axis, insertion depth (index/value), and symmetry variant **structurally**,
+   via `TSRTemplate.provenance` (`GraspProvenance`). Tests and oracles read that
    record; they never infer semantics by parsing `name`.
 
 This describes a viable *pre-grasp*. It is **not** a claim of dynamic stability
@@ -122,35 +122,67 @@ or force closure under arbitrary friction — an explicit non-goal.
   is the primitive's characteristic dimension. Angles use `1e-6 rad`.
 - Contact-normal opposition holds when the angle between the inward surface
   normal and the closing direction is `≤ 1e-6 rad`.
-- "Palm" is the TSR-frame origin of the end-effector (the `Tw_e` translation);
-  "outside `S` with clearance `c`" means signed distance `≥ c − atol`.
+- **The palm and closing axes are defined at the *concrete* end-effector pose,
+  not only at `Bw = 0`.** For a TSR coordinate `ξ ∈ Bw`, the end-effector frame in
+  the reference frame is `E(ξ) = T_ref_tsr · xyzrpy_to_trans(ξ) · Tw_e` (and
+  `T_ref_world · E(ξ)` in the world frame after `instantiate`). The palm is the
+  translation of `E(ξ)`; the approach and closing axes are its `z`/`y` columns.
+  The oracle evaluates soundness at a concrete `ξ` this way — clause 7 quantifies
+  over all `ξ` in the region, so the palm is a function of `ξ`, not the fixed
+  `Tw_e` translation. "Outside `S` with clearance `c`" means signed distance
+  `≥ c − atol`.
 - Frames follow the library convention: `z_EE` = approach, `y_EE` = finger
-  opening, `x_EE = y_EE × z_EE`.
+  opening (fingers always close along `±y_EE`), `x_EE = y_EE × z_EE`.
 
 ### Structured provenance
 
-`GraspProvenance` (on `TSRTemplate.provenance`) records `primitive`, `mode`,
-`approach`, `opening_axis`, `depth_index`/`depth_count`, `depth`, `variant`, and
-a primitive-specific `params` map (e.g. torus `minor_index`/`minor_angle`, box
-`slide_axis`). It round-trips through dict/JSON/YAML. Modes emitted today:
+`GraspProvenance` (on `TSRTemplate.provenance`) is a closed, immutable, lossless
+value object round-tripping through dict/JSON/YAML. Each field has **one frame
+and one meaning**:
 
-| primitive | modes | variants / params |
+| field | frame | meaning |
 |---|---|---|
-| cylinder | `side`, `top`, `bottom` | side: `roll0`/`rollpi` |
-| box | `top`, `bottom`, `face` | `params.slide_axis`, `params.span` |
-| sphere | `equatorial` | — |
-| torus | `side`, `span` | side: `flip0`/`flippi`, `params.minor_*` |
+| `primitive`, `mode` | — | validated as a `(primitive, mode)` pair |
+| `depth` | approach axis | **insertion depth from the approached primitive surface** [m], `≥ 0`; uniform across primitives |
+| `approach` | object | side/family the **hand occupies** (`"+z"`, `"-x"`, `"radial"`, `"tube"`) — *not* the sign of `z_EE` |
+| `span_axis` | object | direction the two pad contacts are separated along: an object axis (`x`/`y`/`z`) for boxes, or a yaw-free family (`tangential`/`diameter`) for radial/spherical grasps |
+| `depth_index`/`depth_count` | — | `depth_count` is the number of **actually emitted** distinct depths (`≤ k`; it collapses when the usable band is thin), and `(depth_index, depth_count)` identifies a member of the returned family |
+| `variant` | — | symmetry variant producing a distinct pose at the same (mode, depth) |
+| `params` | object | primitive-specific extras (torus `minor_index`/`minor_angle`, box `slide_axis`/`span`) |
+
+**Oracle vs coverage fields.** The analytic oracle consumes `primitive`, `mode`,
+`depth`, and torus `params.minor_angle`; the closing line comes from the *pose*
+(the fingers close along `±y_EE`), never from provenance. `approach`,
+`span_axis`, `variant`, and `depth_index`/`depth_count` classify **coverage and
+symmetry** only. Modes emitted today:
+
+| primitive | modes | span_axis | variants / params |
+|---|---|---|---|
+| cylinder | `side`, `top`, `bottom` | `tangential` (side), `diameter` (top/bottom) | side: `roll0`/`rollpi` |
+| box | `top`, `bottom`, `face` | object axis `x`/`y`/`z` | `params.slide_axis`, `params.span` |
+| sphere | `surface` (full SO(3)) | `diameter` | — |
+| torus | `side`, `span` | `tangential` (side), `diameter` (span) | side: `flip0`/`flippi`, `params.minor_*` |
 
 ### Worked examples
 
-- **Cylinder** — *sound:* `grasp_cylinder_side(r=0.03, h=0.12)` on an
-  `L=0.08, A=0.14` gripper (diameter `0.06 < a`; palm outside). *Infeasible:*
-  the same gripper on `r=0.10` (`2r ≥ A` → `[]`; and reach `L < r` must not
-  place the palm inside — see `#69`).
-- **Box** — *sound:* `grasp_box_top(0.05, 0.06, 0.07)`. *Infeasible:* any
-  dimension `≥ A` for the relevant span → that orientation is omitted (per-face,
-  per-orientation; see `#70`).
-- **Sphere** — *sound:* `grasp_sphere(0.03)`. *Infeasible:* `grasp_sphere(0.10)`
-  on an `A=0.14` gripper (`2r ≥ A` → `[]`).
-- **Torus** — *sound:* `grasp_torus_side(R=0.06, r=0.02)` (tube diameter
-  `0.04 < a`). *Infeasible span:* `grasp_torus_span` when `2(R+r) + c > A` → `[]`.
+Each snippet is numerically complete: the gripper fixes `L` (finger length) and
+`A` (max aperture); the default `preshape a = span + c` and `clearance c = 0.1 ·
+graspable_depth` are shown where they matter, so soundness/infeasibility follows
+from the numbers alone. `g = ParallelJawGripper(finger_length=L, max_aperture=A)`.
+
+- **Cylinder** — *sound:* `L=0.08, A=0.14`; `g.grasp_cylinder_side(0.03, 0.12)`.
+  Diameter `2r = 0.06 < a ≈ 0.06 + c`; `L=0.08 > r=0.03` so the palm at radial
+  standoff `ro = r + L − depth` stays outside the surface. *Infeasible:*
+  `g.grasp_cylinder_side(0.10, 0.12)` → `[]` with reason `exceeds_aperture`
+  (`2r = 0.20 > A`). (Separately, `L < r` must not place the palm inside — `#69`.)
+- **Box** — *sound:* `L=0.055, A=0.14`; `g.grasp_box_top(0.05, 0.06, 0.07)` — for
+  span-x the pads straddle `box_x=0.05 < A` and slide along y. *Infeasible
+  orientation:* `g.grasp_box_top(0.20, 0.06, 0.07)` drops the span-x orientation
+  (`box_x=0.20 > A`) but keeps span-y (per-face, per-orientation; `#70`).
+- **Sphere** — *sound:* `L=0.08, A=0.14`; `g.grasp_sphere(0.03)` (mode `surface`,
+  full SO(3); `2r=0.06 < a`). *Infeasible:* `g.grasp_sphere(0.10)` → `[]`,
+  `exceeds_aperture` (`2r=0.20 > A`).
+- **Torus** — *sound:* `L=0.08, A=0.30`; `g.grasp_torus_side(0.06, 0.02)`
+  (tube diameter `2r=0.04 < a`). *Infeasible span:* `g.grasp_torus_span(0.06, 0.02)`
+  on `A=0.14` → `[]`, because `2(R+r)+c = 0.16+ > A` (outer diameter exceeds the
+  jaw). Torus coverage semantics (`n_minor`, inner/outer half) are refined in `#71`.

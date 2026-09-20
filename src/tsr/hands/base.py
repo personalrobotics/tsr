@@ -34,6 +34,11 @@ class GripperBase(ABC):
     it constrains where the hand must be before closing, but does not
     explicitly verify force closure.
 
+    The geometric meaning of a returned template — what "sound" means, the
+    per-field semantics of ``TSRTemplate.provenance``, tolerances, and the
+    soundness/coverage/distribution/embodied distinctions — is specified by the
+    **geometric grasp contract** in ``docs/ARCHITECTURE.md``.
+
     To convert sampled poses to another convention, apply a fixed rotation::
 
         # AnyGrasp / GraspNet uses x=approach:
@@ -436,11 +441,16 @@ class GripperBase(ABC):
         name: str = "",
         description: str = "",
     ) -> List[TSRTemplate]:
-        """Equatorial grasp templates for a sphere — 2*k templates.
+        """Full-surface grasp templates for a sphere (mode ``"surface"``).
 
-        Approach from any direction in the horizontal (xy) plane. TSR origin
-        at the sphere center. Full yaw covers all equatorial approach directions.
-        k discrete depths × 2 roll orientations.
+        The template's rotational bounds cover **SO(3)**: a sampled pose can
+        approach the sphere from any direction (not only the equatorial plane).
+        TSR origin at the sphere center; k discrete approach depths.
+
+        This is a statement about the *set* the template covers. It is **not** a
+        claim about the sampling *distribution*: sampling independent uniform
+        roll/pitch/yaw is not Haar-uniform on SO(3) (see issue #72). ``angle_range``
+        constrains the Euler yaw coordinate, not a spherical-cap measure.
 
         Sphere coordinate convention: center at origin, radius = object_radius.
 

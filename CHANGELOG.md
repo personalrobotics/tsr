@@ -15,11 +15,15 @@ parallel-jaw grasp templates (epic #65).
   soundness clauses, and the soundness-vs-coverage-vs-distribution distinctions,
   with defined tolerances and one sound + one infeasible worked example per
   primitive.
-- **`GraspProvenance`** — a typed, serialisable record on `TSRTemplate.provenance`
-  declaring each grasp's primitive, mode, approach, opening axis, depth, and
-  variant. Every `ParallelJawGripper` factory now emits it, so tests read grasp
-  modes structurally instead of parsing `name`. Representation-only; grasp
-  geometry is unchanged.
+- **`GraspProvenance`** (#66, #78–#81) — a closed, immutable, lossless record on
+  `TSRTemplate.provenance` declaring each grasp's primitive, mode, hand-occupied
+  `approach`, object-frame `span_axis`, insertion `depth`, and `variant`. Each
+  field has one frame and one meaning: `depth` is the insertion depth from the
+  approached surface; `(primitive, mode)` is validated as a pair; `depth_count`
+  is the actually-emitted depth count; `params` is validated and frozen. Every
+  `ParallelJawGripper` factory emits it, so tests read grasp modes structurally
+  instead of parsing `name`. The sphere grasp is mode `surface` (full SO(3)),
+  not `equatorial`. Representation-only; grasp geometry is unchanged.
 
 ## [2.1.0] — 2026-09
 
