@@ -42,9 +42,10 @@ class TSRTemplate:
         stability_margin: For placement templates, the stability margin in radians
             (arctan(d_min / h_com)). None for grasp templates or analytic primitives.
         provenance: For grasp templates, a machine-readable :class:`GraspProvenance`
-            describing the primitive, mode, approach, opening axis, depth, and
-            variant. Lets oracles/tests read the grasp mode structurally instead of
-            parsing ``name`` (contract clause 8). None for non-grasp templates.
+            describing the primitive, mode, hand-occupied approach, object-frame
+            span axis, insertion depth, and symmetry variant. Lets oracles/tests
+            read the grasp mode structurally instead of parsing ``name`` (contract
+            clause 8). None for non-grasp templates.
     """
 
     T_ref_tsr: np.ndarray

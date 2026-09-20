@@ -10,19 +10,25 @@ human-readable ``name``. The record is a closed, immutable, lossless value
 object carried on ``TSRTemplate.provenance`` and round-tripped through the
 template's dict/JSON/YAML serialization.
 
+Closed: a per-``(primitive, mode)`` schema (:data:`_SCHEMA`) fixes the compatible
+``approach``, ``span_axis``, and ``variant`` values and the required mode-specific
+``params`` — semantically incompatible combinations are rejected on construction.
+Immutable: ``params`` is validated and frozen into a read-only mapping. Lossless:
+scalar fields are canonicalized on construction (e.g. ``depth`` is stored as a
+float), so ``from_dict(p.to_dict()) == p`` for every accepted record.
+
 Field frames and meanings (single definition each; see docs/ARCHITECTURE.md):
 
 * Fingers always open along ``±y_EE`` (a library invariant), so the closing line
   is read from the *pose*, not from this record. The record instead classifies
   the grasp in the **object/reference frame** for coverage and oracle dispatch.
 * ``depth`` is the **insertion depth from the approached primitive surface**
-  along the approach axis, in metres (``>= 0``). Uniform across every primitive
-  and mode; consumed by the analytic oracle.
-* ``approach`` is the object-relative side/family the **hand occupies**
-  (``"+z"``, ``"-x"``, ``"radial"``, ``"tube"``), not the sign of ``z_EE``.
-* ``span_axis`` is the object-relative direction along which the two pad contacts
-  are separated (:data:`SPAN_AXES`): an object axis for boxes, or a yaw-free
-  family (``"tangential"``/``"diameter"``) for radial/spherical grasps.
+  along the approach axis, in metres (``>= 0``); consumed by the analytic oracle.
+* ``approach`` is the object-relative side/family the **hand occupies**, not the
+  sign of ``z_EE``.
+* ``span_axis`` is the object-relative direction the two pad contacts are
+  separated along: an object axis for boxes, or a yaw-free family
+  (``"tangential"``/``"diameter"``) for radial/spherical grasps.
 * ``primitive``, ``mode``, ``depth``, and torus ``params.minor_angle`` are the
   oracle-consumed fields; ``approach``, ``span_axis``, ``variant``, and
   ``depth_index``/``depth_count`` classify coverage and symmetry only.
@@ -37,28 +43,63 @@ from typing import Any, Dict, Mapping, Union
 
 PRIMITIVES = ("box", "cylinder", "sphere", "torus")
 
-# Allowed modes per primitive — validated as (primitive, mode) pairs, never as
-# two independent strings. "side" wraps radially; "top"/"bottom" approach a face
-# along the object ±z; "face" is a box face; "span" grips a whole torus ring;
-# "surface" is a full-SO(3) sphere grasp (approach from any direction).
-_MODES_BY_PRIMITIVE = {
-    "box": ("top", "bottom", "face"),
-    "cylinder": ("side", "top", "bottom"),
-    "sphere": ("surface",),
-    "torus": ("side", "span"),
-}
-MODES = tuple(sorted({m for modes in _MODES_BY_PRIMITIVE.values() for m in modes}))
-
 # Object-relative contact-span directions. Object axes for boxes; yaw-free
-# families for radial/spherical grasps (the specific diameter/tangent rotates
-# with the free yaw, so no single object axis applies).
+# families for radial/spherical grasps.
 SPAN_AXES = ("x", "y", "z", "tangential", "diameter")
 
 JSONScalar = Union[str, int, float, bool]
 
 
+def _is_real(v: object) -> bool:
+    """Finite, non-Boolean real number."""
+    return not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(float(v))
+
+
+def _is_str(v: object) -> bool:
+    return isinstance(v, str)
+
+
+# Per-(primitive, mode) schema: compatible approach / span_axis / variant values
+# and required params (name -> predicate). This is the closed vocabulary — a
+# record whose fields don't satisfy its schema entry is rejected (#80).
+_SCHEMA: Dict = {
+    ("cylinder", "side"): dict(
+        approaches={"radial"}, span_axes={"tangential"}, variants={"roll0", "rollpi"}, params={}
+    ),
+    ("cylinder", "top"): dict(approaches={"+z"}, span_axes={"diameter"}, variants={""}, params={}),
+    ("cylinder", "bottom"): dict(approaches={"-z"}, span_axes={"diameter"}, variants={""}, params={}),
+    ("box", "top"): dict(
+        approaches={"+z"}, span_axes={"x", "y"}, variants={""}, params={"slide_axis": _is_str, "span": _is_real}
+    ),
+    ("box", "bottom"): dict(
+        approaches={"-z"}, span_axes={"x", "y"}, variants={""}, params={"slide_axis": _is_str, "span": _is_real}
+    ),
+    ("box", "face"): dict(
+        approaches={"+x", "-x", "+y", "-y"},
+        span_axes={"x", "y", "z"},
+        variants={""},
+        params={"slide_axis": _is_str, "span": _is_real},
+    ),
+    ("sphere", "surface"): dict(approaches={"radial"}, span_axes={"diameter"}, variants={""}, params={}),
+    ("torus", "side"): dict(
+        approaches={"tube"},
+        span_axes={"tangential"},
+        variants={"flip0", "flippi"},
+        params={
+            "minor_index": lambda v: not isinstance(v, bool) and isinstance(v, int),
+            "minor_count": lambda v: not isinstance(v, bool) and isinstance(v, int),
+            "minor_angle": _is_real,
+        },
+    ),
+    ("torus", "span"): dict(approaches={"+z", "-z"}, span_axes={"diameter"}, variants={""}, params={}),
+}
+
+# Derived vocabularies (source of truth is _SCHEMA).
+MODES = tuple(sorted({mode for _, mode in _SCHEMA}))
+_MODES_BY_PRIMITIVE = {p: tuple(m for (pp, m) in _SCHEMA if pp == p) for p in PRIMITIVES}
+
+
 def _require_int(value: object, name: str) -> int:
-    """Return a true (non-boolean) int, else raise. No silent narrowing."""
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{name} must be a non-boolean integer, got {value!r}")
     return value
@@ -68,9 +109,8 @@ def _require_int(value: object, name: str) -> int:
 class GraspProvenance:
     """Machine-readable description of how a grasp template was generated.
 
-    See the module docstring for each field's coordinate frame and meaning. All
-    fields are validated on construction; ``params`` is defensively copied into an
-    immutable mapping so a valid record can never be mutated or serialize lossily.
+    See the module docstring for each field's coordinate frame and meaning, and
+    for the closed/immutable/lossless guarantees enforced on construction.
     """
 
     primitive: str
@@ -86,42 +126,60 @@ class GraspProvenance:
     def __post_init__(self) -> None:
         if self.primitive not in _MODES_BY_PRIMITIVE:
             raise ValueError(f"unknown primitive {self.primitive!r}; expected one of {PRIMITIVES}")
-        allowed = _MODES_BY_PRIMITIVE[self.primitive]
-        if self.mode not in allowed:
-            raise ValueError(f"mode {self.mode!r} is not valid for primitive {self.primitive!r}; allowed {allowed}")
-        if not self.approach:
-            raise ValueError("approach must be a non-empty label")
-        if self.span_axis not in SPAN_AXES:
-            raise ValueError(f"unknown span_axis {self.span_axis!r}; expected one of {SPAN_AXES}")
+        key = (self.primitive, self.mode)
+        if key not in _SCHEMA:
+            allowed_modes = _MODES_BY_PRIMITIVE[self.primitive]
+            raise ValueError(
+                f"mode {self.mode!r} is not valid for primitive {self.primitive!r}; allowed {allowed_modes}"
+            )
+        schema = _SCHEMA[key]
+
+        for name, value, allowed in (
+            ("approach", self.approach, schema["approaches"]),
+            ("span_axis", self.span_axis, schema["span_axes"]),
+            ("variant", self.variant, schema["variants"]),
+        ):
+            if not isinstance(value, str):
+                raise ValueError(f"{name} must be a string, got {value!r}")
+            if value not in allowed:
+                raise ValueError(f"{name}={value!r} is not valid for {key}; allowed {sorted(allowed)}")
 
         _require_int(self.depth_index, "depth_index")
         _require_int(self.depth_count, "depth_count")
         if self.depth_count < 1 or not (0 <= self.depth_index < self.depth_count):
             raise ValueError(f"depth_index {self.depth_index} out of range for depth_count {self.depth_count}")
 
-        depth = float(self.depth)
-        if not math.isfinite(depth) or depth < 0.0:
-            raise ValueError(f"depth must be finite and >= 0, got {self.depth!r}")
+        if not _is_real(self.depth) or float(self.depth) < 0.0:
+            raise ValueError(f"depth must be a finite, non-boolean real >= 0, got {self.depth!r}")
+        # Canonicalize to float so a record round-trips losslessly (#80).
+        object.__setattr__(self, "depth", float(self.depth))
 
-        # Validate params are JSON scalars (finite floats), then freeze a copy so
-        # the caller's dict cannot later mutate this "frozen" record.
+        # Validate params: JSON scalars with finite floats, plus the mode's
+        # required keys and their types; then freeze a defensive copy.
         frozen: Dict[str, JSONScalar] = {}
-        for key, val in dict(self.params).items():
-            if not isinstance(key, str):
-                raise ValueError(f"params keys must be str, got {key!r}")
-            if isinstance(val, bool) or isinstance(val, (str, int)):
-                frozen[key] = val
-            elif isinstance(val, float):
-                if not math.isfinite(val):
-                    raise ValueError(f"params[{key!r}] must be a finite float, got {val!r}")
-                frozen[key] = val
+        for pkey, pval in dict(self.params).items():
+            if not isinstance(pkey, str):
+                raise ValueError(f"params keys must be str, got {pkey!r}")
+            if isinstance(pval, str) or isinstance(pval, bool):
+                frozen[pkey] = pval
+            elif isinstance(pval, int):
+                frozen[pkey] = pval
+            elif isinstance(pval, float):
+                if not math.isfinite(pval):
+                    raise ValueError(f"params[{pkey!r}] must be a finite float, got {pval!r}")
+                frozen[pkey] = pval
             else:
                 raise ValueError(
-                    f"params[{key!r}] must be a JSON scalar (str/int/float/bool), got {type(val).__name__}"
+                    f"params[{pkey!r}] must be a JSON scalar (str/int/float/bool), got {type(pval).__name__}"
                 )
+        for req_name, predicate in schema["params"].items():
+            if req_name not in frozen:
+                raise ValueError(f"{key} requires params[{req_name!r}]")
+            if not predicate(frozen[req_name]):
+                raise ValueError(f"params[{req_name!r}]={frozen[req_name]!r} fails the type requirement for {key}")
         object.__setattr__(self, "params", MappingProxyType(frozen))
 
-    def to_dict(self) -> Dict[str, JSONScalar]:
+    def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dict of JSON/YAML scalars (lossless)."""
         d: Dict[str, Any] = {
             "primitive": self.primitive,
@@ -130,7 +188,7 @@ class GraspProvenance:
             "span_axis": self.span_axis,
             "depth_index": self.depth_index,
             "depth_count": self.depth_count,
-            "depth": float(self.depth),
+            "depth": self.depth,
         }
         if self.variant:
             d["variant"] = self.variant

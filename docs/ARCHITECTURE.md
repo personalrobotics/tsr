@@ -146,7 +146,7 @@ and one meaning**:
 | `depth` | approach axis | **insertion depth from the approached primitive surface** [m], `≥ 0`; uniform across primitives |
 | `approach` | object | side/family the **hand occupies** (`"+z"`, `"-x"`, `"radial"`, `"tube"`) — *not* the sign of `z_EE` |
 | `span_axis` | object | direction the two pad contacts are separated along: an object axis (`x`/`y`/`z`) for boxes, or a yaw-free family (`tangential`/`diameter`) for radial/spherical grasps |
-| `depth_index`/`depth_count` | — | `depth_count` is the number of **actually emitted** distinct depths (`≤ k`; it collapses when the usable band is thin), and `(depth_index, depth_count)` identifies a member of the returned family |
+| `depth_index`/`depth_count` | — | `depth_count` is the number of **emitted depth slots** (`≤ k`; it collapses when the usable band is thin), and `(depth_index, depth_count)` identifies a member of the returned family. At feasibility boundaries the slots may share a `depth` value; deduplicating coincident slots is deferred to the usable-depth helper in `#68`. |
 | `variant` | — | symmetry variant producing a distinct pose at the same (mode, depth) |
 | `params` | object | primitive-specific extras (torus `minor_index`/`minor_angle`, box `slide_axis`/`span`) |
 

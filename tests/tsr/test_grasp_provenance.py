@@ -30,10 +30,34 @@ class TestGraspProvenanceRecord(unittest.TestCase):
             depth_count=3,
             depth=0.021,
             variant="flip0",
-            params={"minor_index": 2, "minor_angle": 0.5},
+            params={"minor_index": 2, "minor_count": 3, "minor_angle": 0.5},
         )
         base.update(overrides)
         return GraspProvenance(**base)
+
+    def test_rejects_incompatible_approach_and_missing_required_params(self):
+        # (#80) approach validated per (primitive, mode): torus side must be "tube".
+        with pytest.raises(ValueError):
+            self._valid(approach="banana")
+        # torus side requires a finite numeric minor_angle.
+        with pytest.raises(ValueError):
+            self._valid(params={"minor_index": 0, "minor_count": 1})
+        with pytest.raises(ValueError):
+            self._valid(params={"minor_index": 0, "minor_count": 1, "minor_angle": "x"})
+
+    def test_depth_must_be_a_real_number_and_is_canonicalized(self):
+        # (#80) a string/bool depth is rejected (not silently kept then floated).
+        with pytest.raises(ValueError):
+            self._valid(depth="0.1")
+        with pytest.raises(ValueError):
+            self._valid(depth=True)
+        # an int depth is canonicalized to float so the record round-trips.
+        p = self._valid(depth=0)
+        self.assertIsInstance(p.depth, float)
+
+    def test_string_fields_must_be_strings(self):
+        with pytest.raises(ValueError):
+            self._valid(variant=5)
 
     def test_roundtrips_through_template_serialization(self):
         p = self._valid()
@@ -77,7 +101,7 @@ class TestGraspProvenanceRecord(unittest.TestCase):
             self._valid(depth=float("inf"))  # non-finite
 
     def test_params_are_immutable_and_defensively_copied(self):
-        d = {"minor_index": 0}
+        d = {"minor_index": 0, "minor_count": 3, "minor_angle": 0.5}
         p = self._valid(params=d)
         d["minor_index"] = 99  # mutate the caller's dict
         self.assertEqual(p.params["minor_index"], 0)  # record unaffected
@@ -164,6 +188,20 @@ class TestFactoriesEmitProvenance(unittest.TestCase):
         templates = self.gripper.grasp_cylinder_top(0.03, 0.12, k=4)
         self.assertEqual(sorted(t.provenance.depth_index for t in templates), [0, 1, 2, 3])
         self.assertTrue(all(t.provenance.depth_count == 4 for t in templates))
+
+    def test_depth_count_at_equality_boundary_reports_coincident_slots(self):
+        # (#81) linspace(0.04, 0.08-0.04, 3) -> three slots at one depth. depth_count
+        # is the emitted slot count (3); the slots coincide (dedup is deferred to #68).
+        ts = self.gripper.grasp_cylinder_top(0.03, 0.12, k=3, clearance=0.04)
+        self.assertEqual(len(ts), 3)
+        self.assertTrue(all(t.provenance.depth_count == 3 for t in ts))
+        self.assertEqual(len({round(t.provenance.depth, 9) for t in ts}), 1)
+
+    def test_every_generated_record_roundtrips_losslessly(self):
+        # (#80) from_dict(to_dict(p)) == p for every record a factory emits.
+        for method, kwargs, *_ in _CASES:
+            for t in getattr(self.gripper, method)(**kwargs):
+                self.assertEqual(GraspProvenance.from_dict(t.provenance.to_dict()), t.provenance)
 
 
 if __name__ == "__main__":
