@@ -387,7 +387,8 @@ The fundamental challenge for cylinder side grasps: **the radial approach direct
 ```python
 from tsr.hands import ParallelJawGripper
 
-# Robotiq 2F-140: 140mm max aperture, 55mm finger length
+# A generic parallel-jaw gripper: 55 mm fingers, 140 mm max aperture.
+# (For real hardware use the preconfigured classes, e.g. Robotiq2F140().)
 gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
 # Returns TSRTemplates: depth levels × 2 roll orientations

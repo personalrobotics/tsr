@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+- Reconciled the preconfigured grippers' `finger_length` documentation (#58). All
+  three (`Robotiq2F140` 0.114 m, `Robotiq2F85` 0.059 m, `FrankaHand` 0.037 m) use
+  one convention — **palm → pad tip** (finger reach along approach) — now stated
+  consistently in the class docstrings, the README table, and the tests. Fixed the
+  `Robotiq2F140` docstring (it claimed the wrong derivation and a stray "82 mm"),
+  the stale README values (55 mm / 44.5 mm), the "pad-contact midpoint" misnomer,
+  and a tutorial example that mislabeled a generic 55 mm gripper as a "2F-140".
+
+### Added
+- `Robotiq2F140.PALM_OFFSET_FROM_BASE_MOUNT = 0.100` (base_mount → grasp_site along
+  approach), for symmetry with `Robotiq2F85`.
+
 ## [2.0.1] — 2026-09
 
 Patch release: correctness and reproducibility fixes from the post-merge audit
@@ -58,8 +73,9 @@ already taken); the import name is unchanged — `import tsr`.
   sizes, `k < 1`, reversed `angle_range`). See `docs/ARCHITECTURE.md`.
 - **Gripper geometry corrections** (change sampled poses for existing callers):
   `Robotiq2F140` frame correction and `finger_length`; `FrankaHand.finger_length`
-  corrected to 54 mm; clearance is now scaled by graspable depth, not
-  `finger_length`.
+  corrected to **37 mm** (measured from the hand-body forward edge / collar to the
+  pad-contact midpoint, not the finger-joint origin); clearance is now scaled by
+  graspable depth, not `finger_length`.
 
 ### Fixed
 - **RPY near gimbal lock** (`rot_to_rpy`, `rot_within_rpy_bounds`): the
