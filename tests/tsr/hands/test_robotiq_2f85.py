@@ -19,8 +19,8 @@ class TestRobotiq2F85(unittest.TestCase):
         # mj_manipulator/scripts/validate_gripper.py (AABB of each
         # collision geom along the approach axis). FINGER_LENGTH is
         # from the TSR "palm" (= forward edge of the base housing, 94 mm
-        # past base_mount) to the pad-contact midpoint; MAX_APERTURE
-        # is pad-inner-face to pad-inner-face at full open.
+        # past base_mount) to the pad tip (finger reach along approach);
+        # MAX_APERTURE is pad-inner-face to pad-inner-face at full open.
         self.assertAlmostEqual(self.gripper.finger_length, 0.059)
         self.assertAlmostEqual(self.gripper.max_aperture, 0.085)
         self.assertAlmostEqual(self.gripper.PALM_OFFSET_FROM_BASE_MOUNT, 0.094)

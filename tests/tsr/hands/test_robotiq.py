@@ -15,8 +15,11 @@ class TestRobotiq2F140(unittest.TestCase):
         self.gripper = Robotiq2F140()
 
     def test_fixed_params(self):
+        # finger_length = palm(grasp_site, base_mount + 0.100) -> pad tip, from
+        # geodude_assets 2f140.xml (same palm->pad-tip convention as 2F-85/Franka).
         self.assertAlmostEqual(self.gripper.finger_length, 0.114)
         self.assertAlmostEqual(self.gripper.max_aperture, 0.140)
+        self.assertAlmostEqual(self.gripper.PALM_OFFSET_FROM_BASE_MOUNT, 0.100)
 
     def test_is_subclass_of_parallel_jaw(self):
         self.assertIsInstance(self.gripper, ParallelJawGripper)

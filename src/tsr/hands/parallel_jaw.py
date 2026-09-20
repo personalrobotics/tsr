@@ -1192,11 +1192,17 @@ class ParallelJawGripper(GripperBase):
 class Robotiq2F140(ParallelJawGripper):
     """Robotiq 2F-140 parallel gripper.
 
-    Fixed hardware parameters: finger_length=82 mm, max_aperture=140 mm.
+    Fixed hardware parameters: ``FINGER_LENGTH = 0.114 m``, ``MAX_APERTURE = 0.140 m``.
 
-    finger_length is the distance from the MuJoCo grasp_site to the finger
-    pad tip (measured along the approach axis). The grasp_site is at the
-    base_mount origin; the pad tip is 114 mm along the approach direction.
+    ``FINGER_LENGTH`` is the palm→pad-tip reach along the approach axis — the same
+    convention as :class:`Robotiq2F85` and :class:`FrankaHand`. Measured from
+    geodude_assets ``2f140.xml`` (fully open): the ``grasp_site`` (TSR palm) is at
+    ``base_mount + 0.100 m`` (6 mm past the 0.094 m housing forward edge, rounded up
+    for clearance) and the pad tip is at ``base_mount + 0.214 m``, so
+    ``FINGER_LENGTH = 0.214 − 0.100 = 0.114 m``.
+
+    Note: ``MAX_APERTURE = 0.140 m`` is the manufacturer's nominal/outer spec; the
+    measured inner-face-to-inner-face gap is ~0.128 m (see issue #60).
 
     Outputs poses in the canonical TSR EE frame (z=approach, y=finger-opening,
     x=palm normal). The corresponding MuJoCo model (geodude_assets 2f140.xml)
@@ -1207,6 +1213,10 @@ class Robotiq2F140(ParallelJawGripper):
 
     FINGER_LENGTH = 0.114
     MAX_APERTURE = 0.140
+
+    # Distance from base_mount origin to the TSR palm (grasp_site) along the
+    # approach axis, for callers placing an ee_site in an MjSpec (cf. 2F-85).
+    PALM_OFFSET_FROM_BASE_MOUNT = 0.100
 
     def __init__(self):
         super().__init__(
@@ -1224,7 +1234,9 @@ class Robotiq2F85(ParallelJawGripper):
     collision geom's AABB along the approach axis:
 
     - ``FINGER_LENGTH = 0.059 m`` — distance from the **forward edge of
-      the base housing** (the TSR "palm") to the pad-contact midpoint.
+      the base housing** (the TSR "palm") to the **pad
+      tip** (finger reach along approach; the palm→pad-tip convention shared by
+      all the named grippers).
       The 2F-85's ``base`` body is a chunky housing that extends ~94 mm
       past the base_mount plate along the approach axis — the
       mechanism (drivers/couplers/spring links) sits inside that block.
@@ -1270,7 +1282,9 @@ class FrankaHand(ParallelJawGripper):
     each collision geom's AABB along the approach axis:
 
     - ``FINGER_LENGTH = 0.037 m`` — distance from the **forward edge of
-      the hand body** (the TSR "palm") to the pad-contact midpoint.
+      the hand body** (the TSR "palm") to the **pad
+      tip** (finger reach along approach; the palm→pad-tip convention shared by
+      all the named grippers).
       The menagerie ``hand`` body extends 16.9 mm past the finger-joint
       origin along the approach axis (the metal collar around the
       finger mounts). ``FINGER_LENGTH`` must be measured from *that*

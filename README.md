@@ -82,20 +82,25 @@ place     = load_package_template("places", "mug_on_table.yaml")
 `ParallelJawGripper` generates TSR templates directly from shape parameters.
 Pre-configured subclasses are provided for common grippers:
 
-| Class | `finger_length` | `max_aperture` | Notes |
+Values match the class constants. `finger_length` is the graspable depth along
+the approach axis, from the TSR "palm" to the pad-contact point; the reference
+point for that measurement is listed explicitly (they are not interchangeable).
+
+| Class | `finger_length` | `max_aperture` | `finger_length` reference (palm → pad tip) |
 |---|---|---|---|
-| `Robotiq2F140` | 55 mm | 140 mm | Robotiq 2F-140 parallel gripper |
-| `FrankaHand` | 44.5 mm | 80 mm | Franka Emika Panda hand |
+| `Robotiq2F140` | 114 mm | 140 mm | palm (`grasp_site`, base_mount + 100 mm) → pad tip |
+| `Robotiq2F85` | 59 mm | 85 mm | palm (housing forward edge) → pad tip |
+| `FrankaHand` | 37 mm | 80 mm | palm (hand-body forward edge) → pad tip |
 
 ```python
 import numpy as np
-from tsr.hands import ParallelJawGripper, Robotiq2F140, FrankaHand
+from tsr.hands import ParallelJawGripper, Robotiq2F85, Robotiq2F140, FrankaHand
 
 # Use a pre-configured gripper for a known hardware platform
 gripper = Robotiq2F140()
 gripper = FrankaHand()
 
-# Or configure manually for custom hardware
+# Or configure manually for custom hardware (generic 55 mm-fingered gripper)
 gripper = ParallelJawGripper(finger_length=0.055, max_aperture=0.140)
 
 # Cylinder — side + top + bottom: 4*k templates (default k=3: 12 total)
