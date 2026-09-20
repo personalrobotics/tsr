@@ -157,13 +157,15 @@ class TSRChain:
 
         return T0_w_current
 
-    def sample_xyzrpy(self, xyzrpy_list=None):
+    def sample_xyzrpy(self, xyzrpy_list=None, rng=None):
         """
         Samples from Bw to generate a list of xyzrpy samples
         Can specify some values optionally as NaN.
 
         @param xyzrpy_list   (optional) a list of Bw with float('nan') for
                         dimensions to sample uniformly.
+        @param rng      (optional) a numpy.random.Generator for reproducible
+                        sampling. Defaults to the global numpy RNG when None.
         @return sample  a list of sampled xyzrpy
         """
 
@@ -172,20 +174,22 @@ class TSRChain:
 
         sample = []
         for idx in range(len(self.TSRs)):
-            sample.append(self.TSRs[idx].sample_xyzrpy(xyzrpy_list[idx]))
+            sample.append(self.TSRs[idx].sample_xyzrpy(xyzrpy_list[idx], rng=rng))
 
         return sample
 
-    def sample(self, xyzrpy_list=None):
+    def sample(self, xyzrpy_list=None, rng=None):
         """
         Samples from the Bw chain to generate an end-effector transform.
         Can specify some Bw values optionally.
 
         @param xyzrpy_list   (optional) a list of xyzrpy with float('nan') for
                              dimensions to sample uniformly.
+        @param rng      (optional) a numpy.random.Generator for reproducible
+                        sampling. Defaults to the global numpy RNG when None.
         @return T0_w         4x4 transform
         """
-        return self.to_transform(self.sample_xyzrpy(xyzrpy_list))
+        return self.to_transform(self.sample_xyzrpy(xyzrpy_list, rng=rng))
 
     def distance(self, trans):
         """
@@ -196,34 +200,49 @@ class TSRChain:
         """
         import scipy.optimize
 
-        def objective(xyzrpy_list):
-            xyzrpy_stack = xyzrpy_list.reshape(len(self.TSRs), 6)
-            tsr_trans = self.to_transform(xyzrpy_stack)
+        n = len(self.TSRs)
+        # Continuous bounds over all 6*n chain coordinates. _Bw_cont guarantees
+        # lower <= upper even for outer (wrapping) rotation intervals, which
+        # L-BFGS-B requires (raw Bw can have lower > upper and crash it).
+        lower = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 0] for i in range(n)])
+        upper = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 1] for i in range(n)])
+        x_full = (lower + upper) / 2.0
+
+        # Only optimise the FREE coordinates. Point-bound coordinates (lower ==
+        # upper, e.g. a fixed [0, 0]) are held at their value and never handed to
+        # L-BFGS-B: a zero-width finite-difference step there divides by zero,
+        # produces a NaN gradient, and leaves the optimiser stalled at the
+        # midpoint -- which made a chain reject a pose from its own sample() (#57).
+        free = upper > lower
+
+        def expand(x_free):
+            x = x_full.copy()
+            x[free] = x_free
+            return x
+
+        def objective(x_free):
+            tsr_trans = self.to_transform(expand(x_free).reshape(n, 6))
             return geodesic_distance(tsr_trans, trans)
 
-        bwinit = []
-        bwbounds = []
-        for idx in range(len(self.TSRs)):
-            # Use the continuous bounds: _Bw_cont guarantees lower <= upper even
-            # for outer (wrapping) rotation intervals, which L-BFGS-B requires
-            # (raw Bw can have lower > upper and crashes the optimiser).
-            Bw = self.TSRs[idx]._Bw_cont
-            bwinit.extend((Bw[:, 0] + Bw[:, 1]) / 2)
-            bwbounds.extend([(Bw[i, 0], Bw[i, 1]) for i in range(6)])
+        if not numpy.any(free):
+            # Fully fixed chain: a single candidate pose, nothing to optimise.
+            return float(objective(numpy.empty(0))), x_full.reshape(n, 6)
 
-        bwopt, dist, info = scipy.optimize.fmin_l_bfgs_b(
-            objective, bwinit, fprime=None, args=(), bounds=bwbounds, approx_grad=True
+        bounds = list(zip(lower[free], upper[free]))
+        xopt_free, dist, _info = scipy.optimize.fmin_l_bfgs_b(
+            objective, x_full[free], fprime=None, args=(), bounds=bounds, approx_grad=True
         )
-        return dist, bwopt.reshape(len(self.TSRs), 6)
+        return dist, expand(xopt_free).reshape(n, 6)
 
     def contains(self, trans):
         """
         Checks if the TSR chain contains the transform.
 
-        Uses the composed distance (consistent with ``distance()``).
-        For a single TSR this is equivalent to ``TSR.contains()``.
-        For multi-TSR chains, the transform must satisfy all constraints
-        simultaneously (AND semantics).
+        A chain is the set of poses reachable by **serially composing** a
+        transform sampled from each component TSR -- not the Boolean
+        intersection of the components' world-frame pose sets. Membership is
+        tested via the composed ``distance()`` (they are consistent). For a
+        single TSR this reduces to ``TSR.contains()``.
 
         @param  trans 4x4 transform
         @return       True if inside and False if not

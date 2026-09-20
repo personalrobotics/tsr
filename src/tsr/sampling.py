@@ -167,7 +167,7 @@ def sample_from_tsrs(tsrs: Sequence[TSR], rng: Optional[np.random.Generator] = N
         >>> np.allclose(pose[3, :], [0, 0, 0, 1])  # Valid transform
         True
     """
-    return choose_tsr(tsrs, rng).sample()
+    return choose_tsr(tsrs, rng).sample(rng=rng)
 
 
 def instantiate_templates(templates: Sequence[TSRTemplate], T_ref_world: np.ndarray) -> List[TSR]:

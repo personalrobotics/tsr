@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Siddhartha Srinivasa
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
 
 """
 Tests for utility functions in tsr.core.utils.

@@ -464,24 +464,25 @@ class TSR:
         )
         return dist, bwopt
 
-    def sample_xyzrpy(self, xyzrpy=NANBW):
+    def sample_xyzrpy(self, xyzrpy=NANBW, rng=None):
         """
         Samples from Bw to generate an xyzrpy sample
         Can specify some values optionally as NaN.
 
         @param xyzrpy   (optional) a 6-vector of Bw with float('nan') for
                         dimensions to sample uniformly.
+        @param rng      (optional) a numpy.random.Generator for reproducible
+                        sampling. Defaults to the global numpy RNG when None.
         @return         an xyzrpy sample
         """
         check = self.is_valid(xyzrpy, ignoreNAN=True)
         if not all(check):
             raise ValueError("xyzrpy must be within bounds", check)
 
+        draw = numpy.random.random_sample if rng is None else rng.random
         Bw_sample = numpy.array(
             [
-                self._Bw_cont[i, 0] + (self._Bw_cont[i, 1] - self._Bw_cont[i, 0]) * numpy.random.random_sample()
-                if numpy.isnan(x)
-                else x
+                self._Bw_cont[i, 0] + (self._Bw_cont[i, 1] - self._Bw_cont[i, 0]) * draw() if numpy.isnan(x) else x
                 for i, x in enumerate(xyzrpy)
             ]
         )
@@ -489,16 +490,18 @@ class TSR:
         Bw_sample[3:6] = wrap_to_interval(Bw_sample[3:6])
         return Bw_sample
 
-    def sample(self, xyzrpy=NANBW):
+    def sample(self, xyzrpy=NANBW, rng=None):
         """
         Samples from Bw to generate an end-effector transform.
         Can specify some Bw values optionally.
 
         @param xyzrpy   (optional) a 6-vector of Bw with float('nan') for
                         dimensions to sample uniformly.
+        @param rng      (optional) a numpy.random.Generator for reproducible
+                        sampling. Defaults to the global numpy RNG when None.
         @return         4x4 transform
         """
-        return self.to_transform(self.sample_xyzrpy(xyzrpy))
+        return self.to_transform(self.sample_xyzrpy(xyzrpy, rng=rng))
 
     def to_dict(self):
         """Convert this TSR to a python dict."""

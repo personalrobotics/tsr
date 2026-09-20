@@ -74,18 +74,19 @@ class TSRTemplate:
         T0_w = T_ref_world @ self.T_ref_tsr
         return TSR(T0_w=T0_w, Tw_e=self.Tw_e, Bw=self.Bw)
 
-    def sample(self, T_ref_world: np.ndarray) -> np.ndarray:
+    def sample(self, T_ref_world: np.ndarray, rng=None) -> np.ndarray:
         """Bind to a reference pose and sample one end-effector pose.
 
-        Shorthand for ``self.instantiate(T_ref_world).sample()``.
+        Shorthand for ``self.instantiate(T_ref_world).sample(rng=rng)``.
 
         Args:
             T_ref_world: 4×4 pose of the reference entity in world frame.
+            rng: Optional ``numpy.random.Generator`` for reproducible sampling.
 
         Returns:
             4×4 sampled end-effector pose in world frame.
         """
-        return self.instantiate(T_ref_world).sample()
+        return self.instantiate(T_ref_world).sample(rng=rng)
 
     def to_dict(self):
         """Convert this TSRTemplate to a python dict for serialization."""
