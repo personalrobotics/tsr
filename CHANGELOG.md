@@ -4,7 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] — 2026-09
+
+### Added
+- **`TSR.closest_transform(trans)`** (#53) — returns the distance to the TSR
+  *and* the closest in-bounds pose in the **world frame** (`T0_w @
+  xyzrpy_to_trans(bwopt) @ Tw_e`), so planner projection code no longer
+  reconstructs the frame composition by hand (a recurring source of frame bugs).
+- `Robotiq2F140.PALM_OFFSET_FROM_BASE_MOUNT = 0.100` (base_mount → grasp_site along
+  approach), for symmetry with `Robotiq2F85`.
+
+### Changed
+- **`Robotiq2F140.MAX_APERTURE` corrected `0.140 → 0.128 m`** (#60) — the usable
+  inner-face-to-inner-face gap at full open, measured from `2f140.xml`. The old
+  0.140 was the manufacturer's nominal/outer figure and overstated the gap by
+  ~12 mm, claiming feasible grasps of objects that don't fit between the pads
+  (same distinction as the `Robotiq2F85`'s 0.085 m). **Behavior change:** some
+  wide grasps that previously returned templates now return `[]`.
 
 ### Documentation
 - Reconciled the preconfigured grippers' `finger_length` documentation (#58). All
@@ -14,10 +30,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Robotiq2F140` docstring (it claimed the wrong derivation and a stray "82 mm"),
   the stale README values (55 mm / 44.5 mm), the "pad-contact midpoint" misnomer,
   and a tutorial example that mislabeled a generic 55 mm gripper as a "2F-140".
-
-### Added
-- `Robotiq2F140.PALM_OFFSET_FROM_BASE_MOUNT = 0.100` (base_mount → grasp_site along
-  approach), for symmetry with `Robotiq2F85`.
 
 ## [2.0.1] — 2026-09
 
