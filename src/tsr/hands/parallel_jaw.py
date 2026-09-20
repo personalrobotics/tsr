@@ -1302,7 +1302,7 @@ class FrankaHand(ParallelJawGripper):
     with identity orientation. Use that site as the arm's ``ee_site``.
     """
 
-    FINGER_LENGTH = 0.037  # palm (housing forward edge) → pad-mid [m]
+    FINGER_LENGTH = 0.037  # palm (hand-body forward edge) → pad tip [m]
     MAX_APERTURE = 0.080  # 2 × 40 mm joint range [m]
 
     # Distance from the ``hand`` body origin to the TSR palm along the

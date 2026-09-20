@@ -11,7 +11,7 @@ the C1 gimbal-lock fix made accurate everywhere.
 from __future__ import annotations
 
 import numpy as np
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from tsr import TSR, TSRChain, wrap_to_interval
@@ -145,6 +145,18 @@ def test_single_chain_sample_is_contained(tsr):
     chain = TSRChain(TSRs=[tsr])
     pose = chain.sample()
     assert chain.contains(pose)
+
+
+# Multi-TSR chains, non-identity frames and mixed fixed/free coords (#57). The
+# multi-start solver must recognise every constructive sample as a member.
+# Capped example count: the chain-distance solve is much heavier than the core.
+@settings(max_examples=40)
+@given(parts=st.lists(tsrs(), min_size=2, max_size=3))
+def test_multi_chain_sample_is_contained(parts):
+    chain = TSRChain(TSRs=parts)
+    pose = chain.sample()
+    assert chain.contains(pose)
+    assert abs(chain.distance(pose)[0]) < EPSILON
 
 
 @given(tsr=tsrs())
