@@ -9,6 +9,7 @@ from typing import Optional
 import numpy as np
 
 from .core import TSR
+from .grasp_provenance import GraspProvenance
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,10 @@ class TSRTemplate:
         preshape: Optional gripper configuration as DOF values.
         stability_margin: For placement templates, the stability margin in radians
             (arctan(d_min / h_com)). None for grasp templates or analytic primitives.
+        provenance: For grasp templates, a machine-readable :class:`GraspProvenance`
+            describing the primitive, mode, approach, opening axis, depth, and
+            variant. Lets oracles/tests read the grasp mode structurally instead of
+            parsing ``name`` (contract clause 8). None for non-grasp templates.
     """
 
     T_ref_tsr: np.ndarray
@@ -53,6 +58,7 @@ class TSRTemplate:
     variant: str = ""
     preshape: Optional[np.ndarray] = None
     stability_margin: Optional[float] = None
+    provenance: Optional[GraspProvenance] = None
 
     def __repr__(self) -> str:
         parts = [f"task={self.task!r}", f"subject={self.subject!r}"]
@@ -106,6 +112,8 @@ class TSRTemplate:
             result["preshape"] = self.preshape.tolist()
         if self.stability_margin is not None:
             result["stability_margin"] = float(self.stability_margin)
+        if self.provenance is not None:
+            result["provenance"] = self.provenance.to_dict()
         return result
 
     @staticmethod
@@ -114,6 +122,10 @@ class TSRTemplate:
         preshape = None
         if "preshape" in x and x["preshape"] is not None:
             preshape = np.array(x["preshape"])
+
+        provenance = None
+        if x.get("provenance") is not None:
+            provenance = GraspProvenance.from_dict(x["provenance"])
 
         return TSRTemplate(
             name=x.get("name", ""),
@@ -127,6 +139,7 @@ class TSRTemplate:
             Bw=np.array(x["Bw"]),
             preshape=preshape,
             stability_margin=x.get("stability_margin", None),
+            provenance=provenance,
         )
 
     def to_json(self):

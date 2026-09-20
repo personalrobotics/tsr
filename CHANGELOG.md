@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Work toward 2.2.0 — establishing the *geometric* correctness of primitive
+parallel-jaw grasp templates (epic #65).
+
+### Added
+- **Executable geometric grasp contract** (#66) in `docs/ARCHITECTURE.md`: four
+  assurance layers (representation / soundness / coverage / embodied), eight
+  soundness clauses, and the soundness-vs-coverage-vs-distribution distinctions,
+  with defined tolerances and one sound + one infeasible worked example per
+  primitive.
+- **`GraspProvenance`** — a typed, serialisable record on `TSRTemplate.provenance`
+  declaring each grasp's primitive, mode, approach, opening axis, depth, and
+  variant. Every `ParallelJawGripper` factory now emits it, so tests read grasp
+  modes structurally instead of parsing `name`. Representation-only; grasp
+  geometry is unchanged.
+
 ## [2.1.0] — 2026-09
 
 ### Added

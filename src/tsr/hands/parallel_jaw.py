@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from tsr.grasp_provenance import GraspProvenance
 from tsr.template import TSRTemplate
 
 from .base import GripperBase
@@ -186,7 +187,10 @@ class ParallelJawGripper(GripperBase):
                     [0.0, 0.0, 0.0, 1.0],
                 ]
             )
-            for Tw_e, roll_label in ((Tw_e_0, "roll 0°"), (Tw_e_pi, "roll 180°")):
+            for Tw_e, roll_label, roll_variant in (
+                (Tw_e_0, "roll 0°", "roll0"),
+                (Tw_e_pi, "roll 180°", "rollpi"),
+            ):
                 t_desc = description or (
                     f"{dlabel.capitalize()} side grasp on {reference}: "
                     f"standoff {ro * 1000:.0f}mm from axis, {roll_label}, "
@@ -197,6 +201,16 @@ class ParallelJawGripper(GripperBase):
                         Tw_e=Tw_e,
                         name=f"{name} — {dlabel}, {roll_label}",
                         description=t_desc,
+                        provenance=GraspProvenance(
+                            primitive="cylinder",
+                            mode="side",
+                            approach="radial",
+                            opening_axis="y",
+                            depth_index=i,
+                            depth_count=len(depths),
+                            depth=float(d),
+                            variant=roll_variant,
+                        ),
                         **common,
                     )
                 )
@@ -287,6 +301,15 @@ class ParallelJawGripper(GripperBase):
                     Tw_e=Tw_e,
                     name=f"{name} — {dlabel}",
                     description=t_desc,
+                    provenance=GraspProvenance(
+                        primitive="cylinder",
+                        mode="top",
+                        approach="+z",
+                        opening_axis="y",
+                        depth_index=i,
+                        depth_count=len(depths),
+                        depth=float(d),
+                    ),
                     **common,
                 )
             )
@@ -377,6 +400,15 @@ class ParallelJawGripper(GripperBase):
                     Tw_e=Tw_e,
                     name=f"{name} — {dlabel}",
                     description=t_desc,
+                    provenance=GraspProvenance(
+                        primitive="cylinder",
+                        mode="bottom",
+                        approach="-z",
+                        opening_axis="y",
+                        depth_index=i,
+                        depth_count=len(depths),
+                        depth=float(d),
+                    ),
                     **common,
                 )
             )
@@ -405,6 +437,9 @@ class ParallelJawGripper(GripperBase):
         name_prefix: str,
         description: str,
         face_label: str,
+        approach: str,
+        opening_axis: str,
+        mode: str = "face",
     ) -> List[TSRTemplate]:
         """k depth templates for one face × finger-orientation combo.
 
@@ -456,6 +491,16 @@ class ParallelJawGripper(GripperBase):
                     Tw_e=Tw_e,
                     name=f"{name_prefix} {face_label} — {dlabel}",
                     description=t_desc,
+                    provenance=GraspProvenance(
+                        primitive="box",
+                        mode=mode,
+                        approach=approach,
+                        opening_axis=opening_axis,
+                        depth_index=i,
+                        depth_count=len(depths),
+                        depth=float(d),
+                        params={"slide_axis": "xyz"[slide_bw_row], "span": float(span_dim)},
+                    ),
                     **common,
                 )
             )
@@ -519,6 +564,9 @@ class ParallelJawGripper(GripperBase):
             hy,
             **kw,
             face_label="+z (span-x)",
+            approach="+z",
+            opening_axis="x",
+            mode="top",
         ) + self._box_face_templates(
             T,
             np.array([0.0, 1.0, 0.0]),
@@ -528,6 +576,9 @@ class ParallelJawGripper(GripperBase):
             hx,
             **kw,
             face_label="+z (span-y)",
+            approach="+z",
+            opening_axis="y",
+            mode="top",
         )
         if not templates:
             return self._empty(
@@ -600,6 +651,9 @@ class ParallelJawGripper(GripperBase):
             hy,
             **kw,
             face_label="-z (span-x)",
+            approach="-z",
+            opening_axis="x",
+            mode="bottom",
         ) + self._box_face_templates(
             T,
             np.array([0.0, 1.0, 0.0]),
@@ -609,6 +663,9 @@ class ParallelJawGripper(GripperBase):
             hx,
             **kw,
             face_label="-z (span-y)",
+            approach="-z",
+            opening_axis="y",
+            mode="bottom",
         )
         if not templates:
             return self._empty(
@@ -689,6 +746,8 @@ class ParallelJawGripper(GripperBase):
                 hz_half,
                 **kw,
                 face_label=f"{sign} (span-y)",
+                approach=sign,
+                opening_axis="y",
             )
             templates += self._box_face_templates(
                 T_ref,
@@ -699,6 +758,8 @@ class ParallelJawGripper(GripperBase):
                 hy,
                 **kw,
                 face_label=f"{sign} (span-z)",
+                approach=sign,
+                opening_axis="z",
             )
         if not templates:
             return self._empty(
@@ -779,6 +840,8 @@ class ParallelJawGripper(GripperBase):
                 hz_half,
                 **kw,
                 face_label=f"{sign} (span-x)",
+                approach=sign,
+                opening_axis="x",
             )
             templates += self._box_face_templates(
                 T_ref,
@@ -789,6 +852,8 @@ class ParallelJawGripper(GripperBase):
                 hx,
                 **kw,
                 face_label=f"{sign} (span-z)",
+                approach=sign,
+                opening_axis="z",
             )
         if not templates:
             return self._empty(
@@ -899,6 +964,15 @@ class ParallelJawGripper(GripperBase):
                     Tw_e=Tw_e,
                     name=f"{name} — {dlabel}",
                     description=t_desc,
+                    provenance=GraspProvenance(
+                        primitive="sphere",
+                        mode="equatorial",
+                        approach="radial",
+                        opening_axis="y",
+                        depth_index=i,
+                        depth_count=len(depths),
+                        depth=float(d),
+                    ),
                     **common,
                 )
             )
@@ -1022,7 +1096,7 @@ class ParallelJawGripper(GripperBase):
             preshape=np.array([preshape]),
         )
         templates = []
-        for alpha in minor_angles:
+        for mi, alpha in enumerate(minor_angles):
             ca, sa = np.cos(alpha), np.sin(alpha)
             a_label = f"α={np.degrees(alpha):.0f}°"
             for i, d in enumerate(depths):
@@ -1052,7 +1126,10 @@ class ParallelJawGripper(GripperBase):
                         [0.0, 0.0, 0.0, 1.0],
                     ]
                 )
-                for Tw_e, flip_label in ((Tw_e_0, "flip 0°"), (Tw_e_pi, "flip 180°")):
+                for Tw_e, flip_label, flip_variant in (
+                    (Tw_e_0, "flip 0°", "flip0"),
+                    (Tw_e_pi, "flip 180°", "flippi"),
+                ):
                     t_desc = description or (
                         f"{dlabel.capitalize()} torus side grasp on {reference}: "
                         f"{a_label}, ro={ro_minor * 1000:.0f}mm from tube center, "
@@ -1063,6 +1140,21 @@ class ParallelJawGripper(GripperBase):
                             Tw_e=Tw_e,
                             name=f"{name} — {a_label}, {dlabel}, {flip_label}",
                             description=t_desc,
+                            provenance=GraspProvenance(
+                                primitive="torus",
+                                mode="side",
+                                approach="tube",
+                                opening_axis="y",
+                                depth_index=i,
+                                depth_count=len(depths),
+                                depth=float(d),
+                                variant=flip_variant,
+                                params={
+                                    "minor_index": mi,
+                                    "minor_count": len(minor_angles),
+                                    "minor_angle": float(alpha),
+                                },
+                            ),
                             **common,
                         )
                     )
@@ -1142,6 +1234,15 @@ class ParallelJawGripper(GripperBase):
                     preshape=np.array([preshape]),
                     name=f"{name} top — {dlabel}",
                     description=t_desc,
+                    provenance=GraspProvenance(
+                        primitive="torus",
+                        mode="span",
+                        approach="+z",
+                        opening_axis="y",
+                        depth_index=i,
+                        depth_count=len(depths),
+                        depth=float(d),
+                    ),
                 )
             )
 
@@ -1171,6 +1272,15 @@ class ParallelJawGripper(GripperBase):
                     preshape=np.array([preshape]),
                     name=f"{name} bottom — {dlabel}",
                     description=t_desc,
+                    provenance=GraspProvenance(
+                        primitive="torus",
+                        mode="span",
+                        approach="-z",
+                        opening_axis="y",
+                        depth_index=i,
+                        depth_count=len(depths),
+                        depth=float(d),
+                    ),
                 )
             )
         return templates

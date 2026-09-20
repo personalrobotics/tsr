@@ -38,6 +38,7 @@ from .core import (
 )
 
 # --- Layer 1: the reusable recipe ---------------------------------------------
+from .grasp_provenance import GraspProvenance
 from .template import TSRTemplate
 
 # --- Layer 2: factories (domain knowledge -> recipes) -------------------------
@@ -77,6 +78,7 @@ __all__ = [
     "EPSILON",
     # template
     "TSRTemplate",
+    "GraspProvenance",
     # factories
     "GripperBase",
     "ParallelJawGripper",
