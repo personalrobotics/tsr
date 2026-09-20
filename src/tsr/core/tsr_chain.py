@@ -191,6 +191,9 @@ class TSRChain:
         """
         return self.to_transform(self.sample_xyzrpy(xyzrpy_list, rng=rng))
 
+    # Deterministic multi-start count for the chain-distance optimiser (see below).
+    _DISTANCE_RESTARTS = 8
+
     def distance(self, trans):
         """
         Computes the Geodesic Distance from the TSR chain to a transform
@@ -211,8 +214,7 @@ class TSRChain:
         # Only optimise the FREE coordinates. Point-bound coordinates (lower ==
         # upper, e.g. a fixed [0, 0]) are held at their value and never handed to
         # L-BFGS-B: a zero-width finite-difference step there divides by zero,
-        # produces a NaN gradient, and leaves the optimiser stalled at the
-        # midpoint -- which made a chain reject a pose from its own sample() (#57).
+        # produces a NaN gradient, and leaves the optimiser stalled (#57).
         free = upper > lower
 
         def expand(x_free):
@@ -220,19 +222,72 @@ class TSRChain:
             x[free] = x_free
             return x
 
-        def objective(x_free):
-            tsr_trans = self.to_transform(expand(x_free).reshape(n, 6))
-            return geodesic_distance(tsr_trans, trans)
+        def geodesic_at(x_free):
+            return geodesic_distance(self.to_transform(expand(x_free).reshape(n, 6)), trans)
 
         if not numpy.any(free):
             # Fully fixed chain: a single candidate pose, nothing to optimise.
-            return float(objective(numpy.empty(0))), x_full.reshape(n, 6)
+            return float(geodesic_at(numpy.empty(0))), x_full.reshape(n, 6)
 
-        bounds = list(zip(lower[free], upper[free]))
-        xopt_free, dist, _info = scipy.optimize.fmin_l_bfgs_b(
-            objective, x_full[free], fprime=None, args=(), bounds=bounds, approx_grad=True
-        )
-        return dist, expand(xopt_free).reshape(n, 6)
+        # Optimise a SMOOTH squared pose residual, not the geodesic distance
+        # directly: geodesic_distance uses arccos for the rotation angle, which is
+        # non-smooth at 0 and creates spurious local minima that trap a single
+        # midpoint-start solve -- a chain then rejects a pose from its own
+        # sample() even with no numerical warning (#57). The chordal rotation
+        # term (3 - tr(Rᵀ R')) is smooth everywhere and zero iff the rotations
+        # match, so its global minimum coincides with true membership.
+        R_target = trans[:3, :3]
+        t_target = trans[:3, 3]
+
+        def residual_sq(x_free):
+            T = self.to_transform(expand(x_free).reshape(n, 6))
+            dt = T[:3, 3] - t_target
+            return float(dt @ dt + (3.0 - numpy.trace(R_target.T @ T[:3, :3])))
+
+        lo_f, hi_f = lower[free], upper[free]
+        span_f = hi_f - lo_f
+        bounds = list(zip(lo_f, hi_f))
+
+        # Deterministic multi-start guards against ordinary local minima: even a
+        # smooth objective can have several basins for a serial chain. Starts are
+        # the bounds midpoint, the two extreme corners, and a fixed low-discrepancy
+        # set (seeded, so results are reproducible). Early-exit once an exact
+        # in-set pose is found (residual ~ 0), so the common membership query stays
+        # cheap.
+        rng = numpy.random.default_rng(0)
+        starts = [x_full[free], lo_f, hi_f]
+        starts += [lo_f + span_f * rng.random(int(free.sum())) for _ in range(self._DISTANCE_RESTARTS)]
+
+        best_x = x_full[free]
+        best_res = residual_sq(best_x)
+        for x0 in starts:
+            xopt, res, _info = scipy.optimize.fmin_l_bfgs_b(
+                residual_sq, x0, fprime=None, args=(), bounds=bounds, approx_grad=True
+            )
+            if res < best_res:
+                best_res, best_x = res, xopt
+            if best_res < 1e-14:
+                break
+
+        # Report the true geodesic distance at the recovered coordinates.
+        return geodesic_at(best_x), expand(best_x).reshape(n, 6)
+
+    def closest_transform(self, trans):
+        """
+        Distance to the chain and the closest composed world-frame transform.
+
+        Companion to :meth:`distance` (which returns the closest point as a list
+        of per-TSR ``xyzrpy`` coordinates): this returns the same distance
+        together with the corresponding composed world-frame pose, so planner
+        projection code need not re-run :meth:`to_transform` on the coordinate
+        result by hand. Mirrors :meth:`TSR.closest_transform` for chains (#63).
+
+        @param trans 4x4 transform
+        @return dist geodesic distance to the chain (0 if trans is inside)
+        @return T    4x4 closest composed transform in the world frame
+        """
+        dist, bwopt = self.distance(trans)
+        return dist, self.to_transform(bwopt)
 
     def contains(self, trans):
         """

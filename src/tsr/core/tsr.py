@@ -437,6 +437,26 @@ class TSR:
 
         return dist, bwopt
 
+    def closest_transform(self, trans, rotation_weight=1.0):
+        """Distance to the TSR and the closest world-frame transform in it.
+
+        Companion to :meth:`distance`, which returns the closest point in the
+        TSR's own ``xyzrpy`` coordinates (``bwopt``). This returns the same
+        distance together with the corresponding **world-frame** pose,
+        composing the frames in one place so callers (e.g. planner projection)
+        need not reconstruct ``T0_w @ Tw @ Tw_e`` by hand and get it wrong.
+
+        @param trans 4x4 transform
+        @param rotation_weight weight for rotation vs translation (see distance)
+        @return dist  distance to the TSR (0 if trans is inside)
+        @return T     4x4 closest in-bounds transform in the world frame
+        """
+        dist, bwopt = self.distance(trans, rotation_weight=rotation_weight)
+        # bwopt is already clipped to bounds by distance(), so compose directly
+        # rather than via to_transform(), which would re-validate the bounds.
+        T = reduce(numpy.dot, [self.T0_w, TSR.xyzrpy_to_trans(bwopt), self.Tw_e])
+        return dist, T
+
     def distance_optimize(self, trans):
         """
         Computes the Geodesic Distance from the TSR to a transform using

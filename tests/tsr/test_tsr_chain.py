@@ -381,6 +381,45 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
             self.assertTrue(chain.contains(T))
             self.assertLess(abs(chain.distance(T)[0]), EPSILON)
 
+    def test_multi_tsr_chain_sample_contained_nonidentity_frames(self):
+        """The stronger #57 case: mixed fixed/free coords AND non-identity T0_w/Tw_e.
+
+        A single midpoint-start optimiser converges to a nonzero local minimum
+        here (no numerical warning), rejecting a constructively-valid sample; the
+        multi-start solver must recognise every such sample as a member.
+        """
+        import warnings
+
+        rng = np.random.default_rng(20260920)
+        for _ in range(60):
+            parts = []
+            for j in range(2):
+                lo, hi, fr = np.zeros(6), np.zeros(6), rng.random(6) < 0.5
+                c, h = rng.uniform(-0.4, 0.4, 6), rng.uniform(0.01, 0.35, 6)
+                lo[fr], hi[fr] = c[fr] - h[fr], c[fr] + h[fr]
+                T0_w = TSR.xyzrpy_to_trans(rng.uniform(-0.3, 0.3, 6)) if j == 0 else np.eye(4)
+                Tw_e = TSR.xyzrpy_to_trans(rng.uniform(-0.15, 0.15, 6))
+                parts.append(TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=np.column_stack((lo, hi))))
+            chain = TSRChain(TSRs=parts)
+            pose = chain.to_transform(chain.sample_xyzrpy(rng=rng))
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", RuntimeWarning)  # no zero-width-step NaNs
+                dist, _ = chain.distance(pose)
+            self.assertLess(abs(dist), EPSILON)
+            self.assertTrue(chain.contains(pose))
+
+    def test_chain_closest_transform(self):
+        """closest_transform returns the closest composed world-frame pose (#63)."""
+        Bw = np.array([[0.0, 0.5], [0, 0], [0, 0], [0, 0], [0, 0], [-pi / 6, pi / 6]])
+        chain = TSRChain(TSRs=[TSR(Bw=Bw), TSR(Bw=Bw)])
+        inside = chain.sample()
+        dist, T = chain.closest_transform(inside)
+        self.assertLess(abs(dist), EPSILON)
+        self.assertTrue(chain.contains(T))
+        # T is the composed pose of the returned coordinates.
+        _, bwopt = chain.distance(inside)
+        np.testing.assert_allclose(T, chain.to_transform(bwopt), atol=1e-9)
+
     def test_contains_consistent_with_distance(self):
         """contains() should agree with distance() < epsilon for all transforms."""
         tsr1 = TSR(

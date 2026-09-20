@@ -1192,7 +1192,7 @@ class ParallelJawGripper(GripperBase):
 class Robotiq2F140(ParallelJawGripper):
     """Robotiq 2F-140 parallel gripper.
 
-    Fixed hardware parameters: ``FINGER_LENGTH = 0.114 m``, ``MAX_APERTURE = 0.140 m``.
+    Fixed hardware parameters: ``FINGER_LENGTH = 0.114 m``, ``MAX_APERTURE = 0.128 m``.
 
     ``FINGER_LENGTH`` is the palm→pad-tip reach along the approach axis — the same
     convention as :class:`Robotiq2F85` and :class:`FrankaHand`. Measured from
@@ -1201,8 +1201,11 @@ class Robotiq2F140(ParallelJawGripper):
     for clearance) and the pad tip is at ``base_mount + 0.214 m``, so
     ``FINGER_LENGTH = 0.214 − 0.100 = 0.114 m``.
 
-    Note: ``MAX_APERTURE = 0.140 m`` is the manufacturer's nominal/outer spec; the
-    measured inner-face-to-inner-face gap is ~0.128 m (see issue #60).
+    ``MAX_APERTURE = 0.128 m`` is the inner-face-to-inner-face gap between the pads
+    at full open (measured from 2f140.xml), which is what ``preshape ≤ MAX_APERTURE``
+    needs — the object must fit *between* the inner faces. The manufacturer's nominal
+    0.140 m is the outer/advertised figure and overstates the usable gap (#60), the
+    same distinction as the :class:`Robotiq2F85`'s 0.085 m.
 
     Outputs poses in the canonical TSR EE frame (z=approach, y=finger-opening,
     x=palm normal). The corresponding MuJoCo model (geodude_assets 2f140.xml)
@@ -1212,7 +1215,7 @@ class Robotiq2F140(ParallelJawGripper):
     """
 
     FINGER_LENGTH = 0.114
-    MAX_APERTURE = 0.140
+    MAX_APERTURE = 0.128  # inner-face gap at full open (nominal/outer is 0.140); see #60
 
     # Distance from base_mount origin to the TSR palm (grasp_site) along the
     # approach axis, for callers placing an ee_site in an MjSpec (cf. 2F-85).
@@ -1299,7 +1302,7 @@ class FrankaHand(ParallelJawGripper):
     with identity orientation. Use that site as the arm's ``ee_site``.
     """
 
-    FINGER_LENGTH = 0.037  # palm (housing forward edge) → pad-mid [m]
+    FINGER_LENGTH = 0.037  # palm (hand-body forward edge) → pad tip [m]
     MAX_APERTURE = 0.080  # 2 × 40 mm joint range [m]
 
     # Distance from the ``hand`` body origin to the TSR palm along the

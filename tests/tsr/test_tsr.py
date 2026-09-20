@@ -224,6 +224,30 @@ class TsrTest(TestCase):
         self.assertEqual(distance, 0.0)
         self.assertTrue(tsr.contains(edge_transform))
 
+    def test_closest_transform(self):
+        """closest_transform returns the closest in-bounds *world-frame* pose (#53)."""
+        T0_w = numpy.array([[0, -1, 0, 0.5], [1, 0, 0, 0.5], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
+        Tw_e = numpy.array([[0, 0, 1, 0.1], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]], dtype=float)
+        Bw = numpy.array([[-0.05, 0.05]] * 3 + [[-pi / 6, pi / 6]] * 3)
+        tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
+
+        # A contained pose is its own closest transform, at distance 0.
+        inside = tsr.to_transform(numpy.zeros(6))
+        dist, T = tsr.closest_transform(inside)
+        self.assertEqual(dist, 0.0)
+        numpy.testing.assert_allclose(T, inside, atol=1e-9)
+
+        # An outside pose projects to an in-bounds world pose, matching the
+        # hand-composed T0_w @ xyzrpy_to_trans(bwopt) @ Tw_e.
+        outside = inside.copy()
+        outside[0, 3] += 1.0  # 1 m away in world x
+        dist, T = tsr.closest_transform(outside)
+        self.assertGreater(dist, 0.0)
+        self.assertTrue(tsr.contains(T))
+        _, bwopt = tsr.distance(outside)
+        expected = T0_w @ TSR.xyzrpy_to_trans(bwopt) @ Tw_e
+        numpy.testing.assert_allclose(T, expected, atol=1e-12)
+
     def test_contains_distance_consistency(self):
         """Test that contains() and distance() are consistent.
 

@@ -88,7 +88,7 @@ point for that measurement is listed explicitly (they are not interchangeable).
 
 | Class | `finger_length` | `max_aperture` | `finger_length` reference (palm → pad tip) |
 |---|---|---|---|
-| `Robotiq2F140` | 114 mm | 140 mm | palm (`grasp_site`, base_mount + 100 mm) → pad tip |
+| `Robotiq2F140` | 114 mm | 128 mm | palm (`grasp_site`, base_mount + 100 mm) → pad tip |
 | `Robotiq2F85` | 59 mm | 85 mm | palm (housing forward edge) → pad tip |
 | `FrankaHand` | 37 mm | 80 mm | palm (hand-body forward edge) → pad tip |
 
