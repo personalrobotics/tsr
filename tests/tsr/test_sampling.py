@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Siddhartha Srinivasa
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
 
 """
 Tests for advanced sampling utilities.
@@ -157,6 +157,22 @@ class TestSamplingUtilities(unittest.TestCase):
         # Verify pose is valid (from one of the TSRs)
         valid_poses = [tsr.contains(pose) for tsr in self.tsrs]
         self.assertTrue(any(valid_poses))
+
+    def test_rng_makes_sampling_reproducible(self):
+        """A seeded Generator controls the sampled pose, not just TSR choice (#52)."""
+        bw = np.array([[-0.1, 0.1]] * 3 + [[-pi, pi]] * 3)
+        tsr = TSR(Bw=bw)
+        # Same seed -> identical pose; different seed -> different pose.
+        a = tsr.sample(rng=np.random.default_rng(42))
+        b = tsr.sample(rng=np.random.default_rng(42))
+        c = tsr.sample(rng=np.random.default_rng(7))
+        np.testing.assert_array_equal(a, b)
+        self.assertFalse(np.allclose(a, c))
+        # sample_from_tsrs forwards the rng all the way to the pose.
+        tsrs = [TSR(Bw=bw), TSR(Bw=bw)]
+        p = sample_from_tsrs(tsrs, np.random.default_rng(99))
+        q = sample_from_tsrs(tsrs, np.random.default_rng(99))
+        np.testing.assert_array_equal(p, q)
 
 
 class TestTemplateSampling(unittest.TestCase):

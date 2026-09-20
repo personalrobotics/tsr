@@ -43,11 +43,21 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Surface the token to step-level `if` (the `secrets` context isn't available
+    # in `if` directly). When it's unset, skip the dispatch with a visible notice
+    # rather than failing an otherwise-green run (#56). A real dispatch failure
+    # with a configured token still surfaces.
+    env:
+      DISPATCH_TOKEN: ${{ secrets.ROBOT_CODE_DISPATCH_TOKEN }}
     steps:
       - name: Dispatch integration run
+        if: env.DISPATCH_TOKEN != ''
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.ROBOT_CODE_DISPATCH_TOKEN }}
+          token: ${{ env.DISPATCH_TOKEN }}
           repository: personalrobotics/robot-code
           event-type: sibling-updated
           client-payload: '{"repo":"${{ github.event.repository.name }}","sha":"${{ github.sha }}"}'
+      - name: Skip downstream dispatch (no token configured)
+        if: env.DISPATCH_TOKEN == ''
+        run: echo "::notice::ROBOT_CODE_DISPATCH_TOKEN not configured; skipping downstream dispatch. Package checks passed."

@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] — 2026-09
+
+Patch release: correctness and reproducibility fixes from the post-merge audit
+of #54. No API removals; adds an optional `rng` parameter.
+
+### Fixed
+- **Multi-TSR `TSRChain` could reject a pose from its own `sample()`** (#57).
+  `TSRChain.distance` optimised over all `6·n` coordinates, so a point-bound
+  coordinate (e.g. a fixed `[0, 0]`) gave a zero-width finite-difference step,
+  a NaN gradient, and a stalled optimiser. It now optimises only the free
+  coordinates, holding fixed ones at their value.
+- **Documentation described `TSRChain` as "AND"/intersection semantics** (#55).
+  A chain is the serial composition of its component TSRs, not the intersection
+  of their world-frame pose sets (two serial `x∈[0,1]` TSRs reach `x=1.5`).
+  Reworded the changelog, `contains()` docstring, and the semantics tests.
+
+### Added
+- **`rng` parameter** on `TSR.sample`/`sample_xyzrpy`, `TSRChain.sample`/
+  `sample_xyzrpy`, and `TSRTemplate.sample`; `sample_from_tsrs` /
+  `sample_from_templates` forward it (#52). Passing a `numpy.random.Generator`
+  now makes the sampled *pose* reproducible, not just the TSR choice. Defaults to
+  the global RNG when omitted.
+
+### CI
+- The downstream-dispatch job no longer reddens an otherwise-green run when
+  `ROBOT_CODE_DISPATCH_TOKEN` is absent; it skips with a visible notice (#56).
+
 ## [2.0.0] — 2026-09
 
 First PyPI release. The distribution is named **`sstsr`** (the name `tsr` was
@@ -20,8 +47,10 @@ already taken); the import name is unchanged — `import tsr`.
 
 ### Breaking changes
 - **`TablePlacer` removed** — use `tsr.placement.StablePlacer`.
-- **`TSRChain.contains()` uses AND semantics** — a transform must satisfy all
-  TSRs in the chain simultaneously (was OR).
+- **`TSRChain.contains()` now tests serial-composition membership** — a chain is
+  the set of poses reachable by serially composing a transform from each
+  component TSR (consistent with `distance()`), not a match against a single
+  world-frame pose.
 - **Grasp factories return `[]` for infeasible geometry instead of raising.**
   `grasp_cylinder_*` and `grasp_sphere` previously raised `ValueError` when the
   object exceeded the aperture; they now return `[]`, consistent with the box and
