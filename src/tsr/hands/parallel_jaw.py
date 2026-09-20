@@ -205,11 +205,11 @@ class ParallelJawGripper(GripperBase):
                             primitive="cylinder",
                             mode="side",
                             approach="radial",
-                            span_axis="tangential",
+                            finger_orientation="tangential",
                             depth_index=i,
                             depth_count=len(depths),
                             depth=float(d),
-                            variant=roll_variant,
+                            symmetry=roll_variant,
                         ),
                         **common,
                     )
@@ -305,7 +305,7 @@ class ParallelJawGripper(GripperBase):
                         primitive="cylinder",
                         mode="top",
                         approach="+z",
-                        span_axis="diameter",
+                        finger_orientation="diameter",
                         depth_index=i,
                         depth_count=len(depths),
                         depth=float(d),
@@ -404,7 +404,7 @@ class ParallelJawGripper(GripperBase):
                         primitive="cylinder",
                         mode="bottom",
                         approach="-z",
-                        span_axis="diameter",
+                        finger_orientation="diameter",
                         depth_index=i,
                         depth_count=len(depths),
                         depth=float(d),
@@ -438,7 +438,7 @@ class ParallelJawGripper(GripperBase):
         description: str,
         face_label: str,
         approach: str,
-        span_axis: str,
+        finger_orientation: str,
         mode: str = "face",
     ) -> List[TSRTemplate]:
         """k depth templates for one face × finger-orientation combo.
@@ -495,11 +495,11 @@ class ParallelJawGripper(GripperBase):
                         primitive="box",
                         mode=mode,
                         approach=approach,
-                        span_axis=span_axis,
+                        finger_orientation=finger_orientation,
                         depth_index=i,
                         depth_count=len(depths),
                         depth=float(d),
-                        params={"slide_axis": "xyz"[slide_bw_row], "span": float(span_dim)},
+                        metadata={"slide_axis": "xyz"[slide_bw_row], "span": float(span_dim)},
                     ),
                     **common,
                 )
@@ -565,7 +565,7 @@ class ParallelJawGripper(GripperBase):
             **kw,
             face_label="+z (span-x)",
             approach="+z",
-            span_axis="x",
+            finger_orientation="x",
             mode="top",
         ) + self._box_face_templates(
             T,
@@ -577,7 +577,7 @@ class ParallelJawGripper(GripperBase):
             **kw,
             face_label="+z (span-y)",
             approach="+z",
-            span_axis="y",
+            finger_orientation="y",
             mode="top",
         )
         if not templates:
@@ -652,7 +652,7 @@ class ParallelJawGripper(GripperBase):
             **kw,
             face_label="-z (span-x)",
             approach="-z",
-            span_axis="x",
+            finger_orientation="x",
             mode="bottom",
         ) + self._box_face_templates(
             T,
@@ -664,7 +664,7 @@ class ParallelJawGripper(GripperBase):
             **kw,
             face_label="-z (span-y)",
             approach="-z",
-            span_axis="y",
+            finger_orientation="y",
             mode="bottom",
         )
         if not templates:
@@ -747,7 +747,7 @@ class ParallelJawGripper(GripperBase):
                 **kw,
                 face_label=f"{sign} (span-y)",
                 approach=sign,
-                span_axis="y",
+                finger_orientation="y",
             )
             templates += self._box_face_templates(
                 T_ref,
@@ -759,7 +759,7 @@ class ParallelJawGripper(GripperBase):
                 **kw,
                 face_label=f"{sign} (span-z)",
                 approach=sign,
-                span_axis="z",
+                finger_orientation="z",
             )
         if not templates:
             return self._empty(
@@ -841,7 +841,7 @@ class ParallelJawGripper(GripperBase):
                 **kw,
                 face_label=f"{sign} (span-x)",
                 approach=sign,
-                span_axis="x",
+                finger_orientation="x",
             )
             templates += self._box_face_templates(
                 T_ref,
@@ -853,7 +853,7 @@ class ParallelJawGripper(GripperBase):
                 **kw,
                 face_label=f"{sign} (span-z)",
                 approach=sign,
-                span_axis="z",
+                finger_orientation="z",
             )
         if not templates:
             return self._empty(
@@ -968,7 +968,7 @@ class ParallelJawGripper(GripperBase):
                         primitive="sphere",
                         mode="surface",
                         approach="radial",
-                        span_axis="diameter",
+                        finger_orientation="diameter",
                         depth_index=i,
                         depth_count=len(depths),
                         depth=float(d),
@@ -1144,12 +1144,12 @@ class ParallelJawGripper(GripperBase):
                                 primitive="torus",
                                 mode="side",
                                 approach="tube",
-                                span_axis="tangential",
+                                finger_orientation="tangential",
                                 depth_index=i,
                                 depth_count=len(depths),
                                 depth=float(d),
-                                variant=flip_variant,
-                                params={
+                                symmetry=flip_variant,
+                                metadata={
                                     "minor_index": mi,
                                     "minor_count": len(minor_angles),
                                     "minor_angle": float(alpha),
@@ -1238,7 +1238,7 @@ class ParallelJawGripper(GripperBase):
                         primitive="torus",
                         mode="span",
                         approach="+z",
-                        span_axis="diameter",
+                        finger_orientation="diameter",
                         depth_index=i,
                         depth_count=len(depths),
                         depth=float(d),
@@ -1276,7 +1276,7 @@ class ParallelJawGripper(GripperBase):
                         primitive="torus",
                         mode="span",
                         approach="-z",
-                        span_axis="diameter",
+                        finger_orientation="diameter",
                         depth_index=i,
                         depth_count=len(depths),
                         depth=float(d),

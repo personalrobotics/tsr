@@ -109,7 +109,7 @@ preshape `a`, clearance `c`, and **every** pose admitted by a returned template:
 7. The whole continuous TSR region (`Bw` extrema, midpoint, and interior)
    preserves clauses 2–6.
 8. The template declares its primitive, mode, hand-occupied approach, object-frame
-   span axis, insertion depth (index/value), and symmetry variant **structurally**,
+   finger orientation, insertion depth (index/value), and symmetry **structurally**,
    via `TSRTemplate.provenance` (`GraspProvenance`). Tests and oracles read that
    record; they never infer semantics by parsing `name`.
 
@@ -134,34 +134,56 @@ or force closure under arbitrary friction — an explicit non-goal.
 - Frames follow the library convention: `z_EE` = approach, `y_EE` = finger
   opening (fingers always close along `±y_EE`), `x_EE = y_EE × z_EE`.
 
-### Structured provenance
+### Structured provenance — three separate layers (#84)
 
-`GraspProvenance` (on `TSRTemplate.provenance`) is a closed, immutable, lossless
-value object round-tripping through dict/JSON/YAML. Each field has **one frame
-and one meaning**:
+**Provenance declares intent; the pose determines geometric truth.** Three
+responsibilities are kept apart so the public record does not become a second
+grasp DSL:
 
-| field | frame | meaning |
-|---|---|---|
-| `primitive`, `mode` | — | validated as a `(primitive, mode)` pair |
-| `depth` | approach axis | **insertion depth from the approached primitive surface** [m], `≥ 0`; uniform across primitives |
-| `approach` | object | side/family the **hand occupies** (`"+z"`, `"-x"`, `"radial"`, `"tube"`) — *not* the sign of `z_EE` |
-| `span_axis` | object | direction the two pad contacts are separated along: an object axis (`x`/`y`/`z`) for boxes, or a yaw-free family (`tangential`/`diameter`) for radial/spherical grasps |
-| `depth_index`/`depth_count` | — | `depth_count` is the number of **emitted depth slots** (`≤ k`; it collapses when the usable band is thin), and `(depth_index, depth_count)` identifies a member of the returned family. At feasibility boundaries the slots may share a `depth` value; deduplicating coincident slots is deferred to the usable-depth helper in `#68`. |
-| `variant` | — | symmetry variant producing a distinct pose at the same (mode, depth) |
-| `params` | object | primitive-specific extras (torus `minor_index`/`minor_angle`, box `slide_axis`/`span`) |
+1. **`GraspProvenance`** (value object) — a small, immutable, **extensible**
+   record of the generator's claim. It validates only *representation*
+   invariants (nonempty string labels; finite `depth ≥ 0` canonicalized to float;
+   exact integer `depth_index`/`depth_count` with `0 ≤ index < count`; JSON-scalar
+   `metadata` frozen into a read-only mapping; exact dict/JSON/YAML round-trip).
+   Labels are free strings — it does **not** know which `(primitive, mode)` pairs
+   exist or how fields relate, so third-party generators can use their own
+   vocabulary. Fields:
 
-**Oracle vs coverage fields.** The analytic oracle consumes `primitive`, `mode`,
-`depth`, and torus `params.minor_angle`; the closing line comes from the *pose*
-(the fingers close along `±y_EE`), never from provenance. `approach`,
-`span_axis`, `variant`, and `depth_index`/`depth_count` classify **coverage and
-symmetry** only. Modes emitted today:
+   | field | frame | meaning |
+   |---|---|---|
+   | `primitive`, `mode` | — | free labels selecting the analytic model |
+   | `depth` | approach axis | insertion depth from the approached surface [m], `≥ 0` |
+   | `approach` | object | side/family the **hand occupies** (not the sign of `z_EE`) |
+   | `finger_orientation` | object | direction the pads are separated along — object axis (box) or yaw-free family `tangential`/`diameter` (fingers always close along `±y_EE`) |
+   | `depth_index`/`depth_count` | — | emitted depth slot and slot count (`≤ k`; slots may coincide at feasibility boundaries — dedup deferred to `#68`) |
+   | `symmetry` | — | distinguishes otherwise-equivalent templates (e.g. a roll flip) |
+   | `metadata` | object | descriptive extras only — **never** geometric evidence (torus `minor_*`, box `slide_axis`/`span`) |
 
-| primitive | modes | span_axis | variants / params |
+2. **Native conformance** (`tsr.hands._conformance.validate_builtin_provenance`)
+   owns the sstsr vocabulary and cross-field relational checks the value object
+   does not: the built-in `(primitive, mode)` set, allowed `approach`/
+   `finger_orientation`/`symmetry` labels, required `metadata`, and relations
+   (box `finger_orientation ≠ slide_axis`; box-face orientation lies in the face
+   plane; torus `minor_index` in range). Built-in factory tests run it over every
+   emitted template; it may evolve without closing the public type.
+
+3. **Geometric truth** — the analytic oracle (`#67`) derives contacts, reach,
+   clearance, and the realized depth/minor-angle **from the concrete pose and
+   primitive geometry**, and must **not** use `provenance.depth`, a recorded
+   minor angle, or other metadata as inputs to the calculation that certifies
+   those same values. `primitive`/`mode` select the analytic model; everything
+   else is checked against the pose, not trusted. A provenance failure means the
+   generator described its output inconsistently; an oracle failure means the
+   emitted pose is geometrically wrong.
+
+Built-in modes emitted today (native conformance vocabulary):
+
+| primitive | modes | finger_orientation | symmetry / metadata |
 |---|---|---|---|
 | cylinder | `side`, `top`, `bottom` | `tangential` (side), `diameter` (top/bottom) | side: `roll0`/`rollpi` |
-| box | `top`, `bottom`, `face` | object axis `x`/`y`/`z` | `params.slide_axis`, `params.span` |
+| box | `top`, `bottom`, `face` | object axis `x`/`y`/`z` | `metadata.slide_axis`, `metadata.span` |
 | sphere | `surface` (full SO(3)) | `diameter` | — |
-| torus | `side`, `span` | `tangential` (side), `diameter` (span) | side: `flip0`/`flippi`, `params.minor_*` |
+| torus | `side`, `span` | `tangential` (side), `diameter` (span) | side: `flip0`/`flippi`, `metadata.minor_*` |
 
 ### Worked examples
 
