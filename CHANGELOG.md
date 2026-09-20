@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Work toward 2.2.0 — establishing the *geometric* correctness of primitive
+parallel-jaw grasp templates (epic #65).
+
+### Added
+- **Executable geometric grasp contract** (#66) in `docs/ARCHITECTURE.md`: four
+  assurance layers (representation / soundness / coverage / embodied), eight
+  soundness clauses, and the soundness-vs-coverage-vs-distribution distinctions,
+  with defined tolerances and one sound + one infeasible worked example per
+  primitive.
+- **`GraspProvenance`** (#66, #78–#84) — a small, immutable, **extensible** value
+  object on `TSRTemplate.provenance` recording each grasp's primitive, mode,
+  hand-occupied `approach`, object-frame `finger_orientation`, insertion `depth`,
+  `symmetry`, and descriptive `metadata`. It validates only representation
+  invariants and round-trips losslessly; it is *not* a closed schema, so external
+  grasp generators can use their own labels. The sstsr native vocabulary and
+  cross-field relational checks live separately in
+  `tsr.hands._conformance.validate_builtin_provenance`, which the built-in factory
+  tests run over every emitted template. The design principle — **provenance
+  declares intent; the pose determines geometric truth** — keeps these two layers
+  and the analytic oracle (#67) distinct. Every `ParallelJawGripper` factory emits
+  a conformant record, so tests read grasp modes structurally instead of parsing
+  `name`. The sphere grasp is mode `surface` (full SO(3)), not `equatorial`.
+  Representation-only; grasp geometry is unchanged.
+
 ## [2.1.0] — 2026-09
 
 ### Added
