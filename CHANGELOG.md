@@ -10,17 +10,23 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Added
-- **Independent analytic grasp oracle** (#67, test-side) in
+- **Independent analytic grasp oracle** (#67, #93–#95, test-side) in
   `tests/tsr/hands/_grasp_oracle.py`: certifies the geometric-soundness clauses of
-  the #66 contract from textbook signed-distance representations of box / cylinder /
-  sphere / torus, deriving palm clearance, usable finger depth, jaw contacts,
-  contact normals, and object span **from the concrete pose alone** — never from
-  the generator's private standoff/depth formulas or `provenance` geometric values
-  (`primitive`/`mode` only select the SDF model). Returns a structured
-  `GraspWitness` (failures name the violated clause and its geometry, not just a
-  Boolean). Its unit tests use hand-derived poses only, with negative controls for
-  sign, axis, origin, extent, clearance, and aperture errors. NumPy-only, no
-  shipped-package change; it backs the generator repairs in #68–#73.
+  the #66 contract for box / cylinder / sphere / torus. Contact geometry is
+  **exact per `(primitive, mode)`** — closed-form line/surface intersection derives
+  jaw contacts, span, analytic normals, realized insertion depth, torus minor
+  angle, and clearance-aware usable bands from the concrete pose (no sampling grid,
+  so results are resolution-independent and scale-equivariant; ~0.1 ms/cert). An
+  independent signed-distance representation is used only to *verify* those
+  analytic contacts, never to search (#93). `mode` (and optional `approach` /
+  `finger_orientation`) select and are *checked against* the pose — a mislabeled
+  mode fails — and mode-specific clearance bands (cylinder ends, box edges) are
+  enforced (#94). All inputs are validated up front: a malformed model raises
+  `ValueError`, a malformed pose returns a structured clause-1 failure, and a
+  reflection (`det(R) = -1`) or non-finite clearance is rejected (#95). Returns a
+  structured `GraspWitness` naming the violated clause and its geometry. Its unit
+  tests use hand-derived poses only. NumPy-only, no shipped-package change; it
+  backs the generator repairs in #68–#73.
 - **Executable geometric grasp contract** (#66) in `docs/ARCHITECTURE.md`: four
   assurance layers (representation / soundness / coverage / embodied), eight
   soundness clauses, and the soundness-vs-coverage-vs-distribution distinctions,

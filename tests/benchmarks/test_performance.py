@@ -15,6 +15,7 @@ import unittest
 import numpy as np
 from numpy import pi
 
+from tests.tsr.hands._grasp_oracle import Cylinder, Sphere, Torus, certify, pose_from
 from tsr.tsr import TSR
 from tsr.tsr_chain import TSRChain
 
@@ -273,6 +274,51 @@ class ChainSolvePerformanceBenchmark(unittest.TestCase):
 
         # Sanity bounds only: witness validation is cheap; nothing is pathological.
         self.assertLess(validate_median, 5.0, "witness validation is too slow")
+
+
+class GraspOracleBenchmark(unittest.TestCase):
+    """Non-gating benchmark for the analytic grasp oracle (#93).
+
+    Reports per-certification median/p95 and a projected #73 template/Hypothesis
+    workload. No wall-clock assertions -- correctness lives in test_grasp_oracle.
+    """
+
+    def test_benchmark_certify(self):
+        cases = [
+            (
+                Sphere(0.03),
+                pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0]),
+                dict(preshape=0.066, max_aperture=0.14, mode="surface"),
+            ),
+            (
+                Cylinder(0.03, 0.12),
+                pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]),
+                dict(preshape=0.066, max_aperture=0.14, mode="side"),
+            ),
+            (
+                Torus(0.06, 0.02),
+                pose_from([0, 0, 0.05], [0, 0, -1], [0, 1, 0]),
+                dict(preshape=0.164, max_aperture=0.30, mode="span"),
+            ),
+        ]
+        for prim, pose, kw in cases:  # warm up
+            certify(prim, pose, finger_length=0.08, clearance=0.006, **kw)
+
+        times = []
+        for _ in range(2000):
+            prim, pose, kw = cases[len(times) % len(cases)]
+            s = time.perf_counter()
+            certify(prim, pose, finger_length=0.08, clearance=0.006, **kw)
+            times.append(time.perf_counter() - s)
+        ms = np.array(times) * 1e3
+        median, p95 = float(np.median(ms)), float(np.percentile(ms, 95))
+        print(f"grasp oracle certify: median {median:.4f} ms, p95 {p95:.4f} ms (n={len(ms)})")
+
+        # Projected #73 workload: ~4 primitives x ~9 modes x (extrema+mid+interior,
+        # say 5 evals) x ~40 Hypothesis examples ~= 7200 certifications.
+        projected = 4 * 9 * 5 * 40
+        print(f"projected #73 (~{projected} certifications): ~{projected * median / 1e3:.2f} s median-rate")
+        self.assertLess(median, 20.0, "oracle certification unexpectedly slow (guard only)")
 
 
 if __name__ == "__main__":
