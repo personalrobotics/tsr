@@ -515,10 +515,12 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         # Internal per-orientation helper: return [] silently on infeasibility for
         # THIS orientation; the public box_* method logs once at its boundary if every
-        # requested orientation is empty (#70). An empty slide band (this orientation's
-        # perpendicular dimension is too thin for the clearance) removes only this
-        # orientation, never the perpendicular one.
-        if slide_half <= 0.0:
+        # requested orientation is empty (#70). Only a NEGATIVE slide band (the
+        # perpendicular dimension is thinner than 2*clearance) removes this orientation;
+        # a zero-width band (dimension exactly 2*clearance) is one feasible centered
+        # pose with the requested clearance on both edges, kept as a fixed [0, 0]
+        # translational Bw interval per the exact-interval convention (#105, #110).
+        if slide_half < 0.0:
             return []
         preshape = preshape_user if preshape_user is not None else span_dim + clearance
         # Straddle feasibility uses the box's characteristic scale (matching the
@@ -657,7 +659,7 @@ class ParallelJawGripper(GripperBase):
         if not templates:
             # Whole family empty: the box is too thin to slide in either orientation, or
             # every orientation's span cannot straddle within the aperture.
-            reason = "cannot_straddle" if (hx > 0 or hy > 0) else "insufficient_clearance_band"
+            reason = "cannot_straddle" if (hx >= 0 or hy >= 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_top", reason, box_x=box_x, box_y=box_y, clearance=clearance, max_aperture=self.max_aperture
             )
@@ -740,7 +742,7 @@ class ParallelJawGripper(GripperBase):
             mode="bottom",
         )
         if not templates:
-            reason = "cannot_straddle" if (hx > 0 or hy > 0) else "insufficient_clearance_band"
+            reason = "cannot_straddle" if (hx >= 0 or hy >= 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_bottom",
                 reason,
@@ -836,7 +838,7 @@ class ParallelJawGripper(GripperBase):
                 finger_orientation="z",
             )
         if not templates:
-            reason = "cannot_straddle" if (hy > 0 or hz_half > 0) else "insufficient_clearance_band"
+            reason = "cannot_straddle" if (hy >= 0 or hz_half >= 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_face_x",
                 reason,
@@ -932,7 +934,7 @@ class ParallelJawGripper(GripperBase):
                 finger_orientation="z",
             )
         if not templates:
-            reason = "cannot_straddle" if (hx > 0 or hz_half > 0) else "insufficient_clearance_band"
+            reason = "cannot_straddle" if (hx >= 0 or hz_half >= 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_face_y",
                 reason,

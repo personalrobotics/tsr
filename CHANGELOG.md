@@ -15,9 +15,12 @@ parallel-jaw grasp templates (epic #65).
   The factories used to reject the **whole face** when either slide band was empty,
   so a thin dimension discarded a still-valid perpendicular orientation
   (`grasp_box_top(0.003, 0.06, 0.05)` returned `[]` although span-x straddles the
-  thin x and slides along y). Feasibility is now evaluated **per orientation** — an
-  empty slide band or an over-wide span removes only that orientation, and the
+  thin x and slides along y). Feasibility is now evaluated **per orientation** — a
+  negative slide band or an over-wide span removes only that orientation, and the
   public method emits one diagnostic only when the whole requested family is empty.
+  A slide dimension exactly `2·clearance` yields a *zero-width* band, kept as one
+  fixed centered pose (only a negative band is empty), per the exact-interval
+  convention (#105, #110).
   The insertion-depth band is now capped by the box's extent **along the approach
   axis** (`min(finger_length, extent) − clearance`), so the fingertip clears the far
   face by a clearance rather than penetrating a short box, and box straddle

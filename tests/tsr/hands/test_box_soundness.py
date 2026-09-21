@@ -102,7 +102,8 @@ class TestBoxSoundnessProperty(unittest.TestCase):
         for t in g.grasp_box(bx, by, bz, clearance=c):
             slide_axis = t.provenance.metadata["slide_axis"]
             slide_dim = {"x": bx, "y": by, "z": bz}[slide_axis]
-            self.assertGreater(slide_dim / 2.0 - c, 0.0, (t.provenance.mode, slide_axis))
+            # A zero-width band (dim == 2c) is feasible (#110); only a negative one is not.
+            self.assertGreaterEqual(slide_dim / 2.0 - c, 0.0, (t.provenance.mode, slide_axis))
 
 
 class TestBoxSymmetry(unittest.TestCase):
@@ -154,6 +155,42 @@ class TestBoxApertureClearanceBoundary(unittest.TestCase):
         above = g.grasp_box_top(2 * c + 1e-4, by, bz, clearance=c)
         self.assertNotIn("y", {t.provenance.finger_orientation for t in below})
         self.assertIn("y", {t.provenance.finger_orientation for t in above})
+
+
+class TestZeroWidthSlideBand(unittest.TestCase):
+    """An in-face dimension exactly 2*clearance yields one fixed centered pose (#110)."""
+
+    G = ParallelJawGripper(finger_length=0.055, max_aperture=0.30)
+    C = 0.01
+
+    @staticmethod
+    def _orientations(templates):
+        return {t.provenance.finger_orientation for t in templates}
+
+    def test_zero_width_boundary_matrix(self):
+        c = self.C
+        two_c = 2 * c  # exactly representable: box_dim/2 == c
+        big = 0.08  # a comfortably feasible perpendicular dimension
+        # (label, call(slide_dim) -> templates, dependent orientation, Box(slide_dim))
+        cases = [
+            ("top", lambda d: self.G.grasp_box_top(d, big, 0.05, clearance=c), "y", lambda d: Box(d, big, 0.05)),
+            ("bottom", lambda d: self.G.grasp_box_bottom(d, big, 0.05, clearance=c), "y", lambda d: Box(d, big, 0.05)),
+            ("face_x", lambda d: self.G.grasp_box_face_x(big, d, 0.05, clearance=c), "z", lambda d: Box(big, d, 0.05)),
+            ("face_y", lambda d: self.G.grasp_box_face_y(d, big, 0.05, clearance=c), "z", lambda d: Box(d, big, 0.05)),
+        ]
+        for label, call, dep, box_of in cases:
+            below = self._orientations(call(np.nextafter(two_c, -np.inf)))
+            at_templates = call(two_c)
+            above = self._orientations(call(np.nextafter(two_c, np.inf)))
+            self.assertNotIn(dep, below, (label, "below"))  # negative band -> removed
+            self.assertIn(dep, self._orientations(at_templates), (label, "at"))  # zero-width -> kept
+            self.assertIn(dep, above, (label, "above"))  # positive band -> kept
+            # The zero-width-band templates have a fixed slide coordinate and are sound.
+            kept = [t for t in at_templates if t.provenance.finger_orientation == dep]
+            for t in kept:
+                slide_row = "xyz".index(t.provenance.metadata["slide_axis"])
+                np.testing.assert_array_equal(t.Bw[slide_row], [0.0, 0.0])
+            _assert_all_sound(self, box_of(two_c), at_templates, self.G, c)
 
 
 if __name__ == "__main__":
