@@ -10,7 +10,7 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Added
-- **Independent analytic grasp oracle** (#67, #93–#95, test-side) in
+- **Independent analytic grasp oracle** (#67, #93–#99, test-side) in
   `tests/tsr/hands/_grasp_oracle.py`: certifies the geometric-soundness clauses of
   the #66 contract for box / cylinder / sphere / torus. Contact geometry is
   **exact per `(primitive, mode)`** — closed-form line/surface intersection derives
@@ -23,8 +23,16 @@ parallel-jaw grasp templates (epic #65).
   mode fails — and mode-specific clearance bands (cylinder ends, box edges) are
   enforced (#94). All inputs are validated up front: a malformed model raises
   `ValueError`, a malformed pose returns a structured clause-1 failure, and a
-  reflection (`det(R) = -1`) or non-finite clearance is rejected (#95). Returns a
-  structured `GraspWitness` naming the violated clause and its geometry. Its unit
+  reflection (`det(R) = -1`) or non-finite clearance is rejected (#95). Clearance
+  bands are enforced along the full insertion interval for cap/face grasps, not
+  just laterally (#96); aperture fit is **pose-relative** (both contacts must lie
+  between the open jaws about the palm, so an object translated outside the finite
+  opening no longer certifies on span alone, #97); declared `approach` labels use
+  the hand-occupied-side convention with a built-in vocabulary that raises on
+  unknown labels and fails clause 8 on a geometric mismatch (#98); and the
+  torus-side model handles the full approach-minor-angle range with tube-centre
+  ray verification, reporting the pose-derived approach minor angle (#99). Returns
+  a structured `GraspWitness` naming the violated clause and its geometry. Its unit
   tests use hand-derived poses only. NumPy-only, no shipped-package change; it
   backs the generator repairs in #68–#73.
 - **Executable geometric grasp contract** (#66) in `docs/ARCHITECTURE.md`: four

@@ -227,8 +227,10 @@ class TestWitnessGeometry(unittest.TestCase):
             )
             self.assertAlmostEqual(w.realized_depth, d, delta=1e-6, msg=f"d={d}")
 
-    def test_torus_side_minor_angle_is_pose_derived(self):
-        # Closing along +z at the tube contacts the tube top/bottom -> minor angle pi/2.
+    def test_torus_side_minor_angle_is_the_approach_angle(self):
+        # #99: minor_angle is the APPROACH minor angle (the approached tube surface),
+        # matching the generator convention -- not the closing-contact angle. A
+        # radial (equatorial) approach is alpha = 0.
         w = _certify(
             Torus(0.06, 0.02),
             pose_from([0.12, 0, 0], [-1, 0, 0], [0, 0, 1]),
@@ -237,7 +239,7 @@ class TestWitnessGeometry(unittest.TestCase):
             mode="side",
         )
         self.assertIsNotNone(w.minor_angle)
-        self.assertAlmostEqual(abs(w.minor_angle), math.pi / 2, delta=1e-6)
+        self.assertAlmostEqual(w.minor_angle, 0.0, delta=1e-6)
 
 
 class TestModeSemantics(unittest.TestCase):
@@ -404,6 +406,289 @@ class TestNegativeControls(unittest.TestCase):
             mode="side",
         )
         self.assertIn(6, _clauses(w))
+
+
+class TestInsertionClearance(unittest.TestCase):
+    """Clearance-aware insertion bands for caps and faces (#96)."""
+
+    def test_cylinder_cap_insertion_band(self):
+        cyl, c = Cylinder(0.03, 0.12), 0.006
+        atol = length_atol(cyl.scale)
+
+        def top(depth):  # insertion depth past the top face
+            return _certify(
+                cyl, pose_from([0, 0, 0.12 + L - depth], [0, 0, -1], [0, 1, 0]), preshape=0.066, clearance=c, mode="top"
+            )
+
+        self.assertFalse(top(1e-5).ok)  # 10 microns past the cap (#96 reproduction)
+        self.assertIn(4, _clauses(top(1e-5)))
+        self.assertFalse(top(np.nextafter(c, -np.inf) - atol).ok)  # just inside the near-cap band
+        self.assertTrue(top(c + atol).ok)  # just clear of the near cap
+        self.assertTrue(top(0.02).ok)  # comfortably inserted
+
+    def test_cylinder_far_cap_band(self):
+        # A short cylinder: inserting deep leaves < c to the far cap -> clause 4.
+        cyl, c = Cylinder(0.03, 0.05), 0.006
+        w = _certify(
+            cyl, pose_from([0, 0, 0.05 + L - 0.048], [0, 0, -1], [0, 1, 0]), preshape=0.066, clearance=c, mode="top"
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(4, _clauses(w))
+
+    def test_box_face_insertion_band(self):
+        box, c = Box(0.05, 0.06, 0.07), 0.006
+        w = _certify(
+            box, pose_from([0, 0, 0.07 + L - 1e-5], [0, 0, -1], [0, 1, 0]), preshape=0.066, clearance=c, mode="top"
+        )
+        self.assertFalse(w.ok)  # 10 microns past the top face (#96 reproduction)
+        self.assertIn(4, _clauses(w))
+
+
+class TestApertureIsPoseRelative(unittest.TestCase):
+    """Aperture fit is pose-relative: contacts must lie between the open jaws (#97)."""
+
+    def test_one_metre_offset_fails_clause_2(self):
+        # Span (60 mm) fits 66 mm, but the object is 1 m away along y_EE.
+        w = _certify(
+            Box(0.05, 0.06, 0.07),
+            pose_from([0.0, 1.0, 0.13], [0, 0, -1], [0, 1, 0]),
+            preshape=0.066,
+            clearance=0.006,
+            mode="top",
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(2, _clauses(w))
+
+    def test_centered_ok_and_offset_beyond_one_jaw_fails(self):
+        box = Box(0.05, 0.06, 0.07)  # span-y = 0.06; jaw at +/-0.033 for preshape 0.066
+        self.assertTrue(
+            _certify(
+                box, pose_from([0, 0, 0.13], [0, 0, -1], [0, 1, 0]), preshape=0.066, clearance=0.006, mode="top"
+            ).ok
+        )
+        # Shift the palm so the +y face falls outside the +jaw: y-contacts at +/-0.03,
+        # palm at y=+0.01 -> contacts at +0.02/-0.04 relative to palm; -0.04 < -0.033.
+        w = _certify(
+            box, pose_from([0, 0.01, 0.13], [0, 0, -1], [0, 1, 0]), preshape=0.066, clearance=0.006, mode="top"
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(2, _clauses(w))
+
+    def test_asymmetric_but_enclosed_is_accepted(self):
+        # Palm offset within the jaw margin keeps both contacts inside [-a/2, a/2].
+        box = Box(0.05, 0.06, 0.07)
+        w = _certify(
+            box, pose_from([0, 0.002, 0.13], [0, 0, -1], [0, 1, 0]), preshape=0.070, clearance=0.006, mode="top"
+        )
+        self.assertTrue(w.ok, w.failed)
+
+
+class TestSelectors(unittest.TestCase):
+    """Structural selectors use hand-occupied approach semantics (#98)."""
+
+    BOX = Box(0.05, 0.06, 0.07)
+
+    def _face(self, approach_label, palm, approach_vec):
+        return _certify(
+            self.BOX,
+            pose_from(palm, approach_vec, [0, 0, 1]),
+            preshape=0.076,
+            clearance=0.006,
+            mode="face",
+            approach=approach_label,
+        )
+
+    def test_box_faces_accept_hand_occupied_labels(self):
+        # Hand on +x side => z_EE = -x, declared approach "+x".
+        self.assertTrue(self._face("+x", [0.085, 0, 0.035], [-1, 0, 0]).ok)
+        self.assertTrue(self._face("-x", [-0.085, 0, 0.035], [1, 0, 0]).ok)
+        self.assertTrue(
+            _certify(
+                self.BOX,
+                pose_from([0, 0.085, 0.035], [0, -1, 0], [0, 0, 1]),
+                preshape=0.076,
+                clearance=0.006,
+                mode="face",
+                approach="+y",
+            ).ok
+        )
+        self.assertTrue(
+            _certify(
+                self.BOX,
+                pose_from([0, -0.085, 0.035], [0, 1, 0], [0, 0, 1]),
+                preshape=0.076,
+                clearance=0.006,
+                mode="face",
+                approach="-y",
+            ).ok
+        )
+
+    def test_box_top_bottom_hand_occupied_labels(self):
+        self.assertTrue(
+            _certify(
+                self.BOX,
+                pose_from([0, 0, 0.13], [0, 0, -1], [0, 1, 0]),
+                preshape=0.066,
+                clearance=0.006,
+                mode="top",
+                approach="+z",
+                finger_orientation="y",
+            ).ok
+        )
+        self.assertTrue(
+            _certify(
+                self.BOX,
+                pose_from([0, 0, -0.06], [0, 0, 1], [0, 1, 0]),
+                preshape=0.066,
+                clearance=0.006,
+                mode="bottom",
+                approach="-z",
+                finger_orientation="y",
+            ).ok
+        )
+
+    def test_reversed_sign_label_fails_clause_8(self):
+        w = self._face("-x", [0.085, 0, 0.035], [-1, 0, 0])  # actually a +x-side grasp
+        self.assertFalse(w.ok)
+        self.assertIn(8, _clauses(w))
+
+    def test_unknown_selector_raises(self):
+        with self.assertRaises(ValueError):
+            self._face("nonsense", [0.085, 0, 0.035], [-1, 0, 0])
+        with self.assertRaises(ValueError):
+            _certify(
+                Cylinder(0.03, 0.12),
+                pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]),
+                preshape=0.066,
+                clearance=0.006,
+                mode="side",
+                finger_orientation="z",
+            )
+
+    def test_family_labels_all_modes(self):
+        # Each family label is a real geometric predicate, not a dead parameter.
+        self.assertTrue(
+            _certify(
+                Sphere(0.03),
+                pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0]),
+                preshape=0.066,
+                clearance=0.006,
+                mode="surface",
+                approach="radial",
+                finger_orientation="diameter",
+            ).ok
+        )
+        self.assertTrue(
+            _certify(
+                Cylinder(0.03, 0.12),
+                pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]),
+                preshape=0.066,
+                clearance=0.006,
+                mode="side",
+                approach="radial",
+                finger_orientation="tangential",
+            ).ok
+        )
+        self.assertTrue(
+            _certify(
+                Torus(0.06, 0.02),
+                pose_from([0.12, 0, 0], [-1, 0, 0], [0, 0, 1]),
+                preshape=0.044,
+                clearance=0.006,
+                mode="side",
+                approach="tube",
+                finger_orientation="tangential",
+            ).ok
+        )
+
+    def test_omitting_selectors_is_geometry_only(self):
+        # No selectors -> geometry-only certification still succeeds.
+        self.assertTrue(
+            _certify(
+                self.BOX,
+                pose_from([0.085, 0, 0.035], [-1, 0, 0], [0, 0, 1]),
+                preshape=0.076,
+                clearance=0.006,
+                mode="face",
+            ).ok
+        )
+
+
+class TestBuiltinProvenanceIntegration(unittest.TestCase):
+    """Real factory provenance selectors agree with the oracle's mapping (#98)."""
+
+    def test_box_face_templates_accept_their_own_provenance(self):
+        from tsr.hands import ParallelJawGripper
+
+        g = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+        templates = g.grasp_box_face_x(0.05, 0.06, 0.07)
+        self.assertTrue(templates)
+        for t in templates:
+            prov = t.provenance
+            # Reconstruct the object-frame EE pose at the template's Bw midpoint.
+            tsr = t.instantiate(np.eye(4))
+            pose = tsr.to_transform(np.zeros(6))
+            w = certify(
+                Box(0.05, 0.06, 0.07),
+                pose,
+                finger_length=0.08,
+                max_aperture=0.30,
+                preshape=float(t.preshape[0]),
+                clearance=0.006,
+                mode=prov.mode,
+                approach=prov.approach,
+                finger_orientation=prov.finger_orientation,
+            )
+            # The selector mapping must agree (no clause-8 mismatch), even if other
+            # clauses are the province of the #68-#72 generator repairs.
+            self.assertNotIn(8, _clauses(w), (prov.approach, prov.finger_orientation, w.failed))
+
+
+class TestTorusSideMinorAngles(unittest.TestCase):
+    """Torus side across the full minor-angle range, with off-ray rejection (#99)."""
+
+    @staticmethod
+    def _side_pose(R, r, alpha, standoff, flip=False):
+        normal = np.array([np.cos(alpha), 0.0, np.sin(alpha)])  # outward at (phi=0, alpha)
+        approach = -normal
+        tube_center = np.array([R, 0.0, 0.0])
+        palm = tube_center - approach * (r + standoff)
+        tangent = np.array([-np.sin(alpha), 0.0, np.cos(alpha)])
+        close = -tangent if flip else tangent
+        return pose_from(palm, approach, close)
+
+    def test_certifies_across_minor_angles_both_flips(self):
+        R, r, c = 0.06, 0.02, 0.006
+        for alpha in (-np.pi / 2, -np.pi / 4, 0.0, np.pi / 4, np.pi / 2):
+            for flip in (False, True):
+                pose = self._side_pose(R, r, alpha, standoff=0.03, flip=flip)
+                w = _certify(Torus(R, r), pose, preshape=2 * r + c, clearance=c, mode="side")
+                self.assertTrue(w.ok, (alpha, flip, w.failed))
+                self.assertAlmostEqual(w.minor_angle, alpha, delta=1e-6)
+
+    def test_off_ray_contact_is_rejected(self):
+        # #99 reproduction: the palm ray x=0.12 along -y never passes through the
+        # inferred tube centre; the contact plane is behind the palm.
+        w = _certify(
+            Torus(0.06, 0.02),
+            pose_from([0.12, 0, 0], [0, -1, 0], [0, 0, 1]),
+            preshape=0.044,
+            clearance=0.006,
+            mode="side",
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(5, _clauses(w))
+
+    def test_contact_plane_is_on_the_forward_segment(self):
+        w = _certify(
+            Torus(0.06, 0.02),
+            self._side_pose(0.06, 0.02, np.pi / 4, 0.03),
+            preshape=0.046,
+            clearance=0.006,
+            mode="side",
+        )
+        self.assertGreater(w.contact_plane_distance, 0.0)
+        self.assertLessEqual(w.contact_plane_distance, L + 1e-9)
 
 
 if __name__ == "__main__":
