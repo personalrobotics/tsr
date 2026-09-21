@@ -637,9 +637,8 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         result = chain.solve(pose, max_starts=2, max_nfev=50)
         # max_starts is a TOTAL cap on every start (midpoint, corners, seeded).
         self.assertLessEqual(result.starts, 2)
-        # nfev may overrun the total by at most one finite-difference gradient
-        # batch (n_free evals) per the last start.
-        self.assertLessEqual(result.nfev, 50 + coordinates.size)
+        # max_nfev is a STRICT total cap on objective evaluations (#91).
+        self.assertLessEqual(result.nfev, 50)
         self.assertIn(result.status, ("satisfied", "not_found"))
 
     def test_solve_never_reports_infeasible(self):
@@ -828,6 +827,75 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
             # Falls back to the cold search: same deterministic outcome.
             self.assertEqual(result.status, cold.status)
             self.assertEqual(result.residual, cold.residual)
+
+    # --- #90: wrapping initial guesses canonicalized at the optimizer start ------
+
+    def test_wrapping_initial_guess_canonicalized_for_optimizer(self):
+        """A wrapping neighboring-state guess reaches the optimizer canonicalized (#90).
+
+        Exercises the actual optimizer start x0, not just to_transform: -3.0 in the
+        wrapping interval [3pi/4, -3pi/4] must be passed as its continuous-chart
+        equivalent 3.283..., not clipped to the lower boundary 2.356....
+        """
+        from unittest.mock import patch
+
+        bounds = np.zeros((6, 2))
+        bounds[5] = [3 * pi / 4, -3 * pi / 4]
+        chain = TSRChain(TSRs=[TSR(Bw=bounds), TSR()])
+
+        guess = np.zeros((2, 6))
+        guess[0, 5] = -3.0  # valid, expressed in [-pi, pi]
+        target_coordinates = guess.copy()
+        target_coordinates[0, 5] = -2.9  # nearby, so the guess does NOT already satisfy
+        target = chain.to_transform(target_coordinates)
+
+        captured = {}
+
+        def fake_minimize(func, x0, **kwargs):
+            captured["x0"] = np.array(x0, copy=True)
+            return np.array(x0, copy=True), func(x0), {"funcalls": 1}
+
+        with patch("scipy.optimize.fmin_l_bfgs_b", side_effect=fake_minimize):
+            chain.solve(target, initial_guess=guess, max_starts=1, max_nfev=10)
+
+        self.assertAlmostEqual(captured["x0"][0], -3.0 + 2 * pi, places=12)
+
+    # --- #91: strict aggregate max_nfev budget ----------------------------------
+
+    def test_max_nfev_is_strict_total_cap(self):
+        """result.nfev never exceeds max_nfev, for 1, 2, and 12 free coords (#91)."""
+        far = np.eye(4)
+        far[0, 3] = 10.0
+
+        one_free = np.zeros((6, 2))
+        one_free[0] = [0.0, 1.0]
+        linear = np.zeros((6, 2))
+        linear[0] = [0.0, 1.0]
+        full = np.tile(np.array([[-1.0, 1.0]]), (6, 1))
+
+        chains = {
+            1: TSRChain(TSRs=[TSR(Bw=one_free), TSR()]),
+            2: TSRChain(TSRs=[TSR(Bw=linear), TSR(Bw=linear)]),
+            12: TSRChain(TSRs=[TSR(Bw=full), TSR(Bw=full)]),
+        }
+        for n_free, chain in chains.items():
+            for max_nfev in (1, 2, 5, 37):
+                r = chain.solve(far, max_starts=11, max_nfev=max_nfev)
+                self.assertLessEqual(r.nfev, max_nfev, f"n_free={n_free}, max_nfev={max_nfev}: nfev={r.nfev}")
+
+    def test_nfev_reproductions_from_issue_91(self):
+        """The exact #91 reproductions no longer exceed max_nfev=1."""
+        far = np.eye(4)
+        far[0, 3] = 10.0
+
+        linear_bounds = np.zeros((6, 2))
+        linear_bounds[0] = [0.0, 1.0]
+        linear = TSRChain(TSRs=[TSR(Bw=linear_bounds), TSR(Bw=linear_bounds)])
+        self.assertLessEqual(linear.solve(far, max_starts=1, max_nfev=1).nfev, 1)
+
+        free_bounds = np.tile(np.array([[-1.0, 1.0]]), (6, 1))
+        free = TSRChain(TSRs=[TSR(Bw=free_bounds), TSR(Bw=free_bounds)])
+        self.assertLessEqual(free.solve(far, max_starts=1, max_nfev=1).nfev, 1)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,10 @@ def _require_int(value, name, *, minimum):
     return value
 
 
+class _BudgetExhausted(Exception):
+    """Raised by the counted objective when the aggregate nfev budget is hit (#91)."""
+
+
 @dataclass(frozen=True)
 class ChainSample:
     """A sampled chain pose together with the coordinates that constructed it.
@@ -47,9 +51,9 @@ class ChainSolveResult:
     local solves cannot prove global infeasibility for a rotation-rich chain.
     ``residual`` is the geodesic residual at ``coordinates`` (an upper bound on
     the true minimum). ``starts`` is the number of optimizer starts actually run
-    (0 on an exact/fast path) and ``nfev`` the total objective evaluations across
-    them — both bounded by the ``max_starts``/``max_nfev`` budget (see
-    :meth:`TSRChain.solve`).
+    (0 on an exact/fast path) and ``nfev`` the total smooth-residual objective
+    evaluations across them — ``starts <= max_starts`` and ``nfev <= max_nfev``
+    strictly (see :meth:`TSRChain.solve`).
     """
 
     status: str
@@ -173,44 +177,41 @@ class TSRChain:
         if len(xyzrpy_list) != len(self.TSRs):
             raise ValueError(f"xyzrpy_list length ({len(xyzrpy_list)}) must match number of TSRs ({len(self.TSRs)})")
 
-        # Canonicalise then clamp each coordinate to bounds. Rotations are
-        # periodic: a valid RPY coordinate expressed in [-pi, pi] (e.g. -3.0 for a
-        # wrapping interval [3pi/4, -3pi/4], whose _Bw_cont form is -3.0 + 2pi) must
-        # be wrapped into the component's continuous interval BEFORE clipping, or a
-        # direct clip snaps it to an unrelated boundary rotation and silently
-        # changes the pose -- breaking the witness contract (#87). Translations are
-        # not periodic and are only clamped (values slightly outside bounds are
-        # normal during the optimiser's line search).
-        xyzrpy_list_clamped = []
-        for idx in range(len(self.TSRs)):
-            xyzrpy = numpy.array(xyzrpy_list[idx], dtype=float)
-            Bw = self.TSRs[idx]._Bw_cont
-            canon = xyzrpy.copy()
-            canon[3:6] = wrap_to_interval(xyzrpy[3:6], lower=Bw[3:6, 0])
-            xyzrpy_clamped = numpy.clip(canon, Bw[:, 0], Bw[:, 1])
-            if not numpy.allclose(canon, xyzrpy_clamped):
-                logger.debug(
-                    "TSRChain.to_transform: xyzrpy[%d] clamped to Bw (delta=%s)",
-                    idx,
-                    canon - xyzrpy_clamped,
-                )
-            xyzrpy_list_clamped.append(xyzrpy_clamped)
+        # Map coordinates into each component's continuous _Bw_cont chart (wrap
+        # rotations, then clip) via the shared helper, so the forward path and the
+        # inverse optimiser-start construction canonicalise identically (#87, #90).
+        continuous = self._to_continuous([numpy.asarray(x, dtype=float) for x in xyzrpy_list])
 
-        # Compute the chained transform WITHOUT modifying original TSR objects
-        # Start with the first TSR's T0_w
+        # Compute the chained transform WITHOUT modifying original TSR objects,
+        # starting from the first TSR's T0_w.
         T0_w_current = self.TSRs[0].T0_w
-
-        for idx in range(len(self.TSRs)):
-            tsr = self.TSRs[idx]
-            xyzrpy = xyzrpy_list_clamped[idx]
-
-            # Convert xyzrpy to transform in w frame
-            Tw_sample = TSR.xyzrpy_to_trans(xyzrpy)
-
-            # Compute end-effector transform: T0_w_current * Tw_sample * Tw_e
+        for idx, tsr in enumerate(self.TSRs):
+            Tw_sample = TSR.xyzrpy_to_trans(continuous[idx])
             T0_w_current = reduce(numpy.dot, [T0_w_current, Tw_sample, tsr.Tw_e])
 
         return T0_w_current
+
+    def _to_continuous(self, coordinates):
+        """Map public ``(n, 6)`` coordinates into the components' continuous charts.
+
+        Rotations are periodic: each RPY coordinate is wrapped into its component's
+        ``_Bw_cont`` interval with :func:`wrap_to_interval` (so a valid coordinate
+        expressed in ``[-pi, pi]``, e.g. ``-3.0`` for a wrapping interval
+        ``[3pi/4, -3pi/4]``, becomes its in-chart equivalent rather than being
+        clipped to an unrelated boundary). Translations are not periodic and are
+        only clipped. All six are clipped to bounds *after* wrapping (values
+        slightly outside bounds are normal during the optimiser's line search).
+        Shared by :meth:`to_transform` and the inverse solver's start construction
+        so the forward and inverse paths cannot drift apart (#87, #90).
+        """
+        coordinates = numpy.asarray(coordinates, dtype=float)
+        out = numpy.empty((len(self.TSRs), 6))
+        for idx, tsr in enumerate(self.TSRs):
+            Bw = tsr._Bw_cont
+            row = coordinates[idx].copy()
+            row[3:6] = wrap_to_interval(row[3:6], lower=Bw[3:6, 0])
+            out[idx] = numpy.clip(row, Bw[:, 0], Bw[:, 1])
+        return out
 
     def sample_xyzrpy(self, xyzrpy_list=None, rng=None):
         """
@@ -309,15 +310,16 @@ class TSRChain:
           start (a refining initial guess, the midpoint, the two opposite corners,
           and seeded interior points). ``ChainSolveResult.starts`` reports how many
           actually ran. Default 11.
-        * ``max_nfev`` -- the total objective-evaluation budget shared across all
-          starts (each start receives an even slice of the remaining budget).
-          ``ChainSolveResult.nfev`` reports the total consumed. A single start may
-          overrun its slice by up to one finite-difference gradient batch, because
-          L-BFGS-B checks ``maxfun`` between iterations. Default 2200.
+        * ``max_nfev`` -- a **strict** total cap on smooth-residual objective
+          evaluations across all starts, enforced by our own global counter
+          (SciPy's ``maxfun`` is only a soft hint under numerical differentiation).
+          ``ChainSolveResult.nfev`` reports the total consumed and never exceeds
+          ``max_nfev``. Forward compositions in the tolerance/geodesic membership
+          checks are not objective evaluations and are not counted. Default 2200.
 
-        Worst case: at most ``max_starts`` starts and about ``max_nfev``
-        evaluations. ``max_starts == 0`` runs no optimiser and returns the
-        (un-optimised) midpoint candidate.
+        Worst case: at most ``max_starts`` starts and exactly ``max_nfev``
+        objective evaluations. ``max_starts == 0`` runs no optimiser and returns
+        the (un-optimised) midpoint candidate with ``nfev == 0``.
 
         ``max_starts`` must be a non-boolean integer >= 0; ``max_nfev`` a
         non-boolean integer >= 1; ``tolerance`` a finite positive number -- all
@@ -408,43 +410,62 @@ class TSRChain:
         bounds = list(zip(lo_f, hi_f))
 
         # Deterministic start schedule in priority order, truncated to max_starts
-        # total (#89): a supplied-but-invalid guess (clipped into bounds) refines
-        # first, then midpoint, the two opposite corners, then a fixed
-        # low-discrepancy interior set.
+        # total (#89): a supplied-but-invalid guess refines first (canonicalised
+        # into the continuous chart via the SAME helper as to_transform, so a valid
+        # wrapping coordinate is preserved, not clipped to a boundary, #90), then
+        # midpoint, the two opposite corners, then a fixed low-discrepancy set.
         schedule = []
         if guess is not None:
-            schedule.append(numpy.clip(guess.reshape(-1)[free], lo_f, hi_f))
+            schedule.append(self._to_continuous(guess).reshape(-1)[free])
         schedule += [x_full[free], lo_f, hi_f]
         gen = numpy.random.default_rng(0)
         while len(schedule) < max_starts:
             schedule.append(lo_f + span_f * gen.random(n_free))
         schedule = schedule[:max_starts]
 
-        # Best candidate defaults to the midpoint, so a zero-start budget still
-        # returns a well-defined (un-optimised) result (#89).
-        best_x = x_full[free]
-        best_res = residual_sq(best_x)
-        nfev = 0
+        # Strict GLOBAL objective-call budget (#91). SciPy's maxfun is only a soft
+        # hint under approx_grad (numerical differentiation can overshoot it), so we
+        # enforce max_nfev ourselves: `counted` increments a shared counter on every
+        # objective call, records the best point actually evaluated, and raises
+        # _BudgetExhausted before the (max_nfev+1)-th call. `nfev` therefore counts
+        # exactly the smooth-residual evaluations; the forward compositions in the
+        # tolerance/geodesic checks are membership tests, not objective calls, and
+        # are not counted. The midpoint default makes max_starts=0 well-defined.
+        state = {"nfev": 0, "best_x": x_full[free], "best_res": float("inf")}
+
+        def counted(x_free):
+            if state["nfev"] >= max_nfev:
+                raise _BudgetExhausted
+            state["nfev"] += 1
+            r = residual_sq(x_free)
+            if r < state["best_res"]:
+                state["best_res"], state["best_x"] = r, numpy.array(x_free, dtype=float)
+            return r
+
         starts = 0
         for x0 in schedule:
-            if nfev >= max_nfev:
+            if state["nfev"] >= max_nfev:
                 break
-            # Share the remaining evaluation budget evenly across remaining starts,
-            # so max_nfev bounds aggregate work.
-            slice_budget = max(1, (max_nfev - nfev) // (max_starts - starts))
-            xopt, res, info = scipy.optimize.fmin_l_bfgs_b(
-                residual_sq, x0, fprime=None, args=(), bounds=bounds, approx_grad=True, maxfun=slice_budget
-            )
-            nfev += int(info.get("funcalls", 0))
             starts += 1
-            if res < best_res:
-                best_res, best_x = res, xopt
-            if geodesic_at(best_x) < tolerance:
+            try:
+                scipy.optimize.fmin_l_bfgs_b(
+                    counted,
+                    x0,
+                    fprime=None,
+                    args=(),
+                    bounds=bounds,
+                    approx_grad=True,
+                    maxfun=max(1, max_nfev - state["nfev"]),  # secondary per-start hint only
+                )
+            except _BudgetExhausted:
+                pass
+            if geodesic_at(state["best_x"]) < tolerance:
                 break
 
+        best_x = state["best_x"]
         geo = geodesic_at(best_x)
         status = "satisfied" if geo < tolerance else "not_found"
-        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), nfev, starts)
+        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), state["nfev"], starts)
 
     def distance(self, trans):
         """

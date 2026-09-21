@@ -45,17 +45,22 @@ parallel-jaw grasp templates (epic #65).
     warm-starts from `initial_guess`, exits on the first tolerance-satisfying
     witness, and returns `status` (`"satisfied"`/`"not_found"`, never
     `"infeasible"`), `coordinates`, `residual`, `nfev`, and `starts`. `max_starts`
-    is a **total** cap on optimizer starts and `max_nfev` a **total**
-    evaluation budget shared across them (#89); the valid-witness fast path takes
-    one forward composition and does not import SciPy (#88); numerical controls are
+    is a **strict total** cap on optimizer starts and `max_nfev` a **strict total**
+    cap on objective evaluations, enforced by an internal global counter rather
+    than SciPy's soft `maxfun` (#89, #91); the valid-witness fast path takes one
+    forward composition and does not import SciPy (#88); numerical controls are
     validated before SciPy is imported.
   - `ChainSample` and `ChainSolveResult` are exported from `tsr`.
 - **`TSRChain.to_transform` canonicalizes wrapping rotational coordinates** before
   clamping (#87): a valid RPY coordinate expressed in `[-pi, pi]` for a wrapping
   interval (e.g. `-3.0` for `[3π/4, -3π/4]`) is wrapped into the component's
   continuous interval instead of being clipped to an unrelated boundary rotation,
-  which had silently changed the pose and broken the witness contract.
-  `validate_witness` on an empty chain now returns `False` instead of raising.
+  which had silently changed the pose and broken the witness contract. A single
+  shared coordinate→continuous-chart helper is used by both `to_transform` and the
+  inverse solver's start construction, so a wrapping neighboring-state
+  `initial_guess` is canonicalized, not clipped, before it warm-starts the
+  optimizer (#90). `validate_witness` on an empty chain now returns `False` instead
+  of raising.
 
 ### Changed
 - **`TSRChain.contains`, `distance`, and `closest_transform` are documented as
