@@ -10,7 +10,7 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Added
-- **Independent analytic grasp oracle** (#67, #93–#99, test-side) in
+- **Independent analytic grasp oracle** (#67, #93–#102, test-side) in
   `tests/tsr/hands/_grasp_oracle.py`: certifies the geometric-soundness clauses of
   the #66 contract for box / cylinder / sphere / torus. Contact geometry is
   **exact per `(primitive, mode)`** — closed-form line/surface intersection derives
@@ -31,8 +31,15 @@ parallel-jaw grasp templates (epic #65).
   the hand-occupied-side convention with a built-in vocabulary that raises on
   unknown labels and fails clause 8 on a geometric mismatch (#98); and the
   torus-side model handles the full approach-minor-angle range with tube-centre
-  ray verification, reporting the pose-derived approach minor angle (#99). Returns
-  a structured `GraspWitness` naming the violated clause and its geometry. Its unit
+  ray verification, reporting the pose-derived approach minor angle (#99).
+  Axis-aligned modes use a true angular tolerance and every accepted contact must
+  lie in the concrete posed finger sweep `p + t·z_EE + s·y_EE` (#100); every
+  successful witness has finite geometry and a contact plane strictly on the
+  forward finger segment `0 < t ≤ L`, with `radial`/`tube`/occupied-side predicates
+  checked against a shared pose-derived local frame (#101); and a deterministic
+  acceptance matrix covers each mode's boundaries, axis permutations, azimuths,
+  scale regimes, and real-factory provenance across all families (#102). Returns a
+  structured `GraspWitness` naming the violated clause and its geometry. Its unit
   tests use hand-derived poses only. NumPy-only, no shipped-package change; it
   backs the generator repairs in #68–#73.
 - **Executable geometric grasp contract** (#66) in `docs/ARCHITECTURE.md`: four

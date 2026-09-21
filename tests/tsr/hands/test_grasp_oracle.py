@@ -691,5 +691,350 @@ class TestTorusSideMinorAngles(unittest.TestCase):
         self.assertLessEqual(w.contact_plane_distance, L + 1e-9)
 
 
+def _rotz(theta):
+    """4x4 rotation about the object z-axis (a symmetry of sphere/cylinder/torus)."""
+    c, s = np.cos(theta), np.sin(theta)
+    T = np.eye(4)
+    T[:2, :2] = [[c, -s], [s, c]]
+    return T
+
+
+class TestAxisTiltAndForwardReach(unittest.TestCase):
+    """Axis-aligned modes reject tilt; witnesses require forward, finite planes (#100, #101)."""
+
+    def test_cylinder_cap_tilt_rejected(self):
+        theta = 1e-3
+        a = [np.sin(theta), 0.0, -np.cos(theta)]
+        w = _certify(
+            Cylinder(0.03, 0.12),
+            pose_from([0, 0, 0.18], a, [0, 1, 0]),
+            max_aperture=0.30,
+            preshape=0.066,
+            clearance=0.006,
+            mode="top",
+        )
+        self.assertFalse(w.ok)  # #100 reproduction
+
+    def test_box_tilt_and_slide_rejected(self):
+        theta = 1e-3
+        a = [np.sin(theta), 0.0, -np.cos(theta)]
+        w = _certify(
+            Box(0.05, 0.06, 0.07),
+            pose_from([0.019, 0, 0.13], a, [0, 1, 0]),
+            max_aperture=0.30,
+            preshape=0.066,
+            clearance=0.006,
+            mode="top",
+        )
+        self.assertFalse(w.ok)  # #100 reproduction (5.92 mm true slide clearance)
+
+    def test_exact_axis_alignment_still_certifies(self):
+        # The angular boundary: the exact canonical pose is accepted.
+        self.assertTrue(
+            _certify(
+                Cylinder(0.03, 0.12),
+                pose_from([0, 0, 0.18], [0, 0, -1], [0, 1, 0]),
+                preshape=0.066,
+                clearance=0.006,
+                mode="top",
+            ).ok
+        )
+
+    def test_cylinder_side_missing_ray_rejected(self):
+        # #101 reproduction: approach ray y=0.06 misses the r=0.03 cylinder.
+        w = _certify(
+            Cylinder(0.03, 0.12),
+            pose_from([0, 0.06, 0.06], [1, 0, 0], [0, 1, 0]),
+            max_aperture=0.30,
+            preshape=0.20,
+            clearance=0.006,
+            mode="side",
+            approach="radial",
+            finger_orientation="tangential",
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(5, _clauses(w))
+
+    def test_torus_span_equatorial_palm_rejected(self):
+        # #101 reproduction: palm in the equatorial plane, not on the +z side.
+        w = _certify(
+            Torus(0.06, 0.02),
+            pose_from([0, 0.10, 0], [0, 0, -1], [0, 1, 0]),
+            max_aperture=0.50,
+            preshape=0.40,
+            clearance=0.006,
+            mode="span",
+            approach="+z",
+            finger_orientation="diameter",
+        )
+        self.assertFalse(w.ok)
+
+    def test_successful_witnesses_have_finite_forward_planes(self):
+        cases = [
+            (Sphere(0.03), pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0]), "surface", 0.066, A),
+            (Cylinder(0.03, 0.12), pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]), "side", 0.066, A),
+            (Cylinder(0.03, 0.12), pose_from([0, 0, 0.18], [0, 0, -1], [0, 1, 0]), "top", 0.066, A),
+            (Box(0.05, 0.06, 0.07), pose_from([0, 0, 0.13], [0, 0, -1], [0, 1, 0]), "top", 0.066, A),
+            (Torus(0.06, 0.02), pose_from([0, 0, 0.05], [0, 0, -1], [0, 1, 0]), "span", 0.164, 0.30),
+            (Torus(0.06, 0.02), pose_from([0.12, 0, 0], [-1, 0, 0], [0, 0, 1]), "side", 0.044, A),
+        ]
+        for prim, pose, mode, preshape, ap in cases:
+            w = _certify(prim, pose, max_aperture=ap, preshape=preshape, clearance=0.006, mode=mode)
+            self.assertTrue(w.ok, (mode, w.failed))
+            self.assertTrue(np.isfinite(w.realized_depth))
+            self.assertTrue(0.0 < w.contact_plane_distance <= L + 1e-9)
+
+    def test_azimuthal_equivariance(self):
+        # Rotating the whole config about the object z-axis is a symmetry.
+        base = {
+            "cyl_side": (Cylinder(0.03, 0.12), pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]), "side", 0.066, A),
+            "torus_span": (Torus(0.06, 0.02), pose_from([0, 0, 0.05], [0, 0, -1], [0, 1, 0]), "span", 0.164, 0.30),
+            "sphere": (Sphere(0.03), pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0]), "surface", 0.066, A),
+        }
+        for prim, pose, mode, preshape, ap in base.values():
+            for theta in (0.3, 1.1, -2.0):
+                w = _certify(prim, _rotz(theta) @ pose, max_aperture=ap, preshape=preshape, clearance=0.006, mode=mode)
+                self.assertTrue(w.ok, (mode, theta, w.failed))
+
+
+class TestInsertionClearanceMatrix(unittest.TestCase):
+    """Insertion/clearance bands across caps, faces, boundaries, and scale (#96, #102)."""
+
+    def test_cylinder_bottom_near_and_far_caps(self):
+        cyl, c = Cylinder(0.03, 0.12), 0.006
+        atol = length_atol(cyl.scale)
+
+        def bottom(depth):  # insertion past the bottom face (z=0), palm below
+            return _certify(
+                cyl, pose_from([0, 0, -(L - depth)], [0, 0, 1], [0, 1, 0]), preshape=0.066, clearance=c, mode="bottom"
+            )
+
+        self.assertFalse(bottom(np.nextafter(c, -np.inf) - atol).ok)
+        self.assertTrue(bottom(c + atol).ok)
+        self.assertTrue(bottom(0.02).ok)
+
+    def test_every_box_face_slide_boundary(self):
+        box, c = Box(0.05, 0.06, 0.07), 0.006
+        atol = length_atol(box.scale)
+        # (mode, palm, approach, close, slide_axis, slide_half, preshape)
+        faces = [
+            ("top", [0, 0, 0.13], [0, 0, -1], [0, 1, 0], 0, 0.025, 0.066),  # slide x, span y
+            ("bottom", [0, 0, -0.06], [0, 0, 1], [0, 1, 0], 0, 0.025, 0.066),
+            ("face", [0.085, 0, 0.035], [-1, 0, 0], [0, 0, 1], 1, 0.03, 0.076),  # +x face, span z, slide y
+            ("face", [-0.085, 0, 0.035], [1, 0, 0], [0, 0, 1], 1, 0.03, 0.076),  # -x face
+            ("face", [0, 0.085, 0.035], [0, -1, 0], [0, 0, 1], 0, 0.025, 0.076),  # +y face, slide x
+            ("face", [0, -0.085, 0.035], [0, 1, 0], [0, 0, 1], 0, 0.025, 0.076),  # -y face
+        ]
+        for mode, palm, ap, cl, slide_ax, half, preshape in faces:
+            for shift, expect_ok in ((half - c - atol, True), (half - c + 2 * atol, False)):
+                pp = list(palm)
+                pp[slide_ax] = shift
+                w = _certify(box, pose_from(pp, ap, cl), preshape=preshape, clearance=c, mode=mode)
+                self.assertEqual(w.ok, expect_ok, (mode, palm, shift, w.failed))
+
+    def test_scale_regime(self):
+        for k in (0.1, 10.0):
+            w = _certify(
+                Cylinder(0.03 * k, 0.12 * k),
+                pose_from([0, 0, 0.18 * k], [0, 0, -1], [0, 1, 0]),
+                finger_length=L * k,
+                max_aperture=A * k,
+                preshape=0.066 * k,
+                clearance=0.006 * k,
+                mode="top",
+            )
+            self.assertTrue(w.ok, (k, w.failed))
+
+
+class TestApertureMatrix(unittest.TestCase):
+    """Pose-relative aperture across primitives, both jaw sides, boundaries (#97, #102)."""
+
+    def test_both_jaw_sides_across_primitives(self):
+        # Shifting the palm along +/- y_EE pushes one contact past the corresponding jaw.
+        specs = [
+            (Sphere(0.03), [0.06, 0, 0], [-1, 0, 0], [0, 1, 0], 0.066, A),
+            (Cylinder(0.03, 0.12), [0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0], 0.066, A),
+            (Box(0.05, 0.06, 0.07), [0, 0, 0.13], [0, 0, -1], [0, 1, 0], 0.066, A),
+        ]
+        for prim, palm, ap, cl, preshape, aperture in specs:
+            self.assertTrue(
+                _certify(
+                    prim,
+                    pose_from(palm, ap, cl),
+                    max_aperture=aperture,
+                    preshape=preshape,
+                    clearance=0.006,
+                    mode=_mode_for(prim),
+                ).ok
+            )
+            for sign in (+1, -1):
+                shifted = list(palm)
+                # Move palm along the closing axis so one contact exits that jaw.
+                shifted[1] += sign * 0.02
+                w = _certify(
+                    prim,
+                    pose_from(shifted, ap, cl),
+                    max_aperture=aperture,
+                    preshape=preshape,
+                    clearance=0.006,
+                    mode=_mode_for(prim),
+                )
+                self.assertFalse(w.ok, (type(prim).__name__, sign))
+                self.assertIn(2, _clauses(w))
+
+    def test_aperture_boundary_nextafter(self):
+        r, c = 0.03, 0.006
+        pose = pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0])
+        atol = length_atol(r)
+        # span = 2r = 0.06; strict fit needs preshape > 0.06 + 2*atol.
+        self.assertTrue(_certify(Sphere(r), pose, preshape=2 * r + 4 * atol, clearance=c, mode="surface").ok)
+        self.assertFalse(
+            _certify(Sphere(r), pose, preshape=np.nextafter(2 * r, -np.inf), clearance=c, mode="surface").ok
+        )
+
+
+def _mode_for(prim):
+    return {"Sphere": "surface", "Cylinder": "side", "Box": "top", "Torus": "span"}[type(prim).__name__]
+
+
+class TestSelectorMatrix(unittest.TestCase):
+    """Every built-in (primitive, mode) accepts its labels and rejects wrong ones (#98, #102)."""
+
+    CASES = [
+        (Sphere(0.03), pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0]), "surface", "radial", "diameter", 0.066, A),
+        (
+            Cylinder(0.03, 0.12),
+            pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]),
+            "side",
+            "radial",
+            "tangential",
+            0.066,
+            A,
+        ),
+        (Cylinder(0.03, 0.12), pose_from([0, 0, 0.18], [0, 0, -1], [0, 1, 0]), "top", "+z", "diameter", 0.066, A),
+        (Cylinder(0.03, 0.12), pose_from([0, 0, -0.06], [0, 0, 1], [0, 1, 0]), "bottom", "-z", "diameter", 0.066, A),
+        (Box(0.05, 0.06, 0.07), pose_from([0, 0, 0.13], [0, 0, -1], [0, 1, 0]), "top", "+z", "y", 0.066, A),
+        (Box(0.05, 0.06, 0.07), pose_from([0, 0, -0.06], [0, 0, 1], [1, 0, 0]), "bottom", "-z", "x", 0.056, A),
+        (Box(0.05, 0.06, 0.07), pose_from([0.085, 0, 0.035], [-1, 0, 0], [0, 0, 1]), "face", "+x", "z", 0.076, A),
+        (Torus(0.06, 0.02), pose_from([0, 0, 0.05], [0, 0, -1], [0, 1, 0]), "span", "+z", "diameter", 0.164, 0.30),
+        (Torus(0.06, 0.02), pose_from([0.12, 0, 0], [-1, 0, 0], [0, 0, 1]), "side", "tube", "tangential", 0.044, A),
+    ]
+
+    def test_allowed_labels_accepted(self):
+        for prim, pose, mode, approach, fo, preshape, ap in self.CASES:
+            w = _certify(
+                prim,
+                pose,
+                max_aperture=ap,
+                preshape=preshape,
+                clearance=0.006,
+                mode=mode,
+                approach=approach,
+                finger_orientation=fo,
+            )
+            self.assertTrue(w.ok, (type(prim).__name__, mode, w.failed))
+
+    def test_unknown_label_raises_valueerror(self):
+        for prim, pose, mode, _a, _fo, preshape, ap in self.CASES:
+            with self.assertRaises(ValueError):
+                certify(
+                    prim,
+                    pose,
+                    finger_length=L,
+                    max_aperture=ap,
+                    preshape=preshape,
+                    clearance=0.006,
+                    mode=mode,
+                    approach="bogus",
+                )
+
+    def test_non_string_selector_raises_valueerror(self):
+        prim, pose, mode, _a, _fo, preshape, ap = self.CASES[0]
+        for bad in (5, ["radial"], object()):
+            with self.assertRaises(ValueError):
+                certify(
+                    prim,
+                    pose,
+                    finger_length=L,
+                    max_aperture=ap,
+                    preshape=preshape,
+                    clearance=0.006,
+                    mode=mode,
+                    approach=bad,
+                )
+
+    def test_every_factory_family_provenance_agrees(self):
+        from tsr.hands import ParallelJawGripper
+
+        g = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+        families = {
+            "cylinder": (Cylinder(0.03, 0.12), g.grasp_cylinder(0.03, 0.12)),
+            "box": (Box(0.05, 0.06, 0.07), g.grasp_box(0.05, 0.06, 0.07)),
+            "sphere": (Sphere(0.03), g.grasp_sphere(0.03)),
+            "torus": (Torus(0.06, 0.02), g.grasp_torus(0.06, 0.02)),
+        }
+        for name, (prim, templates) in families.items():
+            self.assertTrue(templates, name)
+            for t in templates:
+                prov = t.provenance
+                pose = t.instantiate(np.eye(4)).to_transform(np.zeros(6))
+                w = certify(
+                    prim,
+                    pose,
+                    finger_length=0.08,
+                    max_aperture=0.30,
+                    preshape=float(t.preshape[0]),
+                    clearance=0.006,
+                    mode=prov.mode,
+                    approach=prov.approach,
+                    finger_orientation=prov.finger_orientation,
+                )
+                self.assertNotIn(8, _clauses(w), (name, prov.mode, prov.approach, prov.finger_orientation, w.failed))
+
+
+class TestTorusSideMatrix(unittest.TestCase):
+    """Torus side across azimuths x minor angles x flips, with reach checks (#99, #102)."""
+
+    @staticmethod
+    def _pose(R, r, phi, alpha, standoff, flip=False):
+        radial = np.array([np.cos(phi), np.sin(phi), 0.0])
+        normal = np.cos(alpha) * radial + np.sin(alpha) * np.array([0, 0, 1.0])
+        approach = -normal
+        tube_center = R * radial
+        palm = tube_center - approach * (r + standoff)
+        tangent = -np.sin(alpha) * radial + np.cos(alpha) * np.array([0, 0, 1.0])
+        close = -tangent if flip else tangent
+        return pose_from(palm, approach, close)
+
+    def test_azimuth_minor_flip_grid(self):
+        R, r, c = 0.06, 0.02, 0.006
+        for phi in (0.0, 0.7, 2.5, -1.3):
+            for alpha in (-np.pi / 2, -np.pi / 4, 0.0, np.pi / 4, np.pi / 2):
+                for flip in (False, True):
+                    w = _certify(
+                        Torus(R, r),
+                        self._pose(R, r, phi, alpha, 0.03, flip),
+                        preshape=2 * r + c,
+                        clearance=c,
+                        mode="side",
+                    )
+                    self.assertTrue(w.ok, (phi, alpha, flip, w.failed))
+                    self.assertAlmostEqual(w.minor_angle, alpha, delta=1e-6)
+
+    def test_scale_regimes(self):
+        for k in (0.1, 10.0):
+            R, r = 0.06 * k, 0.02 * k
+            w = _certify(
+                Torus(R, r),
+                self._pose(R, r, 0.4, np.pi / 4, 0.03 * k),
+                finger_length=L * k,
+                max_aperture=A * k,
+                preshape=(2 * r + 0.006 * k),
+                clearance=0.006 * k,
+                mode="side",
+            )
+            self.assertTrue(w.ok, (k, w.failed))
+
+
 if __name__ == "__main__":
     unittest.main()

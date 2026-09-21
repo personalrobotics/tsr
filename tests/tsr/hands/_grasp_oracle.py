@@ -219,8 +219,13 @@ def _validate_model(prim, finger_length, max_aperture, preshape, clearance, mode
     if mode not in SUPPORTED_MODES[name]:
         raise ValueError(f"mode {mode!r} is not supported for a {name} (expected one of {SUPPORTED_MODES[name]})")
 
-    # Selector vocabulary: an unrecognized label for a built-in (primitive, mode) is
-    # a malformed oracle model and raises, like an unsupported mode (#95, #98).
+    # Selector vocabulary: a non-string or unrecognized label for a built-in
+    # (primitive, mode) is a malformed oracle model and raises, like an unsupported
+    # mode (#95, #98). The type check keeps unhashable inputs from leaking a
+    # TypeError out of the set membership test below (#102).
+    for label, value in (("approach", approach), ("finger_orientation", finger_orientation)):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{label} must be a string, got {type(value).__name__}")
     allowed = _BUILTIN_SELECTORS[(name, mode)]
     if approach is not None and approach not in allowed["approach"]:
         raise ValueError(
@@ -288,6 +293,17 @@ def _axis_component(vec: np.ndarray, axis: np.ndarray) -> float:
     return float(vec @ axis)
 
 
+def _aligned(vec: np.ndarray, axis: np.ndarray) -> bool:
+    """True iff unit ``vec`` is within ANGLE_ATOL of unit ``axis`` (a true angular
+    tolerance, not ``np.isclose``'s default relative tolerance, #100)."""
+    return float(vec @ axis) >= np.cos(ANGLE_ATOL)
+
+
+def _perpendicular(vec: np.ndarray, axis: np.ndarray) -> bool:
+    """True iff unit ``vec`` is within ANGLE_ATOL of perpendicular to unit ``axis``."""
+    return abs(float(vec @ axis)) <= np.sin(ANGLE_ATOL)
+
+
 # --------------------------------------------------------------------------- #
 # Per-mode analytic handlers. Each derives contacts/normals/depth/boundary from
 # the concrete pose and returns a _Contacts (with any mode-consistency, reach, or
@@ -326,9 +342,9 @@ def _handle_sphere_surface(prim: Sphere, p, a, y, x, L, c, atol) -> _Contacts:
 def _handle_cylinder_side(prim: Cylinder, p, a, y, x, L, c, atol) -> _Contacts:
     r, h = prim.radius, prim.height
     failed: List[Tuple[int, str]] = []
-    if abs(_axis_component(a, _EZ)) > 1e-6:
+    if not _perpendicular(a, _EZ):
         failed.append((8, "cylinder side approach is not radial (perpendicular to the axis)"))
-    if abs(_axis_component(y, _EZ)) > 1e-6:
+    if not _perpendicular(y, _EZ):
         failed.append((8, "cylinder side closing axis is not perpendicular to the cylinder axis"))
     # Closest approach-ray point to the cylinder (z) axis.
     a_xy = a[:2]
@@ -336,6 +352,10 @@ def _handle_cylinder_side(prim: Cylinder, p, a, y, x, L, c, atol) -> _Contacts:
     if denom < 1e-12:
         failed.append((8, "cylinder side approach is parallel to the axis"))
         return _Contacts(p, p, p, y, -y, np.nan, np.nan, np.inf, None, failed)
+    # The approach must point radially INWARD (toward the axis), not merely be
+    # horizontal, and its ray must actually reach the tube (#101).
+    if float((-p[:2]) @ a_xy) <= 0.0:
+        failed.append((8, "cylinder side approach does not point toward the axis"))
     t_base = float(-(p[:2] @ a_xy) / denom)
     if t_base > L + atol:
         failed.append((5, "cylinder axis crossing is beyond finger reach"))
@@ -364,9 +384,9 @@ def _handle_cylinder_cap(prim: Cylinder, p, a, y, x, L, c, atol, *, top: bool) -
     r, h = prim.radius, prim.height
     failed: List[Tuple[int, str]] = []
     want = -1.0 if top else 1.0  # top approaches -z, bottom approaches +z
-    if not np.isclose(_axis_component(a, _EZ), want, atol=1e-6):
+    if not _aligned(a, want * _EZ):
         failed.append((8, f"cylinder {'top' if top else 'bottom'} approach is not along {'-z' if top else '+z'}"))
-    if abs(_axis_component(y, _EZ)) > 1e-6:
+    if not _perpendicular(y, _EZ):
         failed.append((8, "cylinder cap closing axis is not perpendicular to the cylinder axis"))
     face_z = h if top else 0.0
     # Insertion below the approached face; the closing plane sits at the fingertip.
@@ -408,7 +428,7 @@ def _match_axis(vec: np.ndarray) -> Optional[Tuple[int, float]]:
     """If ``vec`` is (near) ``±`` an object axis, return ``(index, sign)``, else ``None``."""
     for i, axis in enumerate((_EX, _EY, _EZ)):
         d = float(vec @ axis)
-        if abs(abs(d) - 1.0) <= 1e-6:
+        if abs(d) >= np.cos(ANGLE_ATOL):  # true angular tolerance, not sqrt(2e-6) (#100)
             return i, float(np.sign(d))
     return None
 
@@ -489,19 +509,22 @@ def _handle_box(prim: Box, p, a, y, x, L, c, atol, *, mode: str) -> _Contacts:
 def _handle_torus_span(prim: Torus, p, a, y, x, L, c, atol) -> _Contacts:
     R, r = prim.major, prim.minor
     failed: List[Tuple[int, str]] = []
-    if abs(abs(_axis_component(a, _EZ)) - 1.0) > 1e-6:
+    if not (_aligned(a, _EZ) or _aligned(a, -_EZ)):
         failed.append((8, "torus span approach is not along ±z"))
-    if abs(_axis_component(y, _EZ)) > 1e-6:
+    if not _perpendicular(y, _EZ):
         failed.append((8, "torus span closing axis is not horizontal"))
-    # Reach the equator plane (z = 0), where the outer diameter is widest.
-    if abs(a[2]) < 1e-12:
-        failed.append((8, "torus span approach has no axial component"))
+    # The hand must occupy the side its approach descends from: approaching -z means
+    # the palm is above the equator, and vice versa (#101).
+    a_sign = float(np.sign(_axis_component(a, _EZ)))
+    if a_sign * p[2] >= 0.0:
+        failed.append((8, "torus span palm is not on the side its approach descends from"))
+    # Reach the equator plane (z = 0), where the outer diameter is widest; the plane
+    # must be strictly forward of the palm and within reach (no clamping, #101).
+    t_equator = float((0.0 - p[2]) / a[2]) if abs(a[2]) > 1e-12 else -1.0
+    if not (atol < t_equator <= L + atol):
+        failed.append((5, f"torus equator plane depth {t_equator:.6g} not on the forward finger segment (0, {L:.6g}]"))
         return _Contacts(p, p, p, y, -y, np.nan, np.nan, np.inf, None, failed)
-    t_equator = float((0.0 - p[2]) / a[2])
-    if t_equator > L + atol:
-        failed.append((5, "fingertips do not reach the torus equator plane"))
-    t_base = min(max(t_equator, 0.0), L)
-    base = p + t_base * a
+    base = p + t_equator * a
     roots = _line_quadric_roots(base[:2], y[:2], R + r)  # outer equator radius
     if roots is None:
         failed.append((5, "closing line misses the torus outer equator"))
@@ -682,6 +705,24 @@ def certify(
     contact_distance = float((cg.base - p) @ a) if np.all(np.isfinite(cg.base)) else np.nan
 
     if np.isfinite(span):
+        # Shared accepted-witness invariants (#100, #101): the contact plane must lie
+        # strictly on the forward finger segment, both contacts must lie in the
+        # concrete swept finger plane p + t·z_EE + s·y_EE (no off-plane x_EE
+        # component from a snapped axis), and required scalar geometry must be finite.
+        if not (atol < contact_distance <= finger_length + atol):
+            failed.append(
+                (
+                    5,
+                    f"contact plane distance {contact_distance:.6g} not in forward interval (0, {finger_length:.4g}]",
+                )
+            )
+        for label, contact in (("+", cg.contact_hi), ("-", cg.contact_lo)):
+            off = float((contact - p) @ x)
+            if abs(off) > 10.0 * atol:
+                failed.append((5, f"analytic {label} contact leaves the posed finger plane (x_EE offset {off:.2e})"))
+        if not np.isfinite(cg.realized_depth):
+            failed.append((5, "realized insertion depth is not finite"))
+
         # Independent SDF verification of the analytic contacts and normals (#93).
         verify_atol = 10.0 * atol
         for label, contact, normal in (("+", cg.contact_hi, cg.normal_hi), ("-", cg.contact_lo, cg.normal_lo)):
@@ -735,16 +776,27 @@ def certify(
     )
 
 
-def _approach_consistent(name, a, approach) -> bool:
-    """Does the realized approach axis match the declared HAND-OCCUPIED side (#98)?"""
+def _approach_consistent(name, mode, a, p, approach) -> bool:
+    """Does the declared HAND-OCCUPIED side match the pose-derived geometry (#98)?
+
+    Checked against a shared, pose-derived local frame (palm position + axes), not
+    a bare axis category (#101).
+    """
     if approach in _SIGNED_AXES:
         axis, sign = _SIGNED_AXES[approach]
-        # The hand occupies the -z_EE side, so the approach column points toward it.
-        return float((-a) @ (sign * axis)) > np.cos(1e-6)
+        # The hand occupies the -z_EE side, so the approach column points toward it,
+        # and (for a centred/planar primitive) the palm lies on that side.
+        if not _aligned(-a, sign * axis):
+            return False
+        if name == "torus" and mode == "span":
+            return sign * float(p @ axis) > 0.0  # palm above/below the equator plane
+        return True
     if approach == "radial":
-        # Radial approach: perpendicular to the axis (cylinder/torus); the sphere's
-        # toward-centre condition is verified in the handler.
-        return abs(float(a @ _EZ)) <= 1e-6 if name in ("cylinder", "torus") else True
+        # Radial: perpendicular to the axis AND pointing toward it (cylinder/torus),
+        # or toward the centre (sphere) -- a pose-derived local-frame predicate.
+        if name in ("cylinder", "torus"):
+            return _perpendicular(a, _EZ) and float((-p[:2]) @ a[:2]) > 0.0
+        return float((-p) @ a) > 0.0  # sphere: toward the centre
     if approach == "tube":
         return True  # torus side: the handler verifies the inward tube normal
     return False
@@ -753,23 +805,24 @@ def _approach_consistent(name, a, approach) -> bool:
 def _orientation_consistent(name, y, finger_orientation) -> bool:
     """Does the realized closing axis match the declared finger orientation (#98)?"""
     if finger_orientation in ("x", "y", "z"):
-        axis = {"x": _EX, "y": _EY, "z": _EZ}[finger_orientation]
-        return abs(abs(float(y @ axis)) - 1.0) <= 1e-6
+        return _aligned(y, {"x": _EX, "y": _EY, "z": _EZ}[finger_orientation]) or _aligned(
+            -y, {"x": _EX, "y": _EY, "z": _EZ}[finger_orientation]
+        )
     if finger_orientation == "diameter":
         # A diameter closes perpendicular to the primitive axis (cylinder/torus);
         # any great circle qualifies for a sphere.
-        return abs(float(y @ _EZ)) <= 1e-6 if name in ("cylinder", "torus") else True
+        return _perpendicular(y, _EZ) if name in ("cylinder", "torus") else True
     if finger_orientation == "tangential":
         # Cylinder side closes perpendicular to the axis; the torus tangent is
         # verified by the handler + SDF contact check.
-        return abs(float(y @ _EZ)) <= 1e-6 if name == "cylinder" else True
+        return _perpendicular(y, _EZ) if name == "cylinder" else True
     return False
 
 
 def _selector_failures(name, mode, a, y, p, approach, finger_orientation) -> List[Tuple[int, str]]:
     """Clause-8 failures for recognized declared selectors that disagree with the pose."""
     out: List[Tuple[int, str]] = []
-    if approach is not None and not _approach_consistent(name, a, approach):
+    if approach is not None and not _approach_consistent(name, mode, a, p, approach):
         out.append((8, f"declared approach {approach!r} is inconsistent with the pose"))
     if finger_orientation is not None and not _orientation_consistent(name, y, finger_orientation):
         out.append((8, f"declared finger_orientation {finger_orientation!r} is inconsistent with the pose"))
