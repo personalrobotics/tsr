@@ -53,12 +53,7 @@ class ParallelJawGripper(GripperBase):
         # invalid request, so we raise rather than emit templates or NaNs later.
         self._check_positive_finite("finger_length", finger_length)
         self._check_positive_finite("max_aperture", max_aperture)
-        if isinstance(clearance_fraction, bool) or not isinstance(
-            clearance_fraction, (int, float, np.integer, np.floating)
-        ):
-            raise ValueError(f"clearance_fraction must be a finite number >= 0, got {clearance_fraction!r}")
-        if not (np.isfinite(clearance_fraction) and clearance_fraction >= 0.0):
-            raise ValueError(f"clearance_fraction must be a finite number >= 0, got {clearance_fraction!r}")
+        self._check_nonnegative_finite("clearance_fraction", clearance_fraction)
         self.finger_length = finger_length
         self.max_aperture = max_aperture
         self.clearance_fraction = clearance_fraction
@@ -75,6 +70,18 @@ class ParallelJawGripper(GripperBase):
                 or finger_length for top/bottom grasps.
         """
         return self.clearance_fraction * graspable_depth
+
+    def _resolve_clearance(self, clearance: Optional[float], graspable_depth: float) -> float:
+        """Validate an explicit ``clearance`` (finite, >= 0) or derive the default (#104).
+
+        A NaN/inf/negative/Boolean/nonnumeric ``clearance`` is an invalid request and
+        raises ``ValueError`` identifying ``clearance`` -- before it is used to derive
+        a preshape, bounds, depths, or provenance. ``clearance=0`` is valid.
+        """
+        if clearance is None:
+            return self._default_clearance(graspable_depth)
+        self._check_nonnegative_finite("clearance", clearance)
+        return clearance
 
     def _validate(self, cylinder_radius: float, preshape: float, cylinder_height: Optional[float] = None) -> None:
         # Invalid request -> raise. (An over-wide preshape is geometric
@@ -126,8 +133,7 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if clearance is None:
-            clearance = self._default_clearance(min(self.finger_length, cylinder_radius))
+        clearance = self._resolve_clearance(clearance, min(self.finger_length, cylinder_radius))
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape, cylinder_height)
@@ -185,7 +191,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             ro = cylinder_radius + self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             Tw_e_0 = np.array(
                 [
                     [0.0, 0.0, -1.0, ro],
@@ -253,8 +259,7 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape, cylinder_height)
@@ -304,7 +309,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             t_desc = description or (
                 f"{dlabel.capitalize()} top grasp on {reference}: "
                 f"palm {h_palm * 1000:.0f}mm above rim, preshape {preshape * 1000:.0f}mm"
@@ -359,8 +364,7 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape, cylinder_height)
@@ -410,7 +414,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             t_desc = description or (
                 f"{dlabel.capitalize()} bottom grasp on {reference}: "
                 f"palm {h_palm * 1000:.0f}mm below bottom, preshape {preshape * 1000:.0f}mm"
@@ -510,7 +514,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             Tw_e = np.eye(4)
             Tw_e[:3, :3] = R
             Tw_e[:3, 3] = -z_ee * h_palm  # palm is h_palm outside the face
@@ -560,8 +564,7 @@ class ParallelJawGripper(GripperBase):
         Each orientation generates k depth templates if max_aperture allows.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
         if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
             return self._empty(
@@ -649,8 +652,7 @@ class ParallelJawGripper(GripperBase):
         Each orientation generates k depth templates if max_aperture allows.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
         if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
             return self._empty(
@@ -739,8 +741,7 @@ class ParallelJawGripper(GripperBase):
         Each valid orientation (max_aperture allows the span) generates k templates.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
         if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
             return self._empty(
@@ -837,8 +838,7 @@ class ParallelJawGripper(GripperBase):
         Each valid orientation (max_aperture allows the span) generates k templates.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
         if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
             return self._empty(
@@ -947,8 +947,7 @@ class ParallelJawGripper(GripperBase):
         self._check_angle_range(angle_range)
         self._check_dimensions(object_radius=object_radius)
         self._check_preshape(preshape)
-        if clearance is None:
-            clearance = self._default_clearance(min(self.finger_length, object_radius))
+        clearance = self._resolve_clearance(clearance, min(self.finger_length, object_radius))
         if preshape is None:
             preshape = 2.0 * object_radius + clearance
         reason = self._infeasibility_reason(preshape, 2.0 * object_radius)
@@ -990,7 +989,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             ro = object_radius + self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             # Approach along -x in TSR frame; standoff ro baked into Tw_e.
             # Bw roll/pitch/yaw rotates this to any direction on the sphere.
             Tw_e = np.array(
@@ -1090,8 +1089,7 @@ class ParallelJawGripper(GripperBase):
         self._check_angle_range(angle_range)
         self._check_count("n_minor", n_minor)
         self._validate_torus(torus_radius, tube_radius, preshape)
-        if clearance is None:
-            clearance = self._default_clearance(min(self.finger_length, tube_radius))
+        clearance = self._resolve_clearance(clearance, min(self.finger_length, tube_radius))
         if preshape is None:
             preshape = 2.0 * tube_radius + clearance
         reason = self._infeasibility_reason(preshape, 2.0 * tube_radius)
@@ -1149,7 +1147,7 @@ class ParallelJawGripper(GripperBase):
                 # Gripper position in TSR frame (before yaw rotation)
                 tx = torus_radius + ro_minor * ca
                 tz = ro_minor * sa
-                dlabel = _depth_label(k, i)
+                dlabel = _depth_label(len(depths), i)
                 # z_EE = (−cosα, 0, −sinα); y_EE in radial-vertical plane ⊥ z_EE
                 # y_EE ⊥ z_EE in span{x̂,ẑ}: y_EE = (−sinα, 0, cosα)
                 # x_EE = y_EE × z_EE = (0, −1, 0)  [same for all α]
@@ -1224,8 +1222,7 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._validate_torus(torus_radius, tube_radius, preshape)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
             preshape = 2.0 * (torus_radius + tube_radius) + clearance
         outer_diameter = 2.0 * (torus_radius + tube_radius)
@@ -1254,7 +1251,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
 
             # Top: z_EE = [0,0,-1]; TSR origin at tube top (z = +tube_r)
             T_top = np.eye(4)

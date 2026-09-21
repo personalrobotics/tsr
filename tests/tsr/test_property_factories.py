@@ -204,14 +204,67 @@ def test_excess_clearance_yields_empty_not_reversed(fl, ma, r, h):
 
 
 def test_clearance_band_boundary_nextafter():
-    # Deterministic boundary: below half -> depths emitted; exactly half -> coincident
-    # slots deduplicated to one; above half -> empty band (never reversed) (#68).
+    # Deterministic, exact boundary (#68, #105): the [clearance, L-clearance] band is
+    # nonempty iff clearance < L/2. At exactly L/2 the endpoints coincide -> one depth;
+    # ABOVE returns []; the LOWER nextafter neighbour is a positive-width interval and
+    # must emit k ordered depths (it must NOT collapse through a default tolerance).
     fl = 0.08
-    half = fl / 2.0
+    half = fl / 2.0  # exactly representable: fl == 2 * half
     g = ParallelJawGripper(finger_length=fl, max_aperture=0.30)
-    assert len(g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=0.03)) == 3  # well below
-    assert len(g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=half)) == 1  # coincident -> deduped
+    below = g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=np.nextafter(half, -np.inf))
+    assert len(below) == 3
+    depths = [t.provenance.depth for t in below]
+    assert depths == sorted(depths)  # ordered shallow -> deep, not reversed
+    assert len(g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=half)) == 1  # coincident -> one slot
     assert g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=np.nextafter(half, np.inf)) == []  # empty band
+
+
+@given(scale=st.sampled_from([1e-3, 1.0, 1e3]))
+def test_clearance_boundary_is_scale_independent(scale):
+    # The exact boundary policy holds at small / ordinary / large scale (#105): a
+    # positive-width interval never collapses through a unit-dependent tolerance.
+    fl = 0.08 * scale
+    half = fl / 2.0
+    g = ParallelJawGripper(finger_length=fl, max_aperture=0.30 * scale)
+    r, h = 0.03 * scale, 0.12 * scale
+    assert len(g.grasp_cylinder_top(r, h, k=3, clearance=np.nextafter(half, -np.inf))) == 3
+    assert len(g.grasp_cylinder_top(r, h, k=3, clearance=half)) == 1
+    assert g.grasp_cylinder_top(r, h, k=3, clearance=np.nextafter(half, np.inf)) == []
+
+
+@given(bad=st.sampled_from([np.nan, np.inf, -np.inf, -0.01, True]))
+def test_invalid_clearance_raises_identifying_clearance(bad):
+    # An explicit NaN/inf/negative/Boolean clearance is invalid across every public
+    # specialized AND combined factory, and the message names `clearance` (#104).
+    g = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+    calls = [
+        lambda: g.grasp_cylinder_side(0.03, 0.12, clearance=bad),
+        lambda: g.grasp_cylinder_top(0.03, 0.12, clearance=bad),
+        lambda: g.grasp_cylinder_bottom(0.03, 0.12, clearance=bad),
+        lambda: g.grasp_cylinder(0.03, 0.12, clearance=bad),
+        lambda: g.grasp_box_top(0.05, 0.06, 0.07, clearance=bad),
+        lambda: g.grasp_box_face_x(0.05, 0.06, 0.07, clearance=bad),
+        lambda: g.grasp_box(0.05, 0.06, 0.07, clearance=bad),
+        lambda: g.grasp_sphere(0.03, clearance=bad),
+        lambda: g.grasp_torus_side(0.06, 0.02, clearance=bad),
+        lambda: g.grasp_torus_span(0.06, 0.02, clearance=bad),
+        lambda: g.grasp_torus(0.06, 0.02, clearance=bad),
+    ]
+    for call in calls:
+        try:
+            call()
+            raise AssertionError(f"expected ValueError for clearance={bad!r}")
+        except ValueError as e:
+            assert "clearance" in str(e)
+
+
+def test_clearance_zero_is_valid():
+    # clearance=0 is a valid request (no raise); with a preshape wider than the object
+    # it yields templates (a NaN/negative clearance would have raised instead) (#104).
+    g = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+    templates = g.grasp_sphere(0.03, preshape=0.07, clearance=0.0)
+    assert len(templates) > 0
+    assert all(np.isfinite(t.preshape).all() for t in templates)
 
 
 def test_insufficient_clearance_band_logs_reason_once(caplog):

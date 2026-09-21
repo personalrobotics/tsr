@@ -16,16 +16,21 @@ parallel-jaw grasp templates (epic #65).
   `linspace(clearance, finger_length - clearance, k)` over a *reversed* interval,
   silently emitting templates with a backwards shallow-to-deep ordering. A shared
   `_usable_depths` helper now returns `[]` with reason `insufficient_clearance_band`
-  when the band is empty, and deduplicates coincident depth slots at a feasibility
-  boundary to a single depth (the dedup deferred from earlier). Input validation is
-  centralized and applied uniformly across every factory: finite/positive
+  when the band is empty, under an **exact, scale-independent** boundary policy
+  (`hi < lo` → empty; `hi == lo` → one deduplicated slot; `hi > lo` → `k` depths) —
+  a positive-width interval never collapses through a default `np.isclose` tolerance,
+  and a single-slot template gets a single-slot human label (#105). Input validation
+  is centralized and applied uniformly across every factory: finite/positive
   `finger_length`, `max_aperture`, primitive dimensions and `preshape`; finite,
-  nonnegative `clearance_fraction`; integer `k >= 1` and `n_minor >= 1`; finite,
-  ordered `angle_range`; and positive `cylinder_height` for the side/top/bottom
-  entry points alike. Nonsensical arguments raise `ValueError`; valid arguments with
-  an empty feasible set return `[]` with one coherent diagnostic log. No generated
-  template contains NaN or infinity. Property-tested with non-finite/zero/negative
-  scalars, `nextafter` boundary neighbours, excessive clearances, and
+  nonnegative `clearance_fraction` **and every explicit per-call `clearance`**
+  (NaN/inf/negative/Boolean raise a `ValueError` naming `clearance`, before it
+  derives any preshape/bounds/depths; `clearance=0` stays valid) (#104); integer
+  `k >= 1` and `n_minor >= 1`; finite, ordered `angle_range`; and positive
+  `cylinder_height` for the side/top/bottom entry points alike. Nonsensical arguments
+  raise `ValueError`; valid arguments with an empty feasible set return `[]` with one
+  coherent diagnostic log. No generated template contains NaN or infinity.
+  Property-tested with non-finite/zero/negative scalars, `nextafter` boundary
+  neighbours at small/ordinary/large scale, excessive clearances, and
   integral/non-integral counts.
 
 ### Added
