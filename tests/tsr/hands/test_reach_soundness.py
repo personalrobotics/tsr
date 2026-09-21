@@ -76,6 +76,81 @@ class TestReachReproduction(unittest.TestCase):
         self.assertTrue(any("finger_too_short" in m for m in cm.output))
 
 
+class TestEmptyBandClassification(unittest.TestCase):
+    """An empty radial band is classified by the constraint that failed (#108)."""
+
+    def _reason(self, call):
+        import logging
+
+        with self.assertLogs("tsr.hands.base", level=logging.DEBUG) as cm:
+            result = call()
+        self.assertEqual(result, [])
+        empties = [m for m in cm.output if "empty feasible set" in m]
+        self.assertEqual(len(empties), 1)  # logged exactly once
+        return empties[0]
+
+    def test_short_finger_is_finger_too_short(self):
+        g = ParallelJawGripper(finger_length=0.05, max_aperture=0.30)  # 0.05 < 0.10 + clearance
+        self.assertIn("finger_too_short", self._reason(lambda: g.grasp_sphere(0.10)))
+        self.assertIn("finger_too_short", self._reason(lambda: g.grasp_cylinder_side(0.10, 0.30)))
+
+    def test_ample_reach_excess_clearance_is_clearance_band(self):
+        # finger_length 0.20 >= radius 0.03 + clearance 0.04; reach is not the failure.
+        g = ParallelJawGripper(finger_length=0.20, max_aperture=0.30)
+        self.assertIn(
+            "insufficient_clearance_band", self._reason(lambda: g.grasp_sphere(0.03, preshape=0.07, clearance=0.04))
+        )
+        self.assertIn(
+            "insufficient_clearance_band",
+            self._reason(lambda: g.grasp_cylinder_side(0.03, 0.20, preshape=0.07, clearance=0.04)),
+        )
+
+    def test_finger_too_short_takes_precedence_when_both_fail(self):
+        # finger_length < radius + clearance AND clearance > radius (with L > 2r):
+        # r=0.03, clearance=0.05, L=0.07 -> 0.07 < 0.03+0.05=0.08 and 0.05 > 0.03.
+        g = ParallelJawGripper(finger_length=0.07, max_aperture=0.30)
+        self.assertIn("finger_too_short", self._reason(lambda: g.grasp_sphere(0.03, preshape=0.09, clearance=0.05)))
+
+
+class TestApertureTolerance(unittest.TestCase):
+    """Factory straddle feasibility matches the oracle's scale-aware tolerance (#107)."""
+
+    def test_ci_counterexample_returns_empty(self):
+        g = ParallelJawGripper(finger_length=0.125, max_aperture=0.1875)
+        self.assertEqual(g.grasp_sphere(0.0625, clearance=1e-9, k=1), [])
+        self.assertEqual(g.grasp_cylinder_side(0.0625, 0.125, clearance=1e-9, k=1), [])
+
+    def test_straddle_boundary_and_neighbours(self):
+        # Explicit-preshape aperture boundary at 2r + 2*atol, across scales (#107). The
+        # clearance is scaled to the radius so only the aperture constraint is exercised.
+        g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
+        for r in (0.002, 0.05, 0.15):  # small / ordinary / large scale
+            c = 0.1 * r
+            atol = 1e-9 + 1e-6 * r  # sphere scale = r
+            boundary = 2 * r + 2 * atol
+            self.assertEqual(g.grasp_sphere(r, preshape=np.nextafter(boundary, -np.inf), clearance=c), [])
+            at = g.grasp_sphere(r, preshape=boundary, clearance=c)
+            self.assertGreater(len(at), 0)
+            _assert_all_sound(self, Sphere(r), at, g, c)
+            above = g.grasp_sphere(r, preshape=np.nextafter(boundary, np.inf), clearance=c)
+            _assert_all_sound(self, Sphere(r), above, g, c)
+
+    def test_default_preshape_applies_the_rule(self):
+        # The default-preshape path (preshape = 2r + clearance) is also governed by the
+        # straddle tolerance: a clearance below 2*atol cannot straddle, one above does
+        # (#107). The exact 1-ulp boundary lives in the explicit-preshape test above,
+        # since here 2r dominates the sub-tolerance term in the sum.
+        g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
+        r = 0.05  # 2*atol ~ 1.0e-7 at this scale
+        self.assertEqual(g.grasp_sphere(r, clearance=1e-9), [])  # below 2*atol
+        self.assertGreater(len(g.grasp_sphere(r, clearance=1e-6)), 0)  # above 2*atol
+
+    def test_clearly_feasible_preshape_unchanged(self):
+        g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
+        self.assertGreater(len(g.grasp_sphere(0.05, clearance=0.01)), 0)
+        self.assertGreater(len(g.grasp_cylinder_side(0.05, 0.20, clearance=0.01)), 0)
+
+
 class TestReachBoundary(unittest.TestCase):
     """Exact reach boundary: finger_length == radius + clearance (#69)."""
 

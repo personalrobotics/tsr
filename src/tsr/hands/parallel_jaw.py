@@ -71,6 +71,20 @@ class ParallelJawGripper(GripperBase):
         """
         return self.clearance_fraction * graspable_depth
 
+    def _radial_band_reason(self, radius: float, clearance: float) -> str:
+        """Classify an empty radial depth band ``[radius, min(L, 2r) - clearance]`` (#108).
+
+        The band empties for two distinct reasons: the fingers are too short to keep the
+        palm outside with the requested clearance (``finger_length < radius + clearance``),
+        or reach is ample but the clearance relative to the radius empties the far-surface
+        limit (``min(L, 2r) - clearance < radius`` with ``L >= radius + clearance``, which
+        requires ``clearance > radius``). ``finger_too_short`` takes precedence when both
+        hold. This is diagnostics only; the returned feasible set is unchanged.
+        """
+        if self.finger_length < radius + clearance:
+            return "finger_too_short"
+        return "insufficient_clearance_band"
+
     def _resolve_clearance(self, clearance: Optional[float], graspable_depth: float) -> float:
         """Validate an explicit ``clearance`` (finite, >= 0) or derive the default (#104).
 
@@ -137,7 +151,9 @@ class ParallelJawGripper(GripperBase):
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape, cylinder_height)
-        reason = self._infeasibility_reason(preshape, 2.0 * cylinder_radius)
+        reason = self._infeasibility_reason(
+            preshape, 2.0 * cylinder_radius, scale=max(cylinder_radius, cylinder_height)
+        )
         if reason:
             return self._empty(
                 "grasp_cylinder_side",
@@ -172,18 +188,19 @@ class ParallelJawGripper(GripperBase):
 
         # Shallowest: fingertips at cylinder center (depth = radius).
         # Deepest: fingertips past center, limited by finger_length or far surface.
-        # Reach band: fingertips reach the axis (depth >= radius) and the palm stays a
-        # clearance outside the surface (depth <= finger_length - clearance). This is
-        # empty exactly when finger_length < radius + clearance -- the fingers are too
-        # short to grasp past the object with clearance, so the palm would sit inside
-        # the surface (#69). Report finger_too_short rather than a clearance band.
+        # Radial depth band: fingertips reach the axis (depth >= radius) and the palm
+        # stays a clearance outside the surface (depth <= min(L, 2r) - clearance). It is
+        # empty either because the fingers are too short (finger_length < radius +
+        # clearance, which would place the palm inside the surface, #69) or because an
+        # excessive clearance relative to the radius empties the far-surface limit (#108);
+        # _radial_band_reason names the failed constraint.
         depth_min = cylinder_radius
         depth_max = min(self.finger_length, 2 * cylinder_radius) - clearance
         depths = self._usable_depths(depth_min, depth_max, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_side",
-                "finger_too_short",
+                self._radial_band_reason(cylinder_radius, clearance),
                 finger_length=self.finger_length,
                 radius=cylinder_radius,
                 clearance=clearance,
@@ -272,7 +289,9 @@ class ParallelJawGripper(GripperBase):
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape, cylinder_height)
-        reason = self._infeasibility_reason(preshape, 2.0 * cylinder_radius)
+        reason = self._infeasibility_reason(
+            preshape, 2.0 * cylinder_radius, scale=max(cylinder_radius, cylinder_height)
+        )
         if reason:
             return self._empty(
                 "grasp_cylinder_top",
@@ -377,7 +396,9 @@ class ParallelJawGripper(GripperBase):
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
         self._validate(cylinder_radius, preshape, cylinder_height)
-        reason = self._infeasibility_reason(preshape, 2.0 * cylinder_radius)
+        reason = self._infeasibility_reason(
+            preshape, 2.0 * cylinder_radius, scale=max(cylinder_radius, cylinder_height)
+        )
         if reason:
             return self._empty(
                 "grasp_cylinder_bottom",
@@ -959,7 +980,7 @@ class ParallelJawGripper(GripperBase):
         clearance = self._resolve_clearance(clearance, min(self.finger_length, object_radius))
         if preshape is None:
             preshape = 2.0 * object_radius + clearance
-        reason = self._infeasibility_reason(preshape, 2.0 * object_radius)
+        reason = self._infeasibility_reason(preshape, 2.0 * object_radius, scale=object_radius)
         if reason:
             return self._empty(
                 "grasp_sphere", reason, preshape=preshape, diameter=2.0 * object_radius, max_aperture=self.max_aperture
@@ -981,16 +1002,17 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
-        # Reach band, identical to the cylinder-side derivation (#69): empty exactly
-        # when finger_length < radius + clearance, which would place the palm inside
-        # the sphere. Report finger_too_short rather than a clearance band.
+        # Radial depth band, identical to the cylinder-side derivation (#69, #108):
+        # empty because the fingers are too short (finger_length < radius + clearance,
+        # palm inside the sphere) or because an excessive clearance relative to the
+        # radius empties the far-surface limit; _radial_band_reason names the cause.
         depth_min = object_radius
         depth_max = min(self.finger_length, 2 * object_radius) - clearance
         depths = self._usable_depths(depth_min, depth_max, k)
         if depths is None:
             return self._empty(
                 "grasp_sphere",
-                "finger_too_short",
+                self._radial_band_reason(object_radius, clearance),
                 finger_length=self.finger_length,
                 radius=object_radius,
                 clearance=clearance,

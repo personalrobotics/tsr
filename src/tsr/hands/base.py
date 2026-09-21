@@ -688,15 +688,34 @@ class GripperBase(ABC):
             return np.array([float(lo)])
         return np.linspace(lo, hi, k)
 
-    def _infeasibility_reason(self, preshape: float, object_span: float) -> Optional[str]:
+    @staticmethod
+    def _length_atol(scale: float) -> float:
+        """Scale-aware length tolerance from the geometric contract (docs/ARCHITECTURE.md).
+
+        ``atol = 1e-9 + 1e-6 · scale``. This is the same documented formula the
+        analytic oracle uses; production code implements it independently so factory
+        feasibility agrees with the contract (#107). ``scale`` is the primitive's
+        characteristic dimension.
+        """
+        return 1e-9 + 1e-6 * scale
+
+    def _infeasibility_reason(
+        self, preshape: float, object_span: float, scale: Optional[float] = None
+    ) -> Optional[str]:
         """Why a grasp of ``object_span`` at ``preshape`` is infeasible, else None.
 
-        ``"exceeds_aperture"`` — the jaws cannot open wide enough;
-        ``"cannot_straddle"`` — the opening is not wider than the object.
+        ``"exceeds_aperture"`` — the jaws cannot open wider than the object;
+        ``"cannot_straddle"`` — the object does not fit **strictly between** the open
+        jaws by the contract's scale-aware tolerance. The object must clear each pad by
+        at least ``_length_atol(scale)`` (so both contacts lie strictly inside the open
+        jaws by that margin) -- matching the analytic oracle's clause 2 (#107), not
+        merely be narrower than the preshape. ``scale`` defaults to ``object_span / 2``.
         """
         if preshape > self.max_aperture:
             return "exceeds_aperture"
-        if preshape <= object_span:
+        if scale is None:
+            scale = object_span / 2.0
+        if preshape < object_span + 2.0 * self._length_atol(scale):
             return "cannot_straddle"
         return None
 
