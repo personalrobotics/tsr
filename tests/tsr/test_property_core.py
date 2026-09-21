@@ -147,16 +147,26 @@ def test_single_chain_sample_is_contained(tsr):
     assert chain.contains(pose)
 
 
-# Multi-TSR chains, non-identity frames and mixed fixed/free coords (#57). The
-# multi-start solver must recognise every constructive sample as a member.
-# Capped example count: the chain-distance solve is much heavier than the core.
+# Multi-TSR chains, non-identity frames and mixed fixed/free coords (#57, #85).
+# A constructive sample carries a coordinate witness, so membership is decided by
+# the EXACT forward/witness contract -- not by a cold inverse solve, which cannot
+# prove inverse membership for a rotation-rich chain (#85). We assert the witness
+# validates, the warm solve is satisfied, and the warm `contains` fast path holds.
 @settings(max_examples=40)
 @given(parts=st.lists(tsrs(), min_size=2, max_size=3))
 def test_multi_chain_sample_is_contained(parts):
     chain = TSRChain(TSRs=parts)
-    pose = chain.sample()
-    assert chain.contains(pose)
-    assert abs(chain.distance(pose)[0]) < EPSILON
+    sample = chain.sample_with_witness()
+    assert sample.coordinates.shape == (len(parts), 6)
+    # Recomposing the retained coordinates reproduces the pose exactly.
+    np.testing.assert_allclose(chain.to_transform(sample.coordinates), sample.pose, atol=1e-9)
+    # Exact positive certificate: no optimizer, no SciPy.
+    assert chain.validate_witness(sample.pose, sample.coordinates)
+    # Warm-started solve takes the fast path and reports a satisfying witness.
+    result = chain.solve(sample.pose, initial_guess=sample.coordinates)
+    assert result.status == "satisfied"
+    assert result.residual < EPSILON
+    assert chain.contains(sample.pose, initial_guess=sample.coordinates)
 
 
 @given(tsr=tsrs())

@@ -14,7 +14,7 @@ import them from here when you want only the kernel.
 """
 
 from .tsr import NANBW, TSR
-from .tsr_chain import TSRChain
+from .tsr_chain import ChainSample, ChainSolveResult, TSRChain
 from .utils import (
     EPSILON,
     geodesic_distance,
@@ -26,6 +26,8 @@ from .utils import (
 __all__ = [
     "TSR",
     "TSRChain",
+    "ChainSample",
+    "ChainSolveResult",
     "NANBW",
     "EPSILON",
     "wrap_to_interval",

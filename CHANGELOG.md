@@ -29,6 +29,32 @@ parallel-jaw grasp templates (epic #65).
   a conformant record, so tests read grasp modes structurally instead of parsing
   `name`. The sphere grasp is mode `surface` (full SO(3)), not `equatorial`.
   Representation-only; grasp geometry is unchanged.
+- **Witness-aware, bounded `TSRChain` inverse membership** (#85). A chain is an
+  exact parameterized set, but deciding membership from a pose alone is a bounded
+  nonconvex inverse problem: a local solve can produce a positive witness, but
+  failing to find one is **not** a proof of nonmembership. New API makes that
+  distinction explicit:
+  - `TSRChain.sample_with_witness(rng=None) -> ChainSample` returns a sampled
+    `pose` and the `(n, 6)` `coordinates` that constructed it — a positive
+    membership certificate needing no optimizer.
+  - `TSRChain.validate_witness(pose, coordinates, tolerance=EPSILON) -> bool`
+    certifies a witness with one bounds check and one forward composition — no
+    SciPy, no solve.
+  - `TSRChain.solve(pose, initial_guess=None, max_restarts=8, max_nfev=200) ->
+    ChainSolveResult` runs a bounded, deterministic multi-start inverse solve that
+    warm-starts from `initial_guess`, exits on the first tolerance-satisfying
+    witness, and returns `status` (`"satisfied"`/`"not_found"`, never
+    `"infeasible"`), `coordinates`, `residual`, `nfev`, and `restarts`.
+  - `ChainSample` and `ChainSolveResult` are exported from `tsr`.
+
+### Changed
+- **`TSRChain.contains`, `distance`, and `closest_transform` are documented as
+  numerical, non-certifying for multi-TSR chains** (#85). Multi-TSR `contains`
+  now delegates to `solve` and accepts an optional `initial_guess` for the exact
+  warm-start fast path; `False` means no witness was found within the numerical
+  budget, not certified nonmembership. `distance` returns `0` with the witness
+  when one is found, else a best-found residual (an upper bound on the true
+  minimum). Single-TSR `contains` remains the exact closed-form check.
 
 ## [2.1.0] — 2026-09
 

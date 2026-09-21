@@ -475,5 +475,201 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
         self.assertFalse(chain.contains(np.eye(4)))
 
 
+class TestTSRChainWitnessAPI(unittest.TestCase):
+    """Witness-aware, bounded inverse membership for TSRChain (#85).
+
+    A chain is an exact parameterized set, but deciding membership from a pose
+    alone is a bounded nonconvex inverse problem: a local solve can produce a
+    positive witness, but failing to find one is NOT a proof of nonmembership.
+    These tests exercise the explicit forward/witness contract and the honest,
+    bounded solver.
+    """
+
+    def _rotation_rich_fixture(self):
+        """The exact deterministic counterexample from issue #85.
+
+        Two TSRs (free [roll, yaw] and [x, roll, yaw]) with nonidentity frames
+        and ordinary non-wrapping rotation intervals. The queried pose is built
+        from known-valid chain coordinates, so it is provably a member -- yet the
+        cold multi-start solve settles in a nonzero basin (residual well above
+        EPSILON). Membership is decided by the retained witness, not the solve.
+        """
+        parts = [
+            TSR(
+                T0_w=np.array(
+                    [
+                        [-0.05323397734171213, 0.8948213760632387, 0.443239042274791, 0.22846326913496368],
+                        [-0.9701532216431458, -0.15150283374468387, 0.18933995326596015, -0.14982700307842703],
+                        [0.2365774084561063, -0.41993046603887, 0.8761789392016737, -0.009460041281242981],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                ),
+                Tw_e=np.array(
+                    [
+                        [0.6293426752234571, -0.1728436326485694, 0.7576627718156862, -0.14378930957175456],
+                        [-0.04665111723551994, -0.9815968691424982, -0.18517899381496544, -0.00873891803731176],
+                        [0.7757264146612902, 0.08119522856973581, -0.6258241481872112, 0.06216845799526165],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                ),
+                Bw=np.array(
+                    [
+                        [0.0, 0.0],
+                        [0.0, 0.0],
+                        [0.0, 0.0],
+                        [-0.08467294501938391, 3.050198946370484],
+                        [0.0, 0.0],
+                        [-2.7980033218941758, 1.030225743778528],
+                    ]
+                ),
+            ),
+            TSR(
+                T0_w=np.eye(4),
+                Tw_e=np.array(
+                    [
+                        [0.18723087829170545, -0.6170802787911787, 0.7643013330755861, 0.026865480304672573],
+                        [0.7086069079464304, 0.6236951990956814, 0.3299705269195986, -0.09004582889149249],
+                        [-0.6803093768460903, 0.4798085328044926, 0.5540423482219428, -0.10766560142469507],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                ),
+                Bw=np.array(
+                    [
+                        [-0.000750418289075433, 0.4666823942550439],
+                        [0.0, 0.0],
+                        [0.0, 0.0],
+                        [-2.5160093677919146, -0.6584844308933367],
+                        [0.0, 0.0],
+                        [-3.0738651972185425, 1.704964963361112],
+                    ]
+                ),
+            ),
+        ]
+        coordinates = np.array(
+            [
+                [0.0, 0.0, 0.0, -0.03763487464809723, 0.0, 0.3720955229542815],
+                [0.07774021221016615, 0.0, 0.0, -1.094901874015342, 0.0, 0.05323198828225317],
+            ]
+        )
+        return TSRChain(TSRs=parts), coordinates
+
+    def test_deterministic_counterexample_witness_certifies_membership(self):
+        """#85 regression: cold solve misses this member; the witness certifies it."""
+        chain, coordinates = self._rotation_rich_fixture()
+        self.assertTrue(all(np.all(v) for v in chain.is_valid(coordinates)))
+        pose = chain.to_transform(coordinates)
+
+        # The retained coordinates reconstruct the pose exactly: a positive
+        # certificate of membership independent of any inverse solver.
+        np.testing.assert_allclose(chain.to_transform(coordinates), pose, atol=1e-12)
+        self.assertTrue(chain.validate_witness(pose, coordinates))
+
+        # The cold solve does NOT find a witness within the default budget -- and
+        # that is honest "not_found", never certified nonmembership.
+        cold = chain.solve(pose)
+        self.assertEqual(cold.status, "not_found")
+        self.assertGreater(cold.residual, EPSILON)
+
+        # A warm start from the witness takes the fast path: satisfied, no work.
+        warm = chain.solve(pose, initial_guess=coordinates)
+        self.assertEqual(warm.status, "satisfied")
+        self.assertLess(warm.residual, EPSILON)
+        self.assertEqual(warm.nfev, 0)
+        self.assertEqual(warm.restarts, 0)
+
+        # contains reflects the same distinction.
+        self.assertTrue(chain.contains(pose, initial_guess=coordinates))
+        self.assertFalse(chain.contains(pose))
+
+    def test_deterministic_counterexample_is_reproducible(self):
+        """The cold residual is deterministic for the fixed budget and start set."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        r1 = chain.solve(pose)
+        r2 = chain.solve(pose)
+        self.assertEqual(r1.residual, r2.residual)
+        self.assertEqual(r1.restarts, r2.restarts)
+
+    def test_sample_with_witness_returns_valid_witness_without_optimization(self):
+        """sample_with_witness gives (pose, coordinates) that recompose exactly."""
+        chain, _ = self._rotation_rich_fixture()
+        rng = np.random.default_rng(7)
+        sample = chain.sample_with_witness(rng=rng)
+        self.assertEqual(sample.coordinates.shape, (2, 6))
+        np.testing.assert_allclose(chain.to_transform(sample.coordinates), sample.pose, atol=1e-12)
+        self.assertTrue(chain.validate_witness(sample.pose, sample.coordinates))
+
+    def test_validate_witness_rejects_wrong_coordinates(self):
+        """A witness that does not recompose the pose (or is out of bounds) fails."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        # Wrong shape.
+        self.assertFalse(chain.validate_witness(pose, coordinates[:1]))
+        # Valid coordinates but for a different pose.
+        other = coordinates.copy()
+        other[0, 3] += 0.5  # still within component-1 roll bounds, different pose
+        self.assertFalse(chain.validate_witness(pose, other))
+        # Out-of-bounds coordinates.
+        oob = coordinates.copy()
+        oob[0, 5] = 10.0
+        self.assertFalse(chain.validate_witness(pose, oob))
+
+    def test_validate_witness_uses_no_scipy(self):
+        """validate_witness must not import or invoke SciPy (performance contract)."""
+        import sys
+
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        had_scipy = "scipy.optimize" in sys.modules
+        sys.modules.pop("scipy.optimize", None)
+        try:
+            self.assertTrue(chain.validate_witness(pose, coordinates))
+            self.assertNotIn("scipy.optimize", sys.modules)
+        finally:
+            if had_scipy:
+                import scipy.optimize  # noqa: F401
+
+    def test_solve_exposes_bounded_budget(self):
+        """Cold solve honors max_restarts/max_nfev and reports counts."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        result = chain.solve(pose, max_restarts=2, max_nfev=50)
+        # 2 random restarts + midpoint + 2 corners = 5 starts at most.
+        self.assertLessEqual(result.restarts, 5)
+        self.assertIn(result.status, ("satisfied", "not_found"))
+
+    def test_solve_never_reports_infeasible(self):
+        """No status certifies nonmembership; a far pose is 'not_found'."""
+        chain, coordinates = self._rotation_rich_fixture()
+        far = np.eye(4)
+        far[:3, 3] = [10.0, 10.0, 10.0]
+        result = chain.solve(far)
+        self.assertEqual(result.status, "not_found")
+
+    def test_no_numdiff_warnings(self):
+        """Bounded solve raises no numerical-differentiation warnings (#57/#85)."""
+        import warnings
+
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            chain.solve(pose)
+            chain.solve(pose, initial_guess=coordinates)
+
+    def test_single_tsr_solve_is_exact_closed_form(self):
+        """A single-TSR chain solves exactly via the closed-form TSR check."""
+        tsr = TSR(
+            Bw=np.array(
+                [[-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1], [-pi / 4, pi / 4], [-pi / 4, pi / 4], [-pi / 4, pi / 4]]
+            )
+        )
+        chain = TSRChain(tsr=tsr)
+        pose = chain.sample()
+        result = chain.solve(pose)
+        self.assertEqual(result.status, "satisfied")
+        self.assertLess(result.residual, EPSILON)
+
+
 if __name__ == "__main__":
     unittest.main()

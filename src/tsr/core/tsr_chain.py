@@ -2,6 +2,7 @@
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
 import logging
+from dataclasses import dataclass
 from functools import reduce
 
 import numpy
@@ -10,6 +11,38 @@ from .tsr import NANBW, TSR
 from .utils import EPSILON, geodesic_distance
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ChainSample:
+    """A sampled chain pose together with the coordinates that constructed it.
+
+    ``coordinates`` (shape ``(n, 6)``) is a *constructive witness*: composing it
+    forward reproduces ``pose`` exactly, so membership needs no optimizer (see
+    :meth:`TSRChain.validate_witness`).
+    """
+
+    pose: numpy.ndarray
+    coordinates: numpy.ndarray
+
+
+@dataclass(frozen=True)
+class ChainSolveResult:
+    """Result of an inverse chain solve (:meth:`TSRChain.solve`).
+
+    ``status`` is ``"satisfied"`` when a witness within tolerance was found, or
+    ``"not_found"`` when the bounded numerical search did not find one.
+    ``"not_found"`` is **not** a certificate of non-membership — a finite set of
+    local solves cannot prove global infeasibility for a rotation-rich chain.
+    ``residual`` is the geodesic residual at ``coordinates`` (an upper bound on
+    the true minimum). ``nfev``/``restarts`` expose the search cost.
+    """
+
+    status: str
+    coordinates: numpy.ndarray
+    residual: float
+    nfev: int
+    restarts: int
 
 
 class TSRChain:
@@ -191,31 +224,81 @@ class TSRChain:
         """
         return self.to_transform(self.sample_xyzrpy(xyzrpy_list, rng=rng))
 
-    # Deterministic multi-start count for the chain-distance optimiser (see below).
-    _DISTANCE_RESTARTS = 8
+    # Default bounded multi-start budget for the inverse chain solve (#85).
+    _DEFAULT_MAX_RESTARTS = 8
+    _DEFAULT_MAX_NFEV = 200
 
-    def distance(self, trans):
+    def sample_with_witness(self, xyzrpy_list=None, rng=None):
+        """Sample a pose and return it with the coordinates that constructed it.
+
+        Same sampling and one forward composition as :meth:`sample`; performs no
+        optimisation. The returned coordinates are a constructive witness, so
+        membership is checkable exactly via :meth:`validate_witness` without an
+        inverse solve (#85).
         """
-        Computes the Geodesic Distance from the TSR chain to a transform
-        @param trans 4x4 transform
-        @return dist Geodesic distance to TSR
-        @return bwopt Closest Bw value to trans output as a list of xyzrpy
+        coords = numpy.array(self.sample_xyzrpy(xyzrpy_list, rng=rng))
+        return ChainSample(pose=self.to_transform(coords), coordinates=coords)
+
+    def validate_witness(self, trans, coordinates, tolerance=EPSILON):
+        """Exact positive certificate: are ``coordinates`` a valid witness for ``trans``?
+
+        Validates the coordinates against each component's bounds and recomposes
+        the pose once, returning True iff the recomposition matches ``trans``
+        within ``tolerance``. Uses no optimiser and no SciPy (#85).
+        """
+        coordinates = numpy.asarray(coordinates, dtype=float)
+        n = len(self.TSRs)
+        if coordinates.shape != (n, 6):
+            return False
+        for i in range(n):
+            if not all(self.TSRs[i].is_valid(coordinates[i])):
+                return False
+        return bool(geodesic_distance(self.to_transform(coordinates), trans) < tolerance)
+
+    def solve(self, trans, initial_guess=None, max_restarts=None, max_nfev=None, tolerance=EPSILON):
+        """Inverse chain solve: find coordinates whose composition matches ``trans``.
+
+        Returns a :class:`ChainSolveResult`. A valid ``initial_guess`` (a retained
+        witness, or a neighbouring state's coordinates) is checked first and
+        short-circuits the search. Otherwise a bounded, deterministic multi-start
+        solve runs, exiting as soon as a tolerance-satisfying witness is found.
+        ``"not_found"`` means no witness within the budget -- **never** a proof of
+        non-membership, which a finite set of local solves cannot establish for a
+        rotation-rich chain (#85).
         """
         import scipy.optimize
 
+        max_restarts = self._DEFAULT_MAX_RESTARTS if max_restarts is None else max_restarts
+        max_nfev = self._DEFAULT_MAX_NFEV if max_nfev is None else max_nfev
         n = len(self.TSRs)
-        # Continuous bounds over all 6*n chain coordinates. _Bw_cont guarantees
-        # lower <= upper even for outer (wrapping) rotation intervals, which
-        # L-BFGS-B requires (raw Bw can have lower > upper and crash it).
+        if n == 0:
+            return ChainSolveResult("not_found", numpy.empty((0, 6)), float("inf"), 0, 0)
+
+        # Fast path: a supplied witness that already validates.
+        if initial_guess is not None and self.validate_witness(trans, initial_guess, tolerance):
+            coords = numpy.asarray(initial_guess, dtype=float)
+            res = geodesic_distance(self.to_transform(coords), trans)
+            return ChainSolveResult("satisfied", coords, float(res), 0, 0)
+
+        # Exact path: a single component reduces to the closed-form TSR check.
+        if n == 1:
+            tsr = self.TSRs[0]
+            if tsr.contains(trans):
+                coords = numpy.array([tsr.to_xyzrpy(trans)])
+                res = geodesic_distance(self.to_transform(coords), trans)
+                return ChainSolveResult("satisfied", coords, float(res), 0, 0)
+            dist, bw = tsr.distance(trans)
+            return ChainSolveResult("not_found", numpy.array([bw]), float(dist), 0, 0)
+
+        # General case: bounded multi-start over a SMOOTH squared pose residual.
+        # _Bw_cont guarantees lower <= upper even for wrapping rotation intervals;
+        # point-bound coordinates are held fixed (never handed to the finite-
+        # difference optimiser, whose zero-width step there yields a NaN gradient).
         lower = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 0] for i in range(n)])
         upper = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 1] for i in range(n)])
         x_full = (lower + upper) / 2.0
-
-        # Only optimise the FREE coordinates. Point-bound coordinates (lower ==
-        # upper, e.g. a fixed [0, 0]) are held at their value and never handed to
-        # L-BFGS-B: a zero-width finite-difference step there divides by zero,
-        # produces a NaN gradient, and leaves the optimiser stalled (#57).
         free = upper > lower
+        R_target, t_target = trans[:3, :3], trans[:3, 3]
 
         def expand(x_free):
             x = x_full.copy()
@@ -226,19 +309,13 @@ class TSRChain:
             return geodesic_distance(self.to_transform(expand(x_free).reshape(n, 6)), trans)
 
         if not numpy.any(free):
-            # Fully fixed chain: a single candidate pose, nothing to optimise.
-            return float(geodesic_at(numpy.empty(0))), x_full.reshape(n, 6)
+            res = geodesic_at(numpy.empty(0))
+            status = "satisfied" if res < tolerance else "not_found"
+            return ChainSolveResult(status, x_full.reshape(n, 6), float(res), 0, 0)
 
-        # Optimise a SMOOTH squared pose residual, not the geodesic distance
-        # directly: geodesic_distance uses arccos for the rotation angle, which is
-        # non-smooth at 0 and creates spurious local minima that trap a single
-        # midpoint-start solve -- a chain then rejects a pose from its own
-        # sample() even with no numerical warning (#57). The chordal rotation
-        # term (3 - tr(Rᵀ R')) is smooth everywhere and zero iff the rotations
-        # match, so its global minimum coincides with true membership.
-        R_target = trans[:3, :3]
-        t_target = trans[:3, 3]
-
+        # The geodesic's arccos rotation term is non-smooth at 0 and breeds local
+        # minima; the chordal term (3 - tr(Rᵀ R')) is smooth and zero iff the
+        # rotations match, so its global minimum coincides with membership.
         def residual_sq(x_free):
             T = self.to_transform(expand(x_free).reshape(n, 6))
             dt = T[:3, 3] - t_target
@@ -248,69 +325,84 @@ class TSRChain:
         span_f = hi_f - lo_f
         bounds = list(zip(lo_f, hi_f))
 
-        # Deterministic multi-start guards against ordinary local minima: even a
-        # smooth objective can have several basins for a serial chain. Starts are
-        # the bounds midpoint, the two extreme corners, and a fixed low-discrepancy
-        # set (seeded, so results are reproducible). Early-exit once an exact
-        # in-set pose is found (residual ~ 0), so the common membership query stays
-        # cheap.
-        rng = numpy.random.default_rng(0)
+        # Deterministic bounded restarts: an invalid initial guess still warm-starts
+        # first, then midpoint, corners, and a fixed low-discrepancy set.
+        gen = numpy.random.default_rng(0)
         starts = [x_full[free], lo_f, hi_f]
-        starts += [lo_f + span_f * rng.random(int(free.sum())) for _ in range(self._DISTANCE_RESTARTS)]
+        starts += [lo_f + span_f * gen.random(int(free.sum())) for _ in range(max_restarts)]
+        if initial_guess is not None:
+            ig = numpy.asarray(initial_guess, dtype=float)
+            if ig.shape == (n, 6):
+                starts.insert(0, ig.reshape(-1)[free])
 
         best_x = x_full[free]
         best_res = residual_sq(best_x)
+        nfev = 0
+        restarts = 0
         for x0 in starts:
-            xopt, res, _info = scipy.optimize.fmin_l_bfgs_b(
-                residual_sq, x0, fprime=None, args=(), bounds=bounds, approx_grad=True
+            restarts += 1
+            xopt, res, info = scipy.optimize.fmin_l_bfgs_b(
+                residual_sq, x0, fprime=None, args=(), bounds=bounds, approx_grad=True, maxfun=max_nfev
             )
+            nfev += int(info.get("funcalls", 0))
             if res < best_res:
                 best_res, best_x = res, xopt
-            if best_res < 1e-14:
+            if geodesic_at(best_x) < tolerance:
                 break
 
-        # Report the true geodesic distance at the recovered coordinates.
-        return geodesic_at(best_x), expand(best_x).reshape(n, 6)
+        geo = geodesic_at(best_x)
+        status = "satisfied" if geo < tolerance else "not_found"
+        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), nfev, restarts)
+
+    def distance(self, trans):
+        """
+        Best-found geodesic residual from the chain to a transform, and the
+        recovered coordinates.
+
+        Delegates to :meth:`solve`. If a witness within tolerance is found the
+        residual is ~0; otherwise it is the **best found** residual -- an upper
+        bound on the true minimum, not a certified distance (#85). Callers needing
+        an exact positive certificate should use :meth:`validate_witness`.
+
+        @param trans 4x4 transform
+        @return dist  best-found geodesic residual
+        @return bwopt recovered coordinates as an (n, 6) array of xyzrpy
+        """
+        result = self.solve(trans)
+        return result.residual, result.coordinates
 
     def closest_transform(self, trans):
         """
-        Distance to the chain and the closest composed world-frame transform.
+        Best-found residual and the closest composed world-frame transform.
 
-        Companion to :meth:`distance` (which returns the closest point as a list
-        of per-TSR ``xyzrpy`` coordinates): this returns the same distance
-        together with the corresponding composed world-frame pose, so planner
-        projection code need not re-run :meth:`to_transform` on the coordinate
-        result by hand. Mirrors :meth:`TSR.closest_transform` for chains (#63).
-
-        @param trans 4x4 transform
-        @return dist geodesic distance to the chain (0 if trans is inside)
-        @return T    4x4 closest composed transform in the world frame
+        Mirrors :meth:`TSR.closest_transform` for chains (#63); inherits
+        :meth:`distance`'s best-found (upper-bound) approximation status (#85).
         """
         dist, bwopt = self.distance(trans)
         return dist, self.to_transform(bwopt)
 
-    def contains(self, trans):
+    def contains(self, trans, initial_guess=None):
         """
-        Checks if the TSR chain contains the transform.
+        Whether the chain contains the transform.
 
         A chain is the set of poses reachable by **serially composing** a
-        transform sampled from each component TSR -- not the Boolean
-        intersection of the components' world-frame pose sets. Membership is
-        tested via the composed ``distance()`` (they are consistent). For a
-        single TSR this reduces to ``TSR.contains()``.
+        transform sampled from each component TSR -- not the Boolean intersection
+        of the components' world-frame pose sets. A single-TSR chain uses the
+        exact closed-form check. For multi-TSR chains this delegates to
+        :meth:`solve`: ``True`` means a witness was found within the numerical
+        budget; ``False`` means none was found and is **not** a certificate of
+        non-membership (#85). Pass ``initial_guess`` (e.g. a retained witness) for
+        the exact fast path.
 
         @param  trans 4x4 transform
-        @return       True if inside and False if not
+        @param  initial_guess (optional) (n, 6) coordinates to check first
+        @return       True if a witness is found, False otherwise
         """
         if len(self.TSRs) == 0:
             return False
-        # A single-TSR chain is exactly one TSR: use the closed-form check, which
-        # is exact and avoids the optimiser stalling at the non-smooth geodesic
-        # minimum (arccos kink at angle 0).
         if len(self.TSRs) == 1:
             return self.TSRs[0].contains(trans)
-        dist, _ = self.distance(trans)
-        return abs(dist) < EPSILON
+        return self.solve(trans, initial_guess=initial_guess).status == "satisfied"
 
     def to_xyzrpy(self, trans):
         """
