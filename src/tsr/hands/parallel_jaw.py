@@ -494,6 +494,8 @@ class ParallelJawGripper(GripperBase):
         preshape_user: Optional[float],
         k: int,
         clearance: float,
+        box_scale: float,
+        approach_extent: float,
         subject: str,
         reference: str,
         name_prefix: str,
@@ -511,16 +513,18 @@ class ParallelJawGripper(GripperBase):
         the required preshape exceeds max_aperture.
         """
         self._check_depth_count(k)
-        # Internal per-orientation helper: return [] silently on infeasibility;
-        # the public box_* method logs once at its boundary if the whole set is empty.
-        if preshape_user is not None:
-            preshape = preshape_user
-            if self._infeasibility_reason(preshape, span_dim) is not None:
-                return []
-        else:
-            preshape = span_dim + clearance
-            if preshape > self.max_aperture:
-                return []
+        # Internal per-orientation helper: return [] silently on infeasibility for
+        # THIS orientation; the public box_* method logs once at its boundary if every
+        # requested orientation is empty (#70). An empty slide band (this orientation's
+        # perpendicular dimension is too thin for the clearance) removes only this
+        # orientation, never the perpendicular one.
+        if slide_half <= 0.0:
+            return []
+        preshape = preshape_user if preshape_user is not None else span_dim + clearance
+        # Straddle feasibility uses the box's characteristic scale (matching the
+        # oracle's Box.scale = max dimension) so factory and contract agree (#107).
+        if self._infeasibility_reason(preshape, span_dim, scale=box_scale) is not None:
+            return []
 
         Bw = np.zeros((6, 2))
         Bw[slide_bw_row, 0] = -slide_half
@@ -528,9 +532,11 @@ class ParallelJawGripper(GripperBase):
 
         R = np.column_stack([np.cross(y_ee, z_ee), y_ee, z_ee])
 
-        # Empty clearance band -> [] silently; the public box_* method logs once at
-        # its boundary (this internal helper never reverses the depth ordering, #68).
-        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        # Insertion depth is bounded by BOTH the finger length (palm clears the
+        # approached face) and the box's extent along the approach axis (the fingertip
+        # clears the far face), each by a clearance (#70). Empty band -> [] silently;
+        # the public box_* method logs once at its boundary.
+        depths = self._usable_depths(clearance, min(self.finger_length, approach_extent) - clearance, k)
         if depths is None:
             return []
         common = dict(
@@ -596,17 +602,14 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
-            return self._empty(
-                "grasp_box_top", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
-            )
+        if self._usable_depths(clearance, min(self.finger_length, box_z) - clearance, k) is None:
+            return self._empty("grasp_box_top", "insufficient_clearance_band", clearance=clearance, box_z=box_z)
         if preshape is not None and preshape > self.max_aperture:
             return self._empty("grasp_box_top", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture)
+        # Per-orientation feasibility (#70): span-x slides in y (band hy), span-y slides
+        # in x (band hx). A thin dimension empties only its dependent orientation; keep
+        # the perpendicular one instead of rejecting the whole face.
         hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
-        if hx <= 0 or hy <= 0:
-            return self._empty(
-                "grasp_box_top", "insufficient_clearance_band", box_x=box_x, box_y=box_y, clearance=clearance
-            )
 
         if not name:
             name = f"{reference.title()} Box Top Grasp"
@@ -619,6 +622,8 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
+            box_scale=max(box_x, box_y, box_z),
+            approach_extent=box_z,
             subject=subject,
             reference=reference,
             name_prefix=name,
@@ -650,13 +655,11 @@ class ParallelJawGripper(GripperBase):
             mode="top",
         )
         if not templates:
+            # Whole family empty: the box is too thin to slide in either orientation, or
+            # every orientation's span cannot straddle within the aperture.
+            reason = "cannot_straddle" if (hx > 0 or hy > 0) else "insufficient_clearance_band"
             return self._empty(
-                "grasp_box_top",
-                "cannot_straddle",
-                box_x=box_x,
-                box_y=box_y,
-                preshape=preshape,
-                max_aperture=self.max_aperture,
+                "grasp_box_top", reason, box_x=box_x, box_y=box_y, clearance=clearance, max_aperture=self.max_aperture
             )
         return templates
 
@@ -684,31 +687,28 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
-            return self._empty(
-                "grasp_box_bottom", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
-            )
+        if self._usable_depths(clearance, min(self.finger_length, box_z) - clearance, k) is None:
+            return self._empty("grasp_box_bottom", "insufficient_clearance_band", clearance=clearance, box_z=box_z)
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_bottom", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
             )
+        # Per-orientation feasibility (#70): a thin dimension empties only its dependent
+        # orientation, keeping the perpendicular one.
         hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
-        if hx <= 0 or hy <= 0:
-            return self._empty(
-                "grasp_box_bottom", "insufficient_clearance_band", box_x=box_x, box_y=box_y, clearance=clearance
-            )
 
         if not name:
             name = f"{reference.title()} Box Bottom Grasp"
 
-        del box_z  # bottom face is always at z=0; accepted for API symmetry
-        T = np.eye(4)
+        T = np.eye(4)  # bottom face is always at z=0
         z_ee = np.array([0.0, 0.0, 1.0])
 
         kw = dict(
             preshape_user=preshape,
             k=k,
             clearance=clearance,
+            box_scale=max(box_x, box_y, box_z),
+            approach_extent=box_z,
             subject=subject,
             reference=reference,
             name_prefix=name,
@@ -740,12 +740,13 @@ class ParallelJawGripper(GripperBase):
             mode="bottom",
         )
         if not templates:
+            reason = "cannot_straddle" if (hx > 0 or hy > 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_bottom",
-                "cannot_straddle",
+                reason,
                 box_x=box_x,
                 box_y=box_y,
-                preshape=preshape,
+                clearance=clearance,
                 max_aperture=self.max_aperture,
             )
         return templates
@@ -773,20 +774,16 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
-            return self._empty(
-                "grasp_box_face_x", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
-            )
+        if self._usable_depths(clearance, min(self.finger_length, box_x) - clearance, k) is None:
+            return self._empty("grasp_box_face_x", "insufficient_clearance_band", clearance=clearance, box_x=box_x)
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_face_x", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
             )
+        # Per-orientation feasibility (#70): span-y slides in z (band hz_half), span-z
+        # slides in y (band hy). A thin dimension empties only its dependent orientation.
         hy = box_y / 2.0 - clearance
         hz_half = box_z / 2.0 - clearance
-        if hy <= 0 or hz_half <= 0:
-            return self._empty(
-                "grasp_box_face_x", "insufficient_clearance_band", box_y=box_y, box_z=box_z, clearance=clearance
-            )
 
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
@@ -802,6 +799,8 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
+            box_scale=max(box_x, box_y, box_z),
+            approach_extent=box_x,
             subject=subject,
             reference=reference,
             name_prefix=name,
@@ -837,12 +836,13 @@ class ParallelJawGripper(GripperBase):
                 finger_orientation="z",
             )
         if not templates:
+            reason = "cannot_straddle" if (hy > 0 or hz_half > 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_face_x",
-                "cannot_straddle",
+                reason,
                 box_y=box_y,
                 box_z=box_z,
-                preshape=preshape,
+                clearance=clearance,
                 max_aperture=self.max_aperture,
             )
         return templates
@@ -870,20 +870,16 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
-            return self._empty(
-                "grasp_box_face_y", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
-            )
+        if self._usable_depths(clearance, min(self.finger_length, box_y) - clearance, k) is None:
+            return self._empty("grasp_box_face_y", "insufficient_clearance_band", clearance=clearance, box_y=box_y)
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_face_y", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
             )
+        # Per-orientation feasibility (#70): span-x slides in z (band hz_half), span-z
+        # slides in x (band hx). A thin dimension empties only its dependent orientation.
         hx = box_x / 2.0 - clearance
         hz_half = box_z / 2.0 - clearance
-        if hx <= 0 or hz_half <= 0:
-            return self._empty(
-                "grasp_box_face_y", "insufficient_clearance_band", box_x=box_x, box_z=box_z, clearance=clearance
-            )
 
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
@@ -899,6 +895,8 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
+            box_scale=max(box_x, box_y, box_z),
+            approach_extent=box_y,
             subject=subject,
             reference=reference,
             name_prefix=name,
@@ -934,12 +932,13 @@ class ParallelJawGripper(GripperBase):
                 finger_orientation="z",
             )
         if not templates:
+            reason = "cannot_straddle" if (hx > 0 or hz_half > 0) else "insufficient_clearance_band"
             return self._empty(
                 "grasp_box_face_y",
-                "cannot_straddle",
+                reason,
                 box_x=box_x,
                 box_z=box_z,
-                preshape=preshape,
+                clearance=clearance,
                 max_aperture=self.max_aperture,
             )
         return templates
