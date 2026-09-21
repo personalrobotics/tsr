@@ -49,6 +49,11 @@ class ParallelJawGripper(GripperBase):
         max_aperture: float,
         clearance_fraction: float = 0.1,
     ):
+        # Centralized gripper-parameter validation (#68): a malformed gripper is an
+        # invalid request, so we raise rather than emit templates or NaNs later.
+        self._check_positive_finite("finger_length", finger_length)
+        self._check_positive_finite("max_aperture", max_aperture)
+        self._check_nonnegative_finite("clearance_fraction", clearance_fraction)
         self.finger_length = finger_length
         self.max_aperture = max_aperture
         self.clearance_fraction = clearance_fraction
@@ -66,11 +71,27 @@ class ParallelJawGripper(GripperBase):
         """
         return self.clearance_fraction * graspable_depth
 
-    def _validate(self, cylinder_radius: float, preshape: float) -> None:
+    def _resolve_clearance(self, clearance: Optional[float], graspable_depth: float) -> float:
+        """Validate an explicit ``clearance`` (finite, >= 0) or derive the default (#104).
+
+        A NaN/inf/negative/Boolean/nonnumeric ``clearance`` is an invalid request and
+        raises ``ValueError`` identifying ``clearance`` -- before it is used to derive
+        a preshape, bounds, depths, or provenance. ``clearance=0`` is valid.
+        """
+        if clearance is None:
+            return self._default_clearance(graspable_depth)
+        self._check_nonnegative_finite("clearance", clearance)
+        return clearance
+
+    def _validate(self, cylinder_radius: float, preshape: float, cylinder_height: Optional[float] = None) -> None:
         # Invalid request -> raise. (An over-wide preshape is geometric
         # infeasibility, reported by the caller via _empty; see the base class.)
-        if cylinder_radius <= 0:
-            raise ValueError("cylinder_radius must be > 0")
+        # A finite, positive radius/height/preshape is required consistently across
+        # every cylinder entry point (#68).
+        self._check_positive_finite("cylinder_radius", cylinder_radius)
+        if cylinder_height is not None:
+            self._check_positive_finite("cylinder_height", cylinder_height)
+        self._check_preshape(preshape)
 
     def grasp_cylinder_side(
         self,
@@ -112,11 +133,10 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if clearance is None:
-            clearance = self._default_clearance(min(self.finger_length, cylinder_radius))
+        clearance = self._resolve_clearance(clearance, min(self.finger_length, cylinder_radius))
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
-        self._validate(cylinder_radius, preshape)
+        self._validate(cylinder_radius, preshape, cylinder_height)
         reason = self._infeasibility_reason(preshape, 2.0 * cylinder_radius)
         if reason:
             return self._empty(
@@ -154,10 +174,11 @@ class ParallelJawGripper(GripperBase):
         # Deepest: fingertips past center, limited by finger_length or far surface.
         depth_min = cylinder_radius
         depth_max = min(self.finger_length, 2 * cylinder_radius) - clearance
-        if depth_max <= depth_min:
-            depths = np.array([depth_min])
-        else:
-            depths = np.linspace(depth_min, depth_max, max(k, 1))
+        depths = self._usable_depths(depth_min, depth_max, k)
+        if depths is None:
+            return self._empty(
+                "grasp_cylinder_side", "insufficient_clearance_band", clearance=clearance, radius=cylinder_radius
+            )
 
         common = dict(
             T_ref_tsr=T_ref_tsr,
@@ -170,7 +191,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             ro = cylinder_radius + self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             Tw_e_0 = np.array(
                 [
                     [0.0, 0.0, -1.0, ro],
@@ -238,11 +259,10 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
-        self._validate(cylinder_radius, preshape)
+        self._validate(cylinder_radius, preshape, cylinder_height)
         reason = self._infeasibility_reason(preshape, 2.0 * cylinder_radius)
         if reason:
             return self._empty(
@@ -270,7 +290,14 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
-        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        if depths is None:
+            return self._empty(
+                "grasp_cylinder_top",
+                "insufficient_clearance_band",
+                clearance=clearance,
+                finger_length=self.finger_length,
+            )
         common = dict(
             T_ref_tsr=T_ref_tsr,
             Bw=Bw,
@@ -282,7 +309,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             t_desc = description or (
                 f"{dlabel.capitalize()} top grasp on {reference}: "
                 f"palm {h_palm * 1000:.0f}mm above rim, preshape {preshape * 1000:.0f}mm"
@@ -337,11 +364,10 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
             preshape = 2.0 * cylinder_radius + clearance
-        self._validate(cylinder_radius, preshape)
+        self._validate(cylinder_radius, preshape, cylinder_height)
         reason = self._infeasibility_reason(preshape, 2.0 * cylinder_radius)
         if reason:
             return self._empty(
@@ -369,7 +395,14 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
-        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        if depths is None:
+            return self._empty(
+                "grasp_cylinder_bottom",
+                "insufficient_clearance_band",
+                clearance=clearance,
+                finger_length=self.finger_length,
+            )
         common = dict(
             T_ref_tsr=T_ref_tsr,
             Bw=Bw,
@@ -381,7 +414,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             t_desc = description or (
                 f"{dlabel.capitalize()} bottom grasp on {reference}: "
                 f"palm {h_palm * 1000:.0f}mm below bottom, preshape {preshape * 1000:.0f}mm"
@@ -416,10 +449,9 @@ class ParallelJawGripper(GripperBase):
 
     # ── Box primitives ────────────────────────────────────────────────────────
 
-    def _validate_box(self, box_x: float, box_y: float, box_z: float) -> None:
-        for dim, label in ((box_x, "box_x"), (box_y, "box_y"), (box_z, "box_z")):
-            if dim <= 0:
-                raise ValueError(f"{label} must be > 0")
+    def _validate_box(self, box_x: float, box_y: float, box_z: float, preshape: Optional[float] = None) -> None:
+        self._check_dimensions(box_x=box_x, box_y=box_y, box_z=box_z)
+        self._check_preshape(preshape)
 
     def _box_face_templates(
         self,
@@ -466,7 +498,11 @@ class ParallelJawGripper(GripperBase):
 
         R = np.column_stack([np.cross(y_ee, z_ee), y_ee, z_ee])
 
-        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        # Empty clearance band -> [] silently; the public box_* method logs once at
+        # its boundary (this internal helper never reverses the depth ordering, #68).
+        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        if depths is None:
+            return []
         common = dict(
             T_ref_tsr=T_ref_tsr,
             Bw=Bw,
@@ -478,7 +514,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             Tw_e = np.eye(4)
             Tw_e[:3, :3] = R
             Tw_e[:3, 3] = -z_ee * h_palm  # palm is h_palm outside the face
@@ -528,9 +564,12 @@ class ParallelJawGripper(GripperBase):
         Each orientation generates k depth templates if max_aperture allows.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
-        self._validate_box(box_x, box_y, box_z)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
+        self._validate_box(box_x, box_y, box_z, preshape)
+        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
+            return self._empty(
+                "grasp_box_top", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty("grasp_box_top", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture)
         hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
@@ -613,9 +652,12 @@ class ParallelJawGripper(GripperBase):
         Each orientation generates k depth templates if max_aperture allows.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
-        self._validate_box(box_x, box_y, box_z)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
+        self._validate_box(box_x, box_y, box_z, preshape)
+        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
+            return self._empty(
+                "grasp_box_bottom", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_bottom", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
@@ -699,9 +741,12 @@ class ParallelJawGripper(GripperBase):
         Each valid orientation (max_aperture allows the span) generates k templates.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
-        self._validate_box(box_x, box_y, box_z)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
+        self._validate_box(box_x, box_y, box_z, preshape)
+        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
+            return self._empty(
+                "grasp_box_face_x", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_face_x", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
@@ -793,9 +838,12 @@ class ParallelJawGripper(GripperBase):
         Each valid orientation (max_aperture allows the span) generates k templates.
         """
         self._check_depth_count(k)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
-        self._validate_box(box_x, box_y, box_z)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
+        self._validate_box(box_x, box_y, box_z, preshape)
+        if self._usable_depths(clearance, self.finger_length - clearance, k) is None:
+            return self._empty(
+                "grasp_box_face_y", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_face_y", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
@@ -897,10 +945,9 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if object_radius <= 0:
-            raise ValueError("object_radius must be > 0")
-        if clearance is None:
-            clearance = self._default_clearance(min(self.finger_length, object_radius))
+        self._check_dimensions(object_radius=object_radius)
+        self._check_preshape(preshape)
+        clearance = self._resolve_clearance(clearance, min(self.finger_length, object_radius))
         if preshape is None:
             preshape = 2.0 * object_radius + clearance
         reason = self._infeasibility_reason(preshape, 2.0 * object_radius)
@@ -927,10 +974,9 @@ class ParallelJawGripper(GripperBase):
 
         depth_min = object_radius
         depth_max = min(self.finger_length, 2 * object_radius) - clearance
-        if depth_max <= depth_min:
-            depths = np.array([depth_min])
-        else:
-            depths = np.linspace(depth_min, depth_max, max(k, 1))
+        depths = self._usable_depths(depth_min, depth_max, k)
+        if depths is None:
+            return self._empty("grasp_sphere", "insufficient_clearance_band", clearance=clearance, radius=object_radius)
 
         common = dict(
             T_ref_tsr=T_ref_tsr,
@@ -943,7 +989,7 @@ class ParallelJawGripper(GripperBase):
         templates = []
         for i, d in enumerate(depths):
             ro = object_radius + self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
             # Approach along -x in TSR frame; standoff ro baked into Tw_e.
             # Bw roll/pitch/yaw rotates this to any direction on the sphere.
             Tw_e = np.array(
@@ -980,11 +1026,9 @@ class ParallelJawGripper(GripperBase):
 
     # ── Torus primitives ─────────────────────────────────────────────────────
 
-    def _validate_torus(self, torus_radius: float, tube_radius: float) -> None:
-        if torus_radius <= 0:
-            raise ValueError("torus_radius must be > 0")
-        if tube_radius <= 0:
-            raise ValueError("tube_radius must be > 0")
+    def _validate_torus(self, torus_radius: float, tube_radius: float, preshape: Optional[float] = None) -> None:
+        self._check_dimensions(torus_radius=torus_radius, tube_radius=tube_radius)
+        self._check_preshape(preshape)
         if tube_radius >= torus_radius:
             raise ValueError(
                 f"tube_radius ({tube_radius}) must be < torus_radius ({torus_radius}) "
@@ -1043,11 +1087,9 @@ class ParallelJawGripper(GripperBase):
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
-        if n_minor < 1:
-            raise ValueError(f"n_minor must be >= 1, got {n_minor}")
-        self._validate_torus(torus_radius, tube_radius)
-        if clearance is None:
-            clearance = self._default_clearance(min(self.finger_length, tube_radius))
+        self._check_count("n_minor", n_minor)
+        self._validate_torus(torus_radius, tube_radius, preshape)
+        clearance = self._resolve_clearance(clearance, min(self.finger_length, tube_radius))
         if preshape is None:
             preshape = 2.0 * tube_radius + clearance
         reason = self._infeasibility_reason(preshape, 2.0 * tube_radius)
@@ -1105,7 +1147,7 @@ class ParallelJawGripper(GripperBase):
                 # Gripper position in TSR frame (before yaw rotation)
                 tx = torus_radius + ro_minor * ca
                 tz = ro_minor * sa
-                dlabel = _depth_label(k, i)
+                dlabel = _depth_label(len(depths), i)
                 # z_EE = (−cosα, 0, −sinα); y_EE in radial-vertical plane ⊥ z_EE
                 # y_EE ⊥ z_EE in span{x̂,ẑ}: y_EE = (−sinα, 0, cosα)
                 # x_EE = y_EE × z_EE = (0, −1, 0)  [same for all α]
@@ -1179,9 +1221,8 @@ class ParallelJawGripper(GripperBase):
         returns [] if the outer diameter + clearance exceeds max_aperture.
         """
         self._check_depth_count(k)
-        self._validate_torus(torus_radius, tube_radius)
-        if clearance is None:
-            clearance = self._default_clearance(self.finger_length)
+        self._validate_torus(torus_radius, tube_radius, preshape)
+        clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
             preshape = 2.0 * (torus_radius + tube_radius) + clearance
         outer_diameter = 2.0 * (torus_radius + tube_radius)
@@ -1202,11 +1243,15 @@ class ParallelJawGripper(GripperBase):
         Bw = np.zeros((6, 2))
         Bw[5, 1] = 2 * np.pi
 
-        depths = np.linspace(clearance, self.finger_length - clearance, max(k, 1))
+        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        if depths is None:
+            return self._empty(
+                "grasp_torus_span", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
+            )
         templates = []
         for i, d in enumerate(depths):
             h_palm = self.finger_length - d
-            dlabel = _depth_label(k, i)
+            dlabel = _depth_label(len(depths), i)
 
             # Top: z_EE = [0,0,-1]; TSR origin at tube top (z = +tube_r)
             T_top = np.eye(4)

@@ -193,11 +193,11 @@ class TestNativeConformance(unittest.TestCase):
         thin = ParallelJawGripper(finger_length=0.04, max_aperture=0.30)
         collapsed = thin.grasp_cylinder_side(0.03, 0.12, k=5, clearance=0.01)
         self.assertTrue(all(t.provenance.depth_count == 1 for t in collapsed))
-        # equality-boundary: 3 slots that coincide in depth (dedup deferred to #68)
+        # #68: coincident depth slots at a feasibility boundary (clearance == L/2 here)
+        # are deduplicated to a single depth, not emitted k times.
         boundary = self.gripper.grasp_cylinder_top(0.03, 0.12, k=3, clearance=0.04)
-        self.assertEqual(len(boundary), 3)
-        self.assertTrue(all(t.provenance.depth_count == 3 for t in boundary))
-        self.assertEqual(len({round(t.provenance.depth, 9) for t in boundary}), 1)
+        self.assertEqual(len(boundary), 1)
+        self.assertEqual(boundary[0].provenance.depth_count, 1)
 
     def test_non_grasp_templates_have_no_provenance(self):
         t = TSRTemplate(

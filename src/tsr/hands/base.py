@@ -618,16 +618,75 @@ class GripperBase(ABC):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _check_positive_finite(name: str, value: float) -> None:
+        """Validate a finite, strictly positive scalar. Raises ValueError otherwise (#68)."""
+        if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
+            raise ValueError(f"{name} must be a finite positive number, got {value!r}")
+        if not (np.isfinite(value) and value > 0.0):
+            raise ValueError(f"{name} must be a finite positive number, got {value!r}")
+
+    @classmethod
+    def _check_dimensions(cls, **named: float) -> None:
+        """Validate every named primitive dimension is finite and positive (#68)."""
+        for name, value in named.items():
+            cls._check_positive_finite(name, value)
+
+    @staticmethod
+    def _check_nonnegative_finite(name: str, value: float) -> None:
+        """Validate a finite scalar >= 0 (clearance, clearance_fraction). Raises otherwise (#104)."""
+        if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
+            raise ValueError(f"{name} must be a finite number >= 0, got {value!r}")
+        if not (np.isfinite(value) and value >= 0.0):
+            raise ValueError(f"{name} must be a finite number >= 0, got {value!r}")
+
+    @classmethod
+    def _check_preshape(cls, preshape: Optional[float]) -> None:
+        """A supplied preshape must be finite and positive; None uses the default (#68)."""
+        if preshape is not None:
+            cls._check_positive_finite("preshape", preshape)
+
+    @staticmethod
+    def _check_count(name: str, value: int) -> None:
+        """Validate a discrete count (``k``, ``n_minor``): an integer >= 1 (#68)."""
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+            raise ValueError(f"{name} must be an integer >= 1, got {value!r}")
+        if value < 1:
+            raise ValueError(f"{name} must be an integer >= 1, got {value!r}")
+
+    @staticmethod
     def _check_depth_count(k: int) -> None:
-        """Validate the discrete-depth count. Raises ValueError for k < 1."""
-        if k < 1:
-            raise ValueError(f"k (number of approach depths) must be >= 1, got {k}")
+        """Backwards-compatible alias for :meth:`_check_count` on ``k``."""
+        GripperBase._check_count("k", k)
 
     @staticmethod
     def _check_angle_range(angle_range: Tuple[float, float]) -> None:
-        """Validate a (min, max) yaw range. Raises if reversed (min > max)."""
-        if angle_range[0] > angle_range[1]:
+        """Validate a (min, max) yaw range: finite and ordered (min <= max) (#68)."""
+        lo, hi = angle_range
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            raise ValueError(f"angle_range must be finite, got {angle_range}")
+        if lo > hi:
             raise ValueError(f"angle_range must be (min, max) with min <= max, got {angle_range}")
+
+    @staticmethod
+    def _usable_depths(lo: float, hi: float, k: int) -> Optional[np.ndarray]:
+        """``k`` approach depths in ``[lo, hi]``, or ``None`` if the band is empty (#68).
+
+        Exact, scale-independent boundary policy (#105):
+
+        * ``hi < lo`` -> ``None`` (empty band; a positive clearance left no interval, so
+          the caller emits ``insufficient_clearance_band`` rather than reversing the
+          shallow-to-deep ordering via ``np.linspace``);
+        * ``hi == lo`` -> a single depth (coincident endpoints);
+        * ``hi > lo`` -> ``k`` depths.
+
+        The comparison is exact: a positive-width interval never collapses through a
+        default (unit- or scale-dependent) ``np.isclose`` tolerance.
+        """
+        if hi < lo:
+            return None
+        if hi == lo:
+            return np.array([float(lo)])
+        return np.linspace(lo, hi, k)
 
     def _infeasibility_reason(self, preshape: float, object_span: float) -> Optional[str]:
         """Why a grasp of ``object_span`` at ``preshape`` is infeasible, else None.
