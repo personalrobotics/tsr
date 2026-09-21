@@ -10,6 +10,17 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Added
+- **Independent analytic grasp oracle** (#67, test-side) in
+  `tests/tsr/hands/_grasp_oracle.py`: certifies the geometric-soundness clauses of
+  the #66 contract from textbook signed-distance representations of box / cylinder /
+  sphere / torus, deriving palm clearance, usable finger depth, jaw contacts,
+  contact normals, and object span **from the concrete pose alone** — never from
+  the generator's private standoff/depth formulas or `provenance` geometric values
+  (`primitive`/`mode` only select the SDF model). Returns a structured
+  `GraspWitness` (failures name the violated clause and its geometry, not just a
+  Boolean). Its unit tests use hand-derived poses only, with negative controls for
+  sign, axis, origin, extent, clearance, and aperture errors. NumPy-only, no
+  shipped-package change; it backs the generator repairs in #68–#73.
 - **Executable geometric grasp contract** (#66) in `docs/ARCHITECTURE.md`: four
   assurance layers (representation / soundness / coverage / embodied), eight
   soundness clauses, and the soundness-vs-coverage-vs-distribution distinctions,
