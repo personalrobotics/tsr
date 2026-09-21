@@ -116,6 +116,115 @@ def test_infeasible_grasp_logs_reason_once(caplog):
 
 
 # --------------------------------------------------------------------------
+# #68 — common parameter hardening and empty-depth semantics.
+# --------------------------------------------------------------------------
+
+nonfinite = st.sampled_from([np.nan, np.inf, -np.inf])
+
+
+def _every_family(g, r, h, k=3):
+    """One call per public grasp family (each returns a list of templates)."""
+    return [
+        lambda: g.grasp_cylinder(r, h, k=k),
+        lambda: g.grasp_box(2 * r, 2 * r, h, k=k),
+        lambda: g.grasp_sphere(r, k=k),
+        lambda: g.grasp_torus(2 * r, r / 2, k=k),
+    ]
+
+
+@given(bad=st.sampled_from([np.nan, np.inf, -np.inf, 0.0, -0.1]))
+def test_non_finite_or_nonpositive_gripper_raises(bad):
+    # A malformed gripper is an invalid request -> ValueError at construction (#68).
+    for call in (
+        lambda: ParallelJawGripper(finger_length=bad, max_aperture=0.1),
+        lambda: ParallelJawGripper(finger_length=0.08, max_aperture=bad),
+    ):
+        try:
+            call()
+            raise AssertionError(f"expected ValueError for gripper param {bad}")
+        except ValueError:
+            pass
+
+
+@given(fl=positive, ma=positive, r=positive, h=positive, bad=nonfinite)
+def test_non_finite_geometry_and_preshape_raise(fl, ma, r, h, bad):
+    g = ParallelJawGripper(finger_length=fl, max_aperture=ma)
+    for call in (
+        lambda: g.grasp_cylinder_side(bad, h),
+        lambda: g.grasp_cylinder_top(r, bad),  # non-finite cylinder_height
+        lambda: g.grasp_sphere(bad),
+        lambda: g.grasp_box_top(r, bad, h),
+        lambda: g.grasp_torus_side(2 * r, bad),
+        lambda: g.grasp_sphere(r, preshape=bad),
+        lambda: g.grasp_cylinder_side(r, h, angle_range=(0.0, bad)),
+    ):
+        try:
+            call()
+            raise AssertionError(f"expected ValueError for non-finite input {bad}")
+        except ValueError:
+            pass
+
+
+@given(fl=positive, ma=positive, r=positive, h=positive, bad=st.sampled_from([0, -1, 2.5, 3.0]))
+def test_non_integer_counts_raise(fl, ma, r, h, bad):
+    # k and n_minor must be integers >= 1; a float (even 3.0) or < 1 raises (#68).
+    g = ParallelJawGripper(finger_length=fl, max_aperture=ma)
+    for call in (lambda: g.grasp_sphere(r, k=bad), lambda: g.grasp_torus_side(2 * r, r / 2, n_minor=bad)):
+        try:
+            call()
+            raise AssertionError(f"expected ValueError for count {bad!r}")
+        except ValueError:
+            pass
+
+
+@given(fl=positive, ma=positive, r=positive, h=positive, k=depth_counts)
+def test_no_template_has_nonfinite_entries(fl, ma, r, h, k):
+    # No generated template contains NaN or infinity (#68).
+    g = ParallelJawGripper(finger_length=fl, max_aperture=ma)
+    for make in _every_family(g, r, h, k):
+        for t in make():
+            for field in (t.T_ref_tsr, t.Tw_e, t.Bw):
+                assert np.all(np.isfinite(field))
+            assert np.isfinite(t.preshape).all()
+            if t.provenance is not None:
+                assert np.isfinite(t.provenance.depth)
+
+
+@given(fl=positive, ma=st.floats(0.5, 1.0, allow_nan=False), r=st.floats(0.01, 0.05, allow_nan=False), h=positive)
+def test_excess_clearance_yields_empty_not_reversed(fl, ma, r, h):
+    # A clearance beyond half the finger length empties the [clearance, L-clearance]
+    # band for cap/span modes; the factory returns [] rather than silently reversing
+    # the shallow-to-deep ordering (#68). The wide aperture rules out exceeds_aperture.
+    g = ParallelJawGripper(finger_length=fl, max_aperture=ma)
+    c = fl * 0.6  # strictly greater than fl / 2
+    assert g.grasp_cylinder_top(r, h, clearance=c) == []
+    assert g.grasp_cylinder_bottom(r, h, clearance=c) == []
+    assert g.grasp_box_top(2 * r, 2 * r, h, clearance=c) == []
+    assert g.grasp_torus_span(2 * r, r / 2, clearance=c) == []
+
+
+def test_clearance_band_boundary_nextafter():
+    # Deterministic boundary: below half -> depths emitted; exactly half -> coincident
+    # slots deduplicated to one; above half -> empty band (never reversed) (#68).
+    fl = 0.08
+    half = fl / 2.0
+    g = ParallelJawGripper(finger_length=fl, max_aperture=0.30)
+    assert len(g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=0.03)) == 3  # well below
+    assert len(g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=half)) == 1  # coincident -> deduped
+    assert g.grasp_cylinder_top(0.03, 0.12, k=3, clearance=np.nextafter(half, np.inf)) == []  # empty band
+
+
+def test_insufficient_clearance_band_logs_reason_once(caplog):
+    g = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+    with caplog.at_level(logging.DEBUG, logger="tsr.hands.base"):
+        result = g.grasp_box_top(0.05, 0.06, 0.07, clearance=0.05)  # 0.05 > L/2 = 0.04
+    assert result == []
+    logs = [r.getMessage() for r in caplog.records if "empty feasible set" in r.getMessage()]
+    assert len(logs) == 1
+    assert "insufficient_clearance_band" in logs[0]
+
+
+# --------------------------------------------------------------------------
 # Placement
 # --------------------------------------------------------------------------
 

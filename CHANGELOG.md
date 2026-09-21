@@ -9,6 +9,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
+### Fixed
+- **Gripper parameter hardening and empty-depth semantics** (#68). An excessive
+  positive `clearance` (more than half the finger length) used to make the
+  cylinder-cap, box, and torus-span factories build depths with
+  `linspace(clearance, finger_length - clearance, k)` over a *reversed* interval,
+  silently emitting templates with a backwards shallow-to-deep ordering. A shared
+  `_usable_depths` helper now returns `[]` with reason `insufficient_clearance_band`
+  when the band is empty, and deduplicates coincident depth slots at a feasibility
+  boundary to a single depth (the dedup deferred from earlier). Input validation is
+  centralized and applied uniformly across every factory: finite/positive
+  `finger_length`, `max_aperture`, primitive dimensions and `preshape`; finite,
+  nonnegative `clearance_fraction`; integer `k >= 1` and `n_minor >= 1`; finite,
+  ordered `angle_range`; and positive `cylinder_height` for the side/top/bottom
+  entry points alike. Nonsensical arguments raise `ValueError`; valid arguments with
+  an empty feasible set return `[]` with one coherent diagnostic log. No generated
+  template contains NaN or infinity. Property-tested with non-finite/zero/negative
+  scalars, `nextafter` boundary neighbours, excessive clearances, and
+  integral/non-integral counts.
+
 ### Added
 - **Independent analytic grasp oracle** (#67, #93–#102, test-side) in
   `tests/tsr/hands/_grasp_oracle.py`: certifies the geometric-soundness clauses of
