@@ -2,15 +2,26 @@
 # Authors: Siddhartha Srinivasa and contributors to TSR
 
 import logging
+import math
 from dataclasses import dataclass
 from functools import reduce
 
 import numpy
 
 from .tsr import NANBW, TSR
-from .utils import EPSILON, geodesic_distance
+from .utils import EPSILON, geodesic_distance, wrap_to_interval
 
 logger = logging.getLogger(__name__)
+
+
+def _require_int(value, name, *, minimum):
+    """Reject non-integers, booleans, and values below ``minimum`` (#89)."""
+    if isinstance(value, bool) or not isinstance(value, (int, numpy.integer)):
+        raise ValueError(f"{name} must be a non-boolean integer, got {value!r}")
+    value = int(value)
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}, got {value!r}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -35,14 +46,17 @@ class ChainSolveResult:
     ``"not_found"`` is **not** a certificate of non-membership — a finite set of
     local solves cannot prove global infeasibility for a rotation-rich chain.
     ``residual`` is the geodesic residual at ``coordinates`` (an upper bound on
-    the true minimum). ``nfev``/``restarts`` expose the search cost.
+    the true minimum). ``starts`` is the number of optimizer starts actually run
+    (0 on an exact/fast path) and ``nfev`` the total objective evaluations across
+    them — both bounded by the ``max_starts``/``max_nfev`` budget (see
+    :meth:`TSRChain.solve`).
     """
 
     status: str
     coordinates: numpy.ndarray
     residual: float
     nfev: int
-    restarts: int
+    starts: int
 
 
 class TSRChain:
@@ -159,18 +173,26 @@ class TSRChain:
         if len(xyzrpy_list) != len(self.TSRs):
             raise ValueError(f"xyzrpy_list length ({len(xyzrpy_list)}) must match number of TSRs ({len(self.TSRs)})")
 
-        # Clamp values to bounds (required by the L-BFGS-B optimiser that drives
-        # distance(); values slightly outside bounds are normal during line search).
+        # Canonicalise then clamp each coordinate to bounds. Rotations are
+        # periodic: a valid RPY coordinate expressed in [-pi, pi] (e.g. -3.0 for a
+        # wrapping interval [3pi/4, -3pi/4], whose _Bw_cont form is -3.0 + 2pi) must
+        # be wrapped into the component's continuous interval BEFORE clipping, or a
+        # direct clip snaps it to an unrelated boundary rotation and silently
+        # changes the pose -- breaking the witness contract (#87). Translations are
+        # not periodic and are only clamped (values slightly outside bounds are
+        # normal during the optimiser's line search).
         xyzrpy_list_clamped = []
         for idx in range(len(self.TSRs)):
-            xyzrpy = numpy.array(xyzrpy_list[idx])
+            xyzrpy = numpy.array(xyzrpy_list[idx], dtype=float)
             Bw = self.TSRs[idx]._Bw_cont
-            xyzrpy_clamped = numpy.clip(xyzrpy, Bw[:, 0], Bw[:, 1])
-            if not numpy.allclose(xyzrpy, xyzrpy_clamped):
+            canon = xyzrpy.copy()
+            canon[3:6] = wrap_to_interval(xyzrpy[3:6], lower=Bw[3:6, 0])
+            xyzrpy_clamped = numpy.clip(canon, Bw[:, 0], Bw[:, 1])
+            if not numpy.allclose(canon, xyzrpy_clamped):
                 logger.debug(
                     "TSRChain.to_transform: xyzrpy[%d] clamped to Bw (delta=%s)",
                     idx,
-                    xyzrpy - xyzrpy_clamped,
+                    canon - xyzrpy_clamped,
                 )
             xyzrpy_list_clamped.append(xyzrpy_clamped)
 
@@ -224,9 +246,14 @@ class TSRChain:
         """
         return self.to_transform(self.sample_xyzrpy(xyzrpy_list, rng=rng))
 
-    # Default bounded multi-start budget for the inverse chain solve (#85).
-    _DEFAULT_MAX_RESTARTS = 8
-    _DEFAULT_MAX_NFEV = 200
+    # Default TOTAL inverse-solve budget (#85, #89): at most _DEFAULT_MAX_STARTS
+    # optimiser starts, sharing at most _DEFAULT_MAX_NFEV objective evaluations
+    # across the whole solve. The default start count matches the pre-#89 schedule
+    # (midpoint + two opposite corners + 8 seeded interior points), and the default
+    # per-start slice (2200 / 11 = 200) matches the pre-#89 per-start cap, so
+    # ordinary cold queries do no more work than before.
+    _DEFAULT_MAX_STARTS = 11
+    _DEFAULT_MAX_NFEV = 2200
 
     def sample_with_witness(self, xyzrpy_list=None, rng=None):
         """Sample a pose and return it with the coordinates that constructed it.
@@ -239,46 +266,96 @@ class TSRChain:
         coords = numpy.array(self.sample_xyzrpy(xyzrpy_list, rng=rng))
         return ChainSample(pose=self.to_transform(coords), coordinates=coords)
 
+    def _witness_residual(self, trans, coordinates):
+        """Geodesic residual for ``coordinates`` if they are a valid witness, else None.
+
+        One bounds check and one forward composition; no optimiser, no SciPy. An
+        empty chain (shape ``(0, 6)``) has no witness and returns None (#87, #88).
+        """
+        coordinates = numpy.asarray(coordinates, dtype=float)
+        n = len(self.TSRs)
+        if n == 0 or coordinates.shape != (n, 6):
+            return None
+        for i in range(n):
+            if not all(self.TSRs[i].is_valid(coordinates[i])):
+                return None
+        return float(geodesic_distance(self.to_transform(coordinates), trans))
+
     def validate_witness(self, trans, coordinates, tolerance=EPSILON):
         """Exact positive certificate: are ``coordinates`` a valid witness for ``trans``?
 
         Validates the coordinates against each component's bounds and recomposes
         the pose once, returning True iff the recomposition matches ``trans``
-        within ``tolerance``. Uses no optimiser and no SciPy (#85).
+        within ``tolerance``. Uses no optimiser and no SciPy (#85). An empty chain
+        has no witness, so this returns False rather than raising (#87).
         """
-        coordinates = numpy.asarray(coordinates, dtype=float)
-        n = len(self.TSRs)
-        if coordinates.shape != (n, 6):
-            return False
-        for i in range(n):
-            if not all(self.TSRs[i].is_valid(coordinates[i])):
-                return False
-        return bool(geodesic_distance(self.to_transform(coordinates), trans) < tolerance)
+        residual = self._witness_residual(trans, coordinates)
+        return residual is not None and residual < tolerance
 
-    def solve(self, trans, initial_guess=None, max_restarts=None, max_nfev=None, tolerance=EPSILON):
+    def solve(self, trans, initial_guess=None, max_starts=None, max_nfev=None, tolerance=EPSILON):
         """Inverse chain solve: find coordinates whose composition matches ``trans``.
 
         Returns a :class:`ChainSolveResult`. A valid ``initial_guess`` (a retained
-        witness, or a neighbouring state's coordinates) is checked first and
-        short-circuits the search. Otherwise a bounded, deterministic multi-start
-        solve runs, exiting as soon as a tolerance-satisfying witness is found.
-        ``"not_found"`` means no witness within the budget -- **never** a proof of
-        non-membership, which a finite set of local solves cannot establish for a
-        rotation-rich chain (#85).
-        """
-        import scipy.optimize
+        witness, or a neighbouring state's coordinates) is checked first and takes
+        the exact fast path -- one forward composition, no SciPy import (#88).
+        Otherwise a bounded, deterministic multi-start solve runs, exiting as soon
+        as a tolerance-satisfying witness is found. ``"not_found"`` means no witness
+        within the budget -- **never** a proof of non-membership, which a finite set
+        of local solves cannot establish for a rotation-rich chain (#85).
 
-        max_restarts = self._DEFAULT_MAX_RESTARTS if max_restarts is None else max_restarts
+        Budget (a TOTAL, caller-visible bound, #89):
+
+        * ``max_starts`` -- the maximum number of optimiser starts, counting every
+          start (a refining initial guess, the midpoint, the two opposite corners,
+          and seeded interior points). ``ChainSolveResult.starts`` reports how many
+          actually ran. Default 11.
+        * ``max_nfev`` -- the total objective-evaluation budget shared across all
+          starts (each start receives an even slice of the remaining budget).
+          ``ChainSolveResult.nfev`` reports the total consumed. A single start may
+          overrun its slice by up to one finite-difference gradient batch, because
+          L-BFGS-B checks ``maxfun`` between iterations. Default 2200.
+
+        Worst case: at most ``max_starts`` starts and about ``max_nfev``
+        evaluations. ``max_starts == 0`` runs no optimiser and returns the
+        (un-optimised) midpoint candidate.
+
+        ``max_starts`` must be a non-boolean integer >= 0; ``max_nfev`` a
+        non-boolean integer >= 1; ``tolerance`` a finite positive number -- all
+        validated before SciPy is imported. An ``initial_guess`` that is not shaped
+        ``(n, 6)`` or is non-finite is ignored; a finite in-shape guess that is out
+        of bounds is clipped into bounds and used as a refining start.
+        """
+        max_starts = self._DEFAULT_MAX_STARTS if max_starts is None else max_starts
         max_nfev = self._DEFAULT_MAX_NFEV if max_nfev is None else max_nfev
+        max_starts = _require_int(max_starts, "max_starts", minimum=0)
+        max_nfev = _require_int(max_nfev, "max_nfev", minimum=1)
+        if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance):
+            raise ValueError(f"tolerance must be a finite positive number, got {tolerance!r}")
+        if tolerance <= 0:
+            raise ValueError(f"tolerance must be > 0, got {tolerance!r}")
+
         n = len(self.TSRs)
         if n == 0:
             return ChainSolveResult("not_found", numpy.empty((0, 6)), float("inf"), 0, 0)
 
-        # Fast path: a supplied witness that already validates.
-        if initial_guess is not None and self.validate_witness(trans, initial_guess, tolerance):
-            coords = numpy.asarray(initial_guess, dtype=float)
-            res = geodesic_distance(self.to_transform(coords), trans)
-            return ChainSolveResult("satisfied", coords, float(res), 0, 0)
+        # A finite, correctly shaped guess is eligible for the fast path and, if it
+        # does not validate, as the first refining start; any other guess (wrong
+        # shape or non-finite) is ignored (#89).
+        guess = None
+        if initial_guess is not None:
+            try:
+                ig = numpy.asarray(initial_guess, dtype=float)
+            except (ValueError, TypeError):
+                ig = None
+            if ig is not None and ig.shape == (n, 6) and numpy.all(numpy.isfinite(ig)):
+                guess = ig
+
+        # Fast path: a supplied witness that already validates. One composition via
+        # _witness_residual, and crucially no SciPy import (#88).
+        if guess is not None:
+            residual = self._witness_residual(trans, guess)
+            if residual is not None and residual < tolerance:
+                return ChainSolveResult("satisfied", guess, residual, 0, 0)
 
         # Exact path: a single component reduces to the closed-form TSR check.
         if n == 1:
@@ -290,10 +367,10 @@ class TSRChain:
             dist, bw = tsr.distance(trans)
             return ChainSolveResult("not_found", numpy.array([bw]), float(dist), 0, 0)
 
-        # General case: bounded multi-start over a SMOOTH squared pose residual.
-        # _Bw_cont guarantees lower <= upper even for wrapping rotation intervals;
-        # point-bound coordinates are held fixed (never handed to the finite-
-        # difference optimiser, whose zero-width step there yields a NaN gradient).
+        # Continuous bounds over all 6*n coordinates. _Bw_cont guarantees
+        # lower <= upper even for wrapping rotation intervals; point-bound
+        # coordinates are held fixed (never handed to the finite-difference
+        # optimiser, whose zero-width step there yields a NaN gradient).
         lower = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 0] for i in range(n)])
         upper = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 1] for i in range(n)])
         x_full = (lower + upper) / 2.0
@@ -308,10 +385,14 @@ class TSRChain:
         def geodesic_at(x_free):
             return geodesic_distance(self.to_transform(expand(x_free).reshape(n, 6)), trans)
 
+        # All-fixed chain: a single candidate pose, no optimiser, no SciPy (#88).
         if not numpy.any(free):
             res = geodesic_at(numpy.empty(0))
             status = "satisfied" if res < tolerance else "not_found"
             return ChainSolveResult(status, x_full.reshape(n, 6), float(res), 0, 0)
+
+        # --- Bounded multi-start inverse solve (SciPy is imported ONLY here) ---
+        import scipy.optimize
 
         # The geodesic's arccos rotation term is non-smooth at 0 and breeds local
         # minima; the chordal term (3 - tr(Rᵀ R')) is smooth and zero iff the
@@ -323,28 +404,39 @@ class TSRChain:
 
         lo_f, hi_f = lower[free], upper[free]
         span_f = hi_f - lo_f
+        n_free = int(free.sum())
         bounds = list(zip(lo_f, hi_f))
 
-        # Deterministic bounded restarts: an invalid initial guess still warm-starts
-        # first, then midpoint, corners, and a fixed low-discrepancy set.
+        # Deterministic start schedule in priority order, truncated to max_starts
+        # total (#89): a supplied-but-invalid guess (clipped into bounds) refines
+        # first, then midpoint, the two opposite corners, then a fixed
+        # low-discrepancy interior set.
+        schedule = []
+        if guess is not None:
+            schedule.append(numpy.clip(guess.reshape(-1)[free], lo_f, hi_f))
+        schedule += [x_full[free], lo_f, hi_f]
         gen = numpy.random.default_rng(0)
-        starts = [x_full[free], lo_f, hi_f]
-        starts += [lo_f + span_f * gen.random(int(free.sum())) for _ in range(max_restarts)]
-        if initial_guess is not None:
-            ig = numpy.asarray(initial_guess, dtype=float)
-            if ig.shape == (n, 6):
-                starts.insert(0, ig.reshape(-1)[free])
+        while len(schedule) < max_starts:
+            schedule.append(lo_f + span_f * gen.random(n_free))
+        schedule = schedule[:max_starts]
 
+        # Best candidate defaults to the midpoint, so a zero-start budget still
+        # returns a well-defined (un-optimised) result (#89).
         best_x = x_full[free]
         best_res = residual_sq(best_x)
         nfev = 0
-        restarts = 0
-        for x0 in starts:
-            restarts += 1
+        starts = 0
+        for x0 in schedule:
+            if nfev >= max_nfev:
+                break
+            # Share the remaining evaluation budget evenly across remaining starts,
+            # so max_nfev bounds aggregate work.
+            slice_budget = max(1, (max_nfev - nfev) // (max_starts - starts))
             xopt, res, info = scipy.optimize.fmin_l_bfgs_b(
-                residual_sq, x0, fprime=None, args=(), bounds=bounds, approx_grad=True, maxfun=max_nfev
+                residual_sq, x0, fprime=None, args=(), bounds=bounds, approx_grad=True, maxfun=slice_budget
             )
             nfev += int(info.get("funcalls", 0))
+            starts += 1
             if res < best_res:
                 best_res, best_x = res, xopt
             if geodesic_at(best_x) < tolerance:
@@ -352,7 +444,7 @@ class TSRChain:
 
         geo = geodesic_at(best_x)
         status = "satisfied" if geo < tolerance else "not_found"
-        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), nfev, restarts)
+        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), nfev, starts)
 
     def distance(self, trans):
         """

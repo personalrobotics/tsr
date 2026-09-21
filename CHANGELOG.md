@@ -40,12 +40,22 @@ parallel-jaw grasp templates (epic #65).
   - `TSRChain.validate_witness(pose, coordinates, tolerance=EPSILON) -> bool`
     certifies a witness with one bounds check and one forward composition — no
     SciPy, no solve.
-  - `TSRChain.solve(pose, initial_guess=None, max_restarts=8, max_nfev=200) ->
+  - `TSRChain.solve(pose, initial_guess=None, max_starts=11, max_nfev=2200) ->
     ChainSolveResult` runs a bounded, deterministic multi-start inverse solve that
     warm-starts from `initial_guess`, exits on the first tolerance-satisfying
     witness, and returns `status` (`"satisfied"`/`"not_found"`, never
-    `"infeasible"`), `coordinates`, `residual`, `nfev`, and `restarts`.
+    `"infeasible"`), `coordinates`, `residual`, `nfev`, and `starts`. `max_starts`
+    is a **total** cap on optimizer starts and `max_nfev` a **total**
+    evaluation budget shared across them (#89); the valid-witness fast path takes
+    one forward composition and does not import SciPy (#88); numerical controls are
+    validated before SciPy is imported.
   - `ChainSample` and `ChainSolveResult` are exported from `tsr`.
+- **`TSRChain.to_transform` canonicalizes wrapping rotational coordinates** before
+  clamping (#87): a valid RPY coordinate expressed in `[-pi, pi]` for a wrapping
+  interval (e.g. `-3.0` for `[3π/4, -3π/4]`) is wrapped into the component's
+  continuous interval instead of being clipped to an unrelated boundary rotation,
+  which had silently changed the pose and broken the witness contract.
+  `validate_witness` on an empty chain now returns `False` instead of raising.
 
 ### Changed
 - **`TSRChain.contains`, `distance`, and `closest_transform` are documented as

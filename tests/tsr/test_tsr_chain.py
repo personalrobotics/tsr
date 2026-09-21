@@ -575,7 +575,7 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         self.assertEqual(warm.status, "satisfied")
         self.assertLess(warm.residual, EPSILON)
         self.assertEqual(warm.nfev, 0)
-        self.assertEqual(warm.restarts, 0)
+        self.assertEqual(warm.starts, 0)
 
         # contains reflects the same distinction.
         self.assertTrue(chain.contains(pose, initial_guess=coordinates))
@@ -588,7 +588,8 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         r1 = chain.solve(pose)
         r2 = chain.solve(pose)
         self.assertEqual(r1.residual, r2.residual)
-        self.assertEqual(r1.restarts, r2.restarts)
+        self.assertEqual(r1.starts, r2.starts)
+        self.assertEqual(r1.nfev, r2.nfev)
 
     def test_sample_with_witness_returns_valid_witness_without_optimization(self):
         """sample_with_witness gives (pose, coordinates) that recompose exactly."""
@@ -630,12 +631,15 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
                 import scipy.optimize  # noqa: F401
 
     def test_solve_exposes_bounded_budget(self):
-        """Cold solve honors max_restarts/max_nfev and reports counts."""
+        """Cold solve honors max_starts/max_nfev (total) and reports counts."""
         chain, coordinates = self._rotation_rich_fixture()
         pose = chain.to_transform(coordinates)
-        result = chain.solve(pose, max_restarts=2, max_nfev=50)
-        # 2 random restarts + midpoint + 2 corners = 5 starts at most.
-        self.assertLessEqual(result.restarts, 5)
+        result = chain.solve(pose, max_starts=2, max_nfev=50)
+        # max_starts is a TOTAL cap on every start (midpoint, corners, seeded).
+        self.assertLessEqual(result.starts, 2)
+        # nfev may overrun the total by at most one finite-difference gradient
+        # batch (n_free evals) per the last start.
+        self.assertLessEqual(result.nfev, 50 + coordinates.size)
         self.assertIn(result.status, ("satisfied", "not_found"))
 
     def test_solve_never_reports_infeasible(self):
@@ -669,6 +673,161 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         result = chain.solve(pose)
         self.assertEqual(result.status, "satisfied")
         self.assertLess(result.residual, EPSILON)
+
+    # --- #87: wrapping rotational witnesses -------------------------------------
+
+    @staticmethod
+    def _compose_independently(parts, coordinates):
+        """Serial chain composition that does NOT call TSRChain.to_transform.
+
+        A separate oracle (the documented product from Berenson et al. 2011,
+        §5.1) so the witness assertions do not use to_transform as both producer
+        and checker. Only the first component's T0_w participates, matching
+        to_transform.
+        """
+        T = np.array(parts[0].T0_w, dtype=float)
+        for tsr, c in zip(parts, coordinates):
+            T = T @ TSR.xyzrpy_to_trans(np.asarray(c, dtype=float)) @ tsr.Tw_e
+        return T
+
+    def test_wrapping_rotational_witness_is_preserved(self):
+        """A valid coordinate in a wrapping interval is canonicalized, not clipped (#87)."""
+        bounds = np.zeros((6, 2))
+        bounds[5] = [3 * pi / 4, -3 * pi / 4]  # outer (wrapping) yaw interval
+        parts = [TSR(Bw=bounds), TSR()]
+        chain = TSRChain(TSRs=parts)
+
+        coordinates = np.zeros((2, 6))
+        coordinates[0, 5] = -3.0  # valid, expressed in [-pi, pi]
+        self.assertTrue(all(np.all(v) for v in chain.is_valid(coordinates)))
+
+        expected = self._compose_independently(parts, coordinates)
+        actual = chain.to_transform(coordinates)
+        np.testing.assert_allclose(actual, expected, atol=1e-12)
+        self.assertTrue(chain.validate_witness(expected, coordinates))
+
+    def test_sample_with_witness_matches_independent_composition(self):
+        """sample_with_witness poses match an independent serial composition (#87).
+
+        Covers both ordinary and wrapping rotational intervals, and mixed
+        fixed/free coordinates with non-identity frames.
+        """
+        rng = np.random.default_rng(20260921)
+        for yaw_interval in ([-pi / 3, pi / 3], [3 * pi / 4, -3 * pi / 4]):  # ordinary, wrapping
+            parts = [
+                TSR(
+                    T0_w=TSR.xyzrpy_to_trans(np.array([0.1, -0.2, 0.3, 0.2, -0.1, 0.4])),
+                    Tw_e=TSR.xyzrpy_to_trans(np.array([0.05, 0.0, -0.1, 0.0, 0.3, 0.0])),
+                    Bw=np.array([[-0.05, 0.05], [0, 0], [-0.02, 0.02], [0, 0], [-pi / 6, pi / 6], yaw_interval]),
+                ),
+                TSR(
+                    Tw_e=TSR.xyzrpy_to_trans(np.array([0.0, 0.1, 0.0, -0.2, 0.0, 0.1])),
+                    Bw=np.array([[0, 0], [-0.03, 0.03], [0, 0], [-pi / 4, pi / 4], [0, 0], [-pi / 2, pi / 2]]),
+                ),
+            ]
+            chain = TSRChain(TSRs=parts)
+            for _ in range(15):
+                sample = chain.sample_with_witness(rng=rng)
+                expected = self._compose_independently(parts, sample.coordinates)
+                np.testing.assert_allclose(sample.pose, expected, atol=1e-9)
+                self.assertTrue(chain.validate_witness(sample.pose, sample.coordinates))
+
+    def test_validate_witness_empty_chain_returns_false(self):
+        """Empty-chain witness validation is total: False, not ValueError (#87)."""
+        chain = TSRChain()
+        self.assertFalse(chain.validate_witness(np.eye(4), np.empty((0, 6))))
+
+    # --- #88: warm path is optimizer-free and single-pass -----------------------
+
+    def test_exact_paths_do_not_import_scipy(self):
+        """Warm/empty/single/all-fixed solves must not import scipy.optimize (#88)."""
+        import subprocess
+        import sys
+
+        script = "\n".join(
+            [
+                "import sys; import numpy as np",
+                "from tsr import TSR, TSRChain",
+                "assert 'scipy.optimize' not in sys.modules",
+                # valid warm witness (multi-TSR)
+                "seg = TSR(Bw=np.array([[0.,1.],[0,0],[0,0],[0,0],[0,0],[0,0]]))",
+                "chain = TSRChain(TSRs=[seg, seg])",
+                "s = chain.sample_with_witness(rng=np.random.default_rng(0))",
+                "r = chain.solve(s.pose, initial_guess=s.coordinates)",
+                "assert r.status == 'satisfied' and r.nfev == 0 and r.starts == 0, r",
+                # empty chain
+                "assert TSRChain().solve(np.eye(4)).status == 'not_found'",
+                # single-TSR exact
+                "single = TSRChain(tsr=seg)",
+                "assert single.solve(single.sample()).status == 'satisfied'",
+                # all-fixed multi-TSR
+                "fixed = TSR(Bw=np.zeros((6,2)))",
+                "fc = TSRChain(TSRs=[fixed, fixed])",
+                "fc.solve(fc.to_transform(np.zeros((2,6))))",
+                "assert 'scipy.optimize' not in sys.modules, 'scipy.optimize was imported'",
+                "print('OK')",
+            ]
+        )
+        out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("OK", out.stdout)
+
+    def test_warm_solve_composes_pose_only_once(self):
+        """The valid-witness fast path performs exactly one forward composition (#88)."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+
+        real_to_transform = chain.to_transform
+        calls = {"n": 0}
+
+        def counting(coords):
+            calls["n"] += 1
+            return real_to_transform(coords)
+
+        chain.to_transform = counting
+        try:
+            result = chain.solve(pose, initial_guess=coordinates)
+        finally:
+            del chain.to_transform  # restore the bound method
+        self.assertEqual(result.status, "satisfied")
+        self.assertEqual(calls["n"], 1)
+
+    # --- #89: unambiguous budgets and accounting --------------------------------
+
+    def test_zero_start_budget_runs_no_optimizer(self):
+        """max_starts=0 runs no optimizer and returns the midpoint candidate (#89)."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        result = chain.solve(pose, max_starts=0)
+        self.assertEqual(result.starts, 0)
+        self.assertEqual(result.nfev, 0)
+        self.assertEqual(result.status, "not_found")
+        self.assertEqual(result.coordinates.shape, (2, 6))
+
+    def test_invalid_budgets_are_rejected(self):
+        """Negative/boolean/nonintegral/nonfinite controls raise ValueError (#89)."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        for bad in (-1, True, 1.5):
+            with self.assertRaises(ValueError):
+                chain.solve(pose, max_starts=bad)
+        for bad in (0, -5, True, 2.5):
+            with self.assertRaises(ValueError):
+                chain.solve(pose, max_nfev=bad)
+        for bad in (0.0, -1.0, float("inf"), float("nan"), True):
+            with self.assertRaises(ValueError):
+                chain.solve(pose, tolerance=bad)
+
+    def test_invalid_initial_guess_is_ignored(self):
+        """A wrong-shape or non-finite guess is ignored; a cold solve still runs (#89)."""
+        chain, coordinates = self._rotation_rich_fixture()
+        pose = chain.to_transform(coordinates)
+        cold = chain.solve(pose)
+        for bad in (np.zeros((1, 6)), np.full((2, 6), np.nan), "not-an-array"):
+            result = chain.solve(pose, initial_guess=bad)
+            # Falls back to the cold search: same deterministic outcome.
+            self.assertEqual(result.status, cold.status)
+            self.assertEqual(result.residual, cold.residual)
 
 
 if __name__ == "__main__":

@@ -203,6 +203,37 @@ class ChainSolvePerformanceBenchmark(unittest.TestCase):
         print(f"{label}: median {np.median(ms):.3f} ms, p95 {np.percentile(ms, 95):.3f} ms (n={len(ms)})")
         return np.median(ms)
 
+    def test_benchmark_cold_process_first_warm_solve(self):
+        """First warm solve in a FRESH process (#88).
+
+        Steady-state warm solves are sub-millisecond, but the first solve in a new
+        process must not silently pay the SciPy import: the valid-witness fast path
+        returns before `import scipy.optimize`. Reported separately from
+        steady-state median/p95 so the one-time cost is not hidden.
+        """
+        import subprocess
+        import sys
+
+        script = "\n".join(
+            [
+                "import time, numpy as np",
+                "from tsr import TSR, TSRChain",
+                "seg = TSR(Bw=np.array([[0.,1.],[0,0],[0,0],[0,0],[0,0],[0,0]]))",
+                "chain = TSRChain(TSRs=[seg, seg])",
+                "s = chain.sample_with_witness(rng=np.random.default_rng(0))",
+                "t0 = time.perf_counter()",
+                "r = chain.solve(s.pose, initial_guess=s.coordinates)",
+                "dt = (time.perf_counter() - t0) * 1e3",
+                "import sys as _sys",
+                "print(f'{dt:.3f} {\"scipy.optimize\" in _sys.modules}')",
+            ]
+        )
+        out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        dt_ms, scipy_loaded = out.stdout.split()
+        print(f"cold-process first warm solve: {float(dt_ms):.3f} ms, scipy.optimize loaded: {scipy_loaded}")
+        self.assertEqual(scipy_loaded, "False", "warm fast path imported scipy.optimize")
+
     def test_benchmark_chain_paths(self):
         n = 200
         chain = self.chain
