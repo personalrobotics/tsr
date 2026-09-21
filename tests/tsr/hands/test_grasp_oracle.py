@@ -740,6 +740,31 @@ class TestAxisTiltAndForwardReach(unittest.TestCase):
             ).ok
         )
 
+    def test_angular_alignment_boundary(self):
+        # Axis matching is in radians at ANGLE_ATOL: a tilt at the boundary (and
+        # just inside) is accepted, just outside is rejected (#100, #102).
+        for factor, expect in ((0.99, True), (1.0, True), (1.01, False)):
+            theta = ANGLE_ATOL * factor
+            a = [np.sin(theta), 0.0, -np.cos(theta)]
+            wc = _certify(
+                Cylinder(0.03, 0.12),
+                pose_from([0, 0, 0.18], a, [0, 1, 0]),
+                max_aperture=0.30,
+                preshape=0.066,
+                clearance=0.006,
+                mode="top",
+            )
+            self.assertEqual(wc.ok, expect, ("cyl", factor, wc.failed))
+            wb = _certify(
+                Box(0.05, 0.06, 0.07),
+                pose_from([0, 0, 0.13], a, [0, 1, 0]),
+                max_aperture=0.30,
+                preshape=0.066,
+                clearance=0.006,
+                mode="top",
+            )
+            self.assertEqual(wb.ok, expect, ("box", factor, wb.failed))
+
     def test_cylinder_side_missing_ray_rejected(self):
         # #101 reproduction: approach ray y=0.06 misses the r=0.03 cylinder.
         w = _certify(
@@ -845,6 +870,64 @@ class TestInsertionClearanceMatrix(unittest.TestCase):
             )
             self.assertTrue(w.ok, (k, w.failed))
 
+    def test_cylinder_cap_approach_and_far_boundaries(self):
+        c = 0.006
+        tall, short = Cylinder(0.03, 0.12), Cylinder(0.03, 0.05)  # far cap reachable only when h < L
+        atT, atS = length_atol(tall.scale), length_atol(short.scale)
+
+        def cert(cyl, mode, pz):
+            ap = [0, 0, -1] if mode == "top" else [0, 0, 1]
+            return _certify(
+                cyl, pose_from([0, 0, pz], ap, [0, 1, 0]), max_aperture=0.30, preshape=0.066, clearance=c, mode=mode
+            )
+
+        # approached-cap margin = realized_depth (tall cylinder)
+        self.assertTrue(cert(tall, "top", 0.12 + L - (c + atT)).ok)
+        self.assertIn(4, _clauses(cert(tall, "top", 0.12 + L - (c - 2 * atT))))
+        self.assertTrue(cert(tall, "bottom", (c + atT) - L).ok)
+        self.assertIn(4, _clauses(cert(tall, "bottom", (c - 2 * atT) - L)))
+        # far-cap margin = height - realized_depth (short cylinder, h < L)
+        self.assertTrue(cert(short, "top", L + (c + atS)).ok)
+        self.assertIn(4, _clauses(cert(short, "top", L + (c - 2 * atS))))
+        self.assertTrue(cert(short, "bottom", (0.05 - (c + atS)) - L).ok)
+        self.assertIn(4, _clauses(cert(short, "bottom", (0.05 - (c - 2 * atS)) - L)))
+
+    def test_box_approach_and_far_boundaries(self):
+        c = 0.006
+        box = Box(0.05, 0.06, 0.07)  # dz = 0.07 < L, so the far face is reachable
+        at = length_atol(box.scale)
+
+        def top(pz):
+            return _certify(
+                box,
+                pose_from([0, 0, pz], [0, 0, -1], [0, 1, 0]),
+                max_aperture=0.30,
+                preshape=0.066,
+                clearance=c,
+                mode="top",
+            )
+
+        def facex(px):
+            return _certify(
+                box,
+                pose_from([px, 0, 0.035], [-1, 0, 0], [0, 0, 1]),
+                max_aperture=0.30,
+                preshape=0.076,
+                clearance=c,
+                mode="face",
+            )
+
+        # box top approached-face and far-face margins
+        self.assertTrue(top(0.07 + L - (c + at)).ok)
+        self.assertIn(4, _clauses(top(0.07 + L - (c - 2 * at))))
+        self.assertTrue(top(L + (c + at)).ok)
+        self.assertIn(4, _clauses(top(L + (c - 2 * at))))
+        # box +x face approached-face and far-face margins
+        self.assertTrue(facex(0.025 + L - (c + at)).ok)
+        self.assertIn(4, _clauses(facex(0.025 + L - (c - 2 * at))))
+        self.assertTrue(facex(0.055 + (c + at)).ok)
+        self.assertIn(4, _clauses(facex(0.055 + (c - 2 * at))))
+
 
 class TestApertureMatrix(unittest.TestCase):
     """Pose-relative aperture across primitives, both jaw sides, boundaries (#97, #102)."""
@@ -891,6 +974,52 @@ class TestApertureMatrix(unittest.TestCase):
         self.assertFalse(
             _certify(Sphere(r), pose, preshape=np.nextafter(2 * r, -np.inf), clearance=c, mode="surface").ok
         )
+
+    def test_boundary_neighbours_all_centered_modes(self):
+        # Exact fit boundary (preshape = span + 2*atol is accepted) and both
+        # neighbours, for every centred mode including torus side and span (#97, #102).
+        specs = [
+            (Sphere(0.03), pose_from([0.06, 0, 0], [-1, 0, 0], [0, 1, 0]), "surface", 0.06, A),
+            (Cylinder(0.03, 0.12), pose_from([0.06, 0, 0.06], [-1, 0, 0], [0, 1, 0]), "side", 0.06, A),
+            (Torus(0.06, 0.02), pose_from([0.12, 0, 0], [-1, 0, 0], [0, 0, 1]), "side", 0.04, A),
+            (Torus(0.06, 0.02), pose_from([0, 0, 0.05], [0, 0, -1], [0, 1, 0]), "span", 0.16, 0.50),
+        ]
+        for prim, pose, mode, span, ap in specs:
+            at = length_atol(prim.scale)
+            self.assertTrue(
+                _certify(prim, pose, max_aperture=ap, preshape=span + 4 * at, clearance=0.006, mode=mode).ok, mode
+            )
+            self.assertTrue(
+                _certify(prim, pose, max_aperture=ap, preshape=span + 2 * at, clearance=0.006, mode=mode).ok, mode
+            )
+            self.assertFalse(_certify(prim, pose, max_aperture=ap, preshape=span, clearance=0.006, mode=mode).ok, mode)
+
+    def test_torus_span_both_jaw_sides_and_asymmetric(self):
+        R, r, c = 0.06, 0.02, 0.006
+        preshape = 2 * (R + r) + c  # jaw half = R + r + c/2
+        # Asymmetric but fully enclosed (palm shifted < c/2 along y_EE) still certifies.
+        self.assertTrue(
+            _certify(
+                Torus(R, r),
+                pose_from([0, c * 0.25, 0.05], [0, 0, -1], [0, 1, 0]),
+                max_aperture=0.50,
+                preshape=preshape,
+                clearance=c,
+                mode="span",
+            ).ok
+        )
+        # Shifting past c/2 pushes the corresponding contact outside that jaw.
+        for dy in (c, -c):
+            w = _certify(
+                Torus(R, r),
+                pose_from([0, dy, 0.05], [0, 0, -1], [0, 1, 0]),
+                max_aperture=0.50,
+                preshape=preshape,
+                clearance=c,
+                mode="span",
+            )
+            self.assertFalse(w.ok, dy)
+            self.assertIn(2, _clauses(w))
 
 
 def _mode_for(prim):
@@ -1034,6 +1163,51 @@ class TestTorusSideMatrix(unittest.TestCase):
                 mode="side",
             )
             self.assertTrue(w.ok, (k, w.failed))
+
+    def test_reach_boundary(self):
+        # t_center = r + standoff must lie in the forward interval (0, L]. At exactly
+        # L it is accepted; just beyond, clause 5 (#99, #102).
+        R, r, c = 0.06, 0.02, 0.006
+        at = length_atol(R + r)
+        self.assertTrue(
+            _certify(Torus(R, r), self._pose(R, r, 0.0, 0.0, L - r), preshape=2 * r + c, clearance=c, mode="side").ok
+        )
+        self.assertTrue(
+            _certify(
+                Torus(R, r), self._pose(R, r, 0.0, 0.0, L - r - 2 * at), preshape=2 * r + c, clearance=c, mode="side"
+            ).ok
+        )
+        w = _certify(
+            Torus(R, r), self._pose(R, r, 0.0, 0.0, L - r + 2 * at), preshape=2 * r + c, clearance=c, mode="side"
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(5, _clauses(w))
+
+    def test_vertical_over_axis_degenerate(self):
+        # A vertical approach over the torus axis has an undefined azimuth (#99).
+        w = _certify(
+            Torus(0.06, 0.02),
+            pose_from([0, 0, 0.05], [0, 0, -1], [1, 0, 0]),
+            preshape=0.046,
+            clearance=0.006,
+            mode="side",
+        )
+        self.assertFalse(w.ok)
+        self.assertIn(8, _clauses(w))
+
+    def test_near_vertical_minor_angle(self):
+        # alpha just inside +pi/2 (near-vertical approach) still certifies with the
+        # azimuth recovered from the horizontal approach component.
+        R, r = 0.06, 0.02
+        w = _certify(
+            Torus(R, r),
+            self._pose(R, r, 0.5, np.pi / 2 - 1e-3, 0.03),
+            preshape=2 * r + 0.006,
+            clearance=0.006,
+            mode="side",
+        )
+        self.assertTrue(w.ok, w.failed)
+        self.assertAlmostEqual(w.minor_angle, np.pi / 2 - 1e-3, delta=1e-6)
 
 
 if __name__ == "__main__":
