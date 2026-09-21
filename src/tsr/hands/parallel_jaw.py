@@ -172,12 +172,21 @@ class ParallelJawGripper(GripperBase):
 
         # Shallowest: fingertips at cylinder center (depth = radius).
         # Deepest: fingertips past center, limited by finger_length or far surface.
+        # Reach band: fingertips reach the axis (depth >= radius) and the palm stays a
+        # clearance outside the surface (depth <= finger_length - clearance). This is
+        # empty exactly when finger_length < radius + clearance -- the fingers are too
+        # short to grasp past the object with clearance, so the palm would sit inside
+        # the surface (#69). Report finger_too_short rather than a clearance band.
         depth_min = cylinder_radius
         depth_max = min(self.finger_length, 2 * cylinder_radius) - clearance
         depths = self._usable_depths(depth_min, depth_max, k)
         if depths is None:
             return self._empty(
-                "grasp_cylinder_side", "insufficient_clearance_band", clearance=clearance, radius=cylinder_radius
+                "grasp_cylinder_side",
+                "finger_too_short",
+                finger_length=self.finger_length,
+                radius=cylinder_radius,
+                clearance=clearance,
             )
 
         common = dict(
@@ -972,11 +981,20 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
+        # Reach band, identical to the cylinder-side derivation (#69): empty exactly
+        # when finger_length < radius + clearance, which would place the palm inside
+        # the sphere. Report finger_too_short rather than a clearance band.
         depth_min = object_radius
         depth_max = min(self.finger_length, 2 * object_radius) - clearance
         depths = self._usable_depths(depth_min, depth_max, k)
         if depths is None:
-            return self._empty("grasp_sphere", "insufficient_clearance_band", clearance=clearance, radius=object_radius)
+            return self._empty(
+                "grasp_sphere",
+                "finger_too_short",
+                finger_length=self.finger_length,
+                radius=object_radius,
+                clearance=clearance,
+            )
 
         common = dict(
             T_ref_tsr=T_ref_tsr,

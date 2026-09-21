@@ -10,6 +10,18 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Cylinder-side and sphere reach soundness** (#69). When the fingers are too
+  short to grasp past the object with the requested clearance
+  (`finger_length < radius + clearance`), the factories now report the empty
+  feasible set with the precise reason `finger_too_short` (previously the
+  `_usable_depths` band already returned `[]` but logged it as
+  `insufficient_clearance_band`), so a palm-inside template is never emitted.
+  No previously-sound templates were removed. A new oracle-backed property
+  (`tests/tsr/hands/test_reach_soundness.py`) certifies every emitted cylinder-side
+  and sphere pose — at its `Bw` extrema and midpoint — against the independent #67
+  analytic oracle, across radius/finger-length/aperture/clearance/`k`, the exact
+  reach boundary and its `nextafter` neighbours, SO(3) equivariance for spheres, and
+  the named grippers at their reach boundaries.
 - **Gripper parameter hardening and empty-depth semantics** (#68). An excessive
   positive `clearance` (more than half the finger length) used to make the
   cylinder-cap, box, and torus-span factories build depths with
