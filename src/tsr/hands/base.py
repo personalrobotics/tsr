@@ -668,6 +668,19 @@ class GripperBase(ABC):
             raise ValueError(f"angle_range must be (min, max) with min <= max, got {angle_range}")
 
     @staticmethod
+    def _sample_range(interval: Tuple[float, float], n: int) -> np.ndarray:
+        """``n`` samples of a closed interval; ``n == 1`` is the CENTER, not an endpoint.
+
+        ``np.linspace(lo, hi, 1)`` returns ``lo``, which for a symmetric minor-angle
+        range would silently pick a lower approach rather than the intended equatorial
+        centre. A single sample is the interval midpoint (#71).
+        """
+        lo, hi = interval
+        if n == 1:
+            return np.array([(lo + hi) / 2.0])
+        return np.linspace(lo, hi, n)
+
+    @staticmethod
     def _usable_depths(lo: float, hi: float, k: int) -> Optional[np.ndarray]:
         """``k`` approach depths in ``[lo, hi]``, or ``None`` if the band is empty (#68).
 

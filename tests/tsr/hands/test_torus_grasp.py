@@ -150,13 +150,17 @@ class TestGraspTorusSide(unittest.TestCase):
             ro_minor = t.Tw_e[0, 3] - SR
             np.testing.assert_allclose(ro_minor - FL, 0.0, atol=1e-10)
 
-    def test_side_depth_deep_fingertip_at_inner_surface(self):
-        """Deepest depth (d=2*tube_radius): fingertip at inner tube surface."""
+    def test_side_depth_deep_palm_a_clearance_outside(self):
+        """Deepest depth d = min(2r, L) - clearance: palm a clearance outside the tube (#71)."""
         # k=2, n_minor=3 → α=0 block at idx 4-7; deep=6,7
         ts = self.gripper.grasp_torus_side(SR, Sr, k=2, n_minor=3)
+        clearance = self.gripper.clearance_fraction * min(FL, Sr)
+        d_deep = min(2 * Sr, FL) - clearance
         for t in ts[6:8]:
-            ro_minor = t.Tw_e[0, 3] - SR
-            np.testing.assert_allclose(ro_minor - FL, -Sr, atol=1e-10)
+            ro_minor = t.Tw_e[0, 3] - SR  # palm distance from the tube centre
+            np.testing.assert_allclose(ro_minor, Sr + FL - d_deep, atol=1e-10)
+            # Palm stays at least a clearance beyond the outer tube surface.
+            self.assertGreaterEqual(ro_minor - Sr, clearance - 1e-12)
 
     def test_raises_for_invalid_torus(self):
         with self.assertRaises(ValueError):
