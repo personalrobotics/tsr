@@ -16,6 +16,7 @@ import numpy as np
 from numpy import pi
 
 from tsr.tsr import TSR
+from tsr.tsr_chain import TSRChain
 
 
 class PerformanceBenchmark(unittest.TestCase):
@@ -170,6 +171,108 @@ class PerformanceBenchmark(unittest.TestCase):
         print()
 
         print("=" * 50)
+
+
+class ChainSolvePerformanceBenchmark(unittest.TestCase):
+    """Chain inverse-membership benchmarks for the four #85 paths.
+
+    The relevant planning metric is the warm-started solve (a nearby pose whose
+    parent coordinates are retained), not whether an expensive cold global search
+    can eventually recover every witness. We report median and tail latency for
+    forward sampling, witness validation, warm solve, and cold solve.
+    """
+
+    def setUp(self):
+        # A rotation-rich two-TSR chain with nonidentity frames and mixed
+        # fixed/free coordinates -- the case where cold solves are expensive.
+        rng = np.random.default_rng(20260920)
+        parts = []
+        for j in range(2):
+            lo, hi, fr = np.zeros(6), np.zeros(6), rng.random(6) < 0.5
+            c, h = rng.uniform(-0.4, 0.4, 6), rng.uniform(0.05, 0.4, 6)
+            lo[fr], hi[fr] = c[fr] - h[fr], c[fr] + h[fr]
+            T0_w = TSR.xyzrpy_to_trans(rng.uniform(-0.3, 0.3, 6)) if j == 0 else np.eye(4)
+            Tw_e = TSR.xyzrpy_to_trans(rng.uniform(-0.15, 0.15, 6))
+            parts.append(TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=np.column_stack((lo, hi))))
+        self.chain = TSRChain(TSRs=parts)
+        self.rng = rng
+
+    @staticmethod
+    def _report(label, times):
+        ms = np.array(times) * 1e3
+        print(f"{label}: median {np.median(ms):.3f} ms, p95 {np.percentile(ms, 95):.3f} ms (n={len(ms)})")
+        return np.median(ms)
+
+    def test_benchmark_cold_process_first_warm_solve(self):
+        """First warm solve in a FRESH process (#88).
+
+        Steady-state warm solves are sub-millisecond, but the first solve in a new
+        process must not silently pay the SciPy import: the valid-witness fast path
+        returns before `import scipy.optimize`. Reported separately from
+        steady-state median/p95 so the one-time cost is not hidden.
+        """
+        import subprocess
+        import sys
+
+        script = "\n".join(
+            [
+                "import time, numpy as np",
+                "from tsr import TSR, TSRChain",
+                "seg = TSR(Bw=np.array([[0.,1.],[0,0],[0,0],[0,0],[0,0],[0,0]]))",
+                "chain = TSRChain(TSRs=[seg, seg])",
+                "s = chain.sample_with_witness(rng=np.random.default_rng(0))",
+                "t0 = time.perf_counter()",
+                "r = chain.solve(s.pose, initial_guess=s.coordinates)",
+                "dt = (time.perf_counter() - t0) * 1e3",
+                "import sys as _sys",
+                "print(f'{dt:.3f} {\"scipy.optimize\" in _sys.modules}')",
+            ]
+        )
+        out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        dt_ms, scipy_loaded = out.stdout.split()
+        print(f"cold-process first warm solve: {float(dt_ms):.3f} ms, scipy.optimize loaded: {scipy_loaded}")
+        self.assertEqual(scipy_loaded, "False", "warm fast path imported scipy.optimize")
+
+    def test_benchmark_chain_paths(self):
+        n = 200
+        chain = self.chain
+
+        # 1. Forward sampling with witness (no optimizer).
+        samples = []
+        t = []
+        for _ in range(n):
+            s = time.perf_counter()
+            samples.append(chain.sample_with_witness(rng=self.rng))
+            t.append(time.perf_counter() - s)
+        self._report("sample_with_witness", t)
+
+        # 2. Witness validation (one composition, no SciPy).
+        t = []
+        for smp in samples:
+            s = time.perf_counter()
+            chain.validate_witness(smp.pose, smp.coordinates)
+            t.append(time.perf_counter() - s)
+        validate_median = self._report("validate_witness", t)
+
+        # 3. Warm-started solve from the retained witness (fast path).
+        t = []
+        for smp in samples:
+            s = time.perf_counter()
+            chain.solve(smp.pose, initial_guess=smp.coordinates)
+            t.append(time.perf_counter() - s)
+        self._report("solve (warm)", t)
+
+        # 4. Cold solve at the default budget (no initial guess).
+        t = []
+        for smp in samples[:40]:  # cold is heavy; fewer iterations
+            s = time.perf_counter()
+            chain.solve(smp.pose)
+            t.append(time.perf_counter() - s)
+        self._report("solve (cold)", t)
+
+        # Sanity bounds only: witness validation is cheap; nothing is pathological.
+        self.assertLess(validate_median, 5.0, "witness validation is too slow")
 
 
 if __name__ == "__main__":

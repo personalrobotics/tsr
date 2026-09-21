@@ -147,16 +147,39 @@ def test_single_chain_sample_is_contained(tsr):
     assert chain.contains(pose)
 
 
-# Multi-TSR chains, non-identity frames and mixed fixed/free coords (#57). The
-# multi-start solver must recognise every constructive sample as a member.
-# Capped example count: the chain-distance solve is much heavier than the core.
+# Multi-TSR chains, non-identity frames and mixed fixed/free coords (#57, #85).
+# A constructive sample carries a coordinate witness, so membership is decided by
+# the EXACT forward/witness contract -- not by a cold inverse solve, which cannot
+# prove inverse membership for a rotation-rich chain (#85). We assert the witness
+# validates, the warm solve is satisfied, and the warm `contains` fast path holds.
+def _compose_chain_independently(parts, coordinates):
+    """Serial chain composition (Berenson et al. 2011 §5.1) that does NOT call
+    TSRChain.to_transform, so it is an independent oracle for the witness contract
+    (only the first component's T0_w participates, matching to_transform)."""
+    T = np.array(parts[0].T0_w, dtype=float)
+    for tsr, c in zip(parts, coordinates):
+        T = T @ TSR.xyzrpy_to_trans(np.asarray(c, dtype=float)) @ tsr.Tw_e
+    return T
+
+
 @settings(max_examples=40)
 @given(parts=st.lists(tsrs(), min_size=2, max_size=3))
 def test_multi_chain_sample_is_contained(parts):
     chain = TSRChain(TSRs=parts)
-    pose = chain.sample()
-    assert chain.contains(pose)
-    assert abs(chain.distance(pose)[0]) < EPSILON
+    sample = chain.sample_with_witness()
+    assert sample.coordinates.shape == (len(parts), 6)
+    # The witness recomposes the pose exactly under an INDEPENDENT oracle (not
+    # to_transform), so this also guards to_transform's wrapping-interval
+    # canonicalization (#87): the bw() strategy draws wrapping intervals.
+    expected = _compose_chain_independently(parts, sample.coordinates)
+    np.testing.assert_allclose(sample.pose, expected, atol=1e-9)
+    # Exact positive certificate: no optimizer, no SciPy.
+    assert chain.validate_witness(sample.pose, sample.coordinates)
+    # Warm-started solve takes the fast path and reports a satisfying witness.
+    result = chain.solve(sample.pose, initial_guess=sample.coordinates)
+    assert result.status == "satisfied"
+    assert result.residual < EPSILON
+    assert chain.contains(sample.pose, initial_guess=sample.coordinates)
 
 
 @given(tsr=tsrs())

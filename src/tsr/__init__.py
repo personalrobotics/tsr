@@ -30,6 +30,8 @@ The spine: a factory produces recipes; a recipe instantiates to math::
 from .core import (
     EPSILON,
     TSR,
+    ChainSample,
+    ChainSolveResult,
     TSRChain,
     geodesic_distance,
     geodesic_error,
@@ -71,6 +73,8 @@ __all__ = [
     # core
     "TSR",
     "TSRChain",
+    "ChainSample",
+    "ChainSolveResult",
     "wrap_to_interval",
     "rotation_angle",
     "geodesic_error",
