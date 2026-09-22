@@ -961,13 +961,25 @@ class ParallelJawGripper(GripperBase):
     ) -> List[TSRTemplate]:
         """Full-sphere grasp templates — k templates.
 
-        Approach from any direction in 3-D. Each template has continuous SO(3)
-        freedom in Bw so sampling produces uniformly distributed approach
-        directions over the sphere:
+        Approach from any direction in 3-D. Each template's rotational Bw box
+        (ZYX, ``R = Rz(yaw) Ry(pitch) Rx(roll)``) covers the orientation set:
 
           roll  ∈ [0, 2π]        — finger orientation around the approach axis
-          pitch ∈ [-π/2, π/2]   — elevation (covers full hemisphere, no double-cover)
-          yaw   ∈ angle_range    — azimuth (default full 360°)
+          pitch ∈ [-π/2, π/2]   — elevation of the approach direction (no double-cover)
+          yaw   ∈ angle_range    — azimuth of the approach direction (default full 360°)
+
+        **Coverage.** With the default ``angle_range`` the set is all of SO(3). A
+        restricted ``angle_range`` bounds the Euler yaw coordinate: the represented
+        set is every orientation whose approach direction lies in the **lune**
+        ``azimuth ∈ angle_range`` (the wedge between two meridians, poles included),
+        with any spin about the approach axis. It is not a spherical cap.
+
+        **Distribution.** Coverage says nothing about sampling. ``TSR.sample``
+        draws roll/pitch/yaw uniformly, which is **not** Haar-uniform on SO(3) and
+        concentrates approach directions near the poles. Use
+        :func:`tsr.sampling.sample_haar` for rotations that are Haar-uniform over the
+        represented set, i.e. approach directions uniform by area over the sphere
+        or lune (#72).
 
         TSR origin at sphere center. k discrete depths baked into Tw_e.
 
@@ -1027,6 +1039,10 @@ class ParallelJawGripper(GripperBase):
             reference=reference,
             preshape=np.array([preshape]),
         )
+        if angle_range[1] - angle_range[0] >= 2 * np.pi:
+            coverage = "full SO(3)"
+        else:
+            coverage = f"azimuth lune {np.degrees(angle_range[0]):.0f}°–{np.degrees(angle_range[1]):.0f}°"
         templates = []
         for i, d in enumerate(depths):
             ro = object_radius + self.finger_length - d
@@ -1043,7 +1059,7 @@ class ParallelJawGripper(GripperBase):
             )
             t_desc = description or (
                 f"{dlabel.capitalize()} sphere grasp on {reference}: "
-                f"standoff {ro * 1000:.0f}mm from center, full SO(3), "
+                f"standoff {ro * 1000:.0f}mm from center, {coverage}, "
                 f"preshape {preshape * 1000:.0f}mm"
             )
             templates.append(

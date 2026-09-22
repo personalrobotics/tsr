@@ -169,7 +169,7 @@ minimum distance from the COM projection to any edge of the polygon.
 ### Work directly with TSRs
 
 ```python
-from tsr import TSR
+from tsr import TSR, sample_haar
 import numpy as np
 
 # A TSR is defined by three components:
@@ -193,7 +193,15 @@ tsr = TSR(T0_w=T0_w, Tw_e=Tw_e, Bw=Bw)
 pose     = tsr.sample()             # random SE(3) pose in the region
 distance, _ = tsr.distance(pose)   # distance to nearest valid pose
 is_valid = tsr.contains(pose)      # containment check
+
+# Haar-uniform rotations over the same region, reproducible under an explicit RNG
+rng  = np.random.default_rng(42)
+pose = sample_haar(tsr, rng)
 ```
+
+`tsr.sample()` draws roll, pitch, and yaw uniformly, which covers the region but is
+not uniform over rotations. `sample_haar` samples rotations Haar-uniformly over the
+same region (for example, approach directions uniform over a sphere grasp).
 
 ### Save and load templates
 

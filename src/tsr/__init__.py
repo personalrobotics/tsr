@@ -64,6 +64,8 @@ from .sampling import (
     instantiate_templates,
     sample_from_templates,
     sample_from_tsrs,
+    sample_haar,
+    sample_haar_xyzrpy,
     weights_from_tsrs,
 )
 
@@ -96,6 +98,8 @@ __all__ = [
     "instantiate_templates",
     "sample_from_tsrs",
     "sample_from_templates",
+    "sample_haar",
+    "sample_haar_xyzrpy",
     "weights_from_tsrs",
     # template I/O
     "save_template",

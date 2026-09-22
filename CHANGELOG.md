@@ -10,6 +10,14 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Sphere grasp coverage vs. sampling distribution** (#72). `grasp_sphere` claimed
+  its roll/pitch/yaw box makes sampling produce "uniformly distributed approach
+  directions"; independent uniform RPY (`TSR.sample`) is **not** Haar-uniform on
+  SO(3) and concentrates approach directions near the poles. The docs now separate
+  the represented set (all of SO(3) by default) from the sampling distribution, and
+  define a restricted `angle_range` precisely: approach directions in the **lune**
+  `azimuth ∈ angle_range` (not a spherical cap), any spin about the approach axis.
+  Template descriptions no longer say "full SO(3)" when yaw is restricted.
 - **Torus minor-angle, reach, clearance, and coverage semantics** (#71). Torus-side
   grasps applied no clearance to the deep depth endpoint (`min(2r, L)`), so the palm
   could sit inside the tube surface (oracle clause 3); the band now follows the same
@@ -98,6 +106,19 @@ parallel-jaw grasp templates (epic #65).
   integral/non-integral counts.
 
 ### Added
+- **`sample_haar` / `sample_haar_xyzrpy`** (`tsr.sampling`, exported from `tsr`;
+  #72). Samples a TSR with rotations Haar-uniform over its Bw box by drawing roll and
+  yaw uniformly and `sin(pitch)` uniformly (the ZYX Haar density is `∝ cos(pitch)`);
+  translation is uniform. Requires pitch bounds within `[-π/2, π/2]` (exact, else
+  `ValueError`); a nonzero pitch interval may touch `±π/2`, but a pitch fixed exactly
+  at the ZYX gimbal lock is rejected, since roll and yaw are coupled there (#116).
+  Reproducible under an explicit `rng`, and kept separate from
+  `TSR.sample`, which is unchanged. For sphere grasps it gives approach directions
+  uniform by area over the sphere or lune. Deterministic KS tests
+  (`tests/tsr/test_haar_sampling.py`, `tests/tsr/hands/test_sphere_sampling.py`)
+  check the rotation-angle law, uniform axes, lune semantics, and left-invariance
+  under reference rotations; a Hypothesis property checks set membership, and every
+  sphere-grasp Haar sample keeps a #67 oracle witness.
 - **Independent analytic grasp oracle** (#67, #93–#102, test-side) in
   `tests/tsr/hands/_grasp_oracle.py`: certifies the geometric-soundness clauses of
   the #66 contract for box / cylinder / sphere / torus. Contact geometry is

@@ -8,7 +8,7 @@ from typing import List, Optional, Sequence
 import numpy as np
 from numpy import pi
 
-from .core import TSR
+from .core import TSR, wrap_to_interval
 from .template import TSRTemplate
 
 
@@ -249,3 +249,65 @@ def sample_from_templates(
     """
     tsrs = instantiate_templates(templates, T_ref_world)
     return sample_from_tsrs(tsrs, rng)
+
+
+def sample_haar_xyzrpy(tsr: TSR, rng: Optional[np.random.Generator] = None) -> np.ndarray:
+    """Sample an xyzrpy from ``tsr`` with a Haar-uniform rotation over its Bw box (#72).
+
+    ``TSR.sample_xyzrpy`` draws roll, pitch, and yaw independently and uniformly.
+    That covers the represented rotation set but is **not** uniform on SO(3): in the
+    ZYX convention ``R = Rz(yaw) Ry(pitch) Rx(roll)`` the Haar measure has density
+    ``∝ cos(pitch)``, so uniform pitch over-samples the poles. This sampler draws
+    roll and yaw uniformly and ``sin(pitch)`` uniformly, which is exactly the
+    normalized Haar measure restricted to the rotations the box represents (the
+    induced ``cos(pitch)``-weighted measure on the free coordinates when some
+    rotational bounds are degenerate). Translation is uniform over the xyz bounds.
+
+    For a sphere grasp (``grasp_sphere``) this makes approach directions uniform by
+    area over the sphere, or over the lune ``azimuth ∈ angle_range`` when yaw is
+    restricted, with the hand spin about the approach axis uniform.
+
+    It is kept separate from ``TSR.sample_xyzrpy``, whose coordinate-uniform
+    behaviour is unchanged.
+
+    Args:
+        tsr: TSR to sample from. Its pitch bounds must lie within ``[-π/2, π/2]``
+            so that the box maps one-to-one onto rotations almost everywhere. The
+            gimbal-lock endpoints ``±π/2`` are a measure-zero singular set, so a
+            nonzero pitch interval may touch them, but a pitch fixed exactly at
+            ``±π/2`` is rejected: roll and yaw are coupled there, and sampling both
+            independently would not be uniform over the represented rotations.
+        rng: Optional random number generator. If None, uses default RNG.
+
+    Returns:
+        A valid xyzrpy 6-vector for ``tsr`` (roll/pitch/yaw wrapped to ``[-π, π]``).
+
+    Raises:
+        ValueError: If the pitch bounds are unordered or lie outside ``[-π/2, π/2]``,
+            or if pitch is fixed exactly at ``±π/2``.
+    """
+    # Pitch is checked and sampled on the raw Bw (exact closed interval, no
+    # tolerance): the wrapped _Bw_cont chart can differ from it by rounding.
+    p_lo, p_hi = float(tsr.Bw[4, 0]), float(tsr.Bw[4, 1])
+    if not (-pi / 2 <= p_lo <= p_hi <= pi / 2):
+        raise ValueError(f"Haar sampling requires ordered pitch bounds within [-pi/2, pi/2], got [{p_lo}, {p_hi}]")
+    if p_lo == p_hi and abs(p_lo) == pi / 2:
+        raise ValueError(
+            f"Haar sampling cannot use a pitch fixed at the ZYX gimbal lock ({p_lo}): roll and yaw are "
+            "coupled there, so the box does not map one-to-one onto rotations"
+        )
+    lo, hi = tsr._Bw_cont[:, 0], tsr._Bw_cont[:, 1]
+    rng = rng or np.random.default_rng()
+    u = rng.random(6)
+    xyzrpy = lo + (hi - lo) * u
+    s_lo, s_hi = np.sin(p_lo), np.sin(p_hi)
+    # arcsin(sin(x)) can round just past a bound; clip back into the box.
+    xyzrpy[4] = np.clip(np.arcsin(np.clip(s_lo + (s_hi - s_lo) * u[4], -1.0, 1.0)), p_lo, p_hi)
+    # Pitch is already in [-pi/2, pi/2]; wrapping it would only add rounding.
+    xyzrpy[[3, 5]] = wrap_to_interval(xyzrpy[[3, 5]])
+    return xyzrpy
+
+
+def sample_haar(tsr: TSR, rng: Optional[np.random.Generator] = None) -> np.ndarray:
+    """Sample a 4×4 transform from ``tsr`` using :func:`sample_haar_xyzrpy` (#72)."""
+    return tsr.to_transform(sample_haar_xyzrpy(tsr, rng))
