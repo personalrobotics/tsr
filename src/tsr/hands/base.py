@@ -766,6 +766,29 @@ class GripperBase(ABC):
         """
         return 1e-9 + 1e-6 * scale
 
+    def _edge_margin(self, clearance: float, scale: float) -> float:
+        """Edge-facing band margin ``max(clearance, _length_atol(scale))`` (#121).
+
+        A band limit that faces an **edge** of the primitive -- the approached face,
+        the opposite face or cap, a lateral slide edge, a cylinder rim -- must keep the
+        contacts strictly off that edge, where the surface normal is ambiguous and the
+        insertion would be degenerate. ``clearance = 0`` is a valid request (#104), and
+        a clearance below the contract tolerance is indistinguishable from zero, so
+        edge limits use at least ``_length_atol(scale)``. This mirrors the scale-aware
+        straddle margin (#107) and matches the #67 oracle, which requires a positive
+        insertion and off-edge contacts.
+
+        The floor is **twice** ``_length_atol(scale)``: the oracle compares the pose's
+        *realized* insertion against ``_length_atol``, and recovering that depth from
+        the pose cancels two coordinates, so a floor of exactly the tolerance loses to
+        rounding. Twice the tolerance clears it and stays sub-micron at hand scale
+        (0.23 µm for a 0.11 m box).
+
+        Palm clearance and the default preshape still use the requested ``clearance``;
+        only edge-facing band limits use this margin.
+        """
+        return max(clearance, 2.0 * self._length_atol(scale))
+
     def _infeasibility_reason(
         self, preshape: float, object_span: float, scale: Optional[float] = None
     ) -> Optional[str]:

@@ -162,7 +162,9 @@ class ParallelJawGripper(GripperBase):
                 diameter=2.0 * cylinder_radius,
                 max_aperture=self.max_aperture,
             )
-        h0, h1 = clearance, cylinder_height - clearance
+        # Height band limits face the cylinder rims, so they use the edge margin (#121).
+        margin = self._edge_margin(clearance, max(cylinder_radius, cylinder_height))
+        h0, h1 = margin, cylinder_height - margin
         if h1 <= h0:
             return self._empty(
                 "grasp_cylinder_side", "insufficient_clearance_band", height=cylinder_height, clearance=clearance
@@ -337,7 +339,9 @@ class ParallelJawGripper(GripperBase):
 
         # Bounded by the height as well as the fingers (#122): a deeper fingertip
         # would pass the opposite cap, which the #67 oracle rejects (clause 4).
-        depths = self._usable_depths(clearance, min(self.finger_length, cylinder_height) - clearance, k)
+        # Both limits face a cap, so they use the edge margin (#121).
+        margin = self._edge_margin(clearance, max(cylinder_radius, cylinder_height))
+        depths = self._usable_depths(margin, min(self.finger_length, cylinder_height) - margin, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_top",
@@ -461,7 +465,9 @@ class ParallelJawGripper(GripperBase):
         )
 
         # Bounded by the height as well as the fingers (#122): see grasp_cylinder_top.
-        depths = self._usable_depths(clearance, min(self.finger_length, cylinder_height) - clearance, k)
+        # Both limits face a cap, so they use the edge margin (#121).
+        margin = self._edge_margin(clearance, max(cylinder_radius, cylinder_height))
+        depths = self._usable_depths(margin, min(self.finger_length, cylinder_height) - margin, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_bottom",
@@ -575,7 +581,8 @@ class ParallelJawGripper(GripperBase):
         # approached face) and the box's extent along the approach axis (the fingertip
         # clears the far face), each by a clearance (#70). Empty band -> [] silently;
         # the public box_* method logs once at its boundary.
-        depths = self._usable_depths(clearance, min(self.finger_length, approach_extent) - clearance, k)
+        margin = self._edge_margin(clearance, box_scale)  # both limits face a box face (#121)
+        depths = self._usable_depths(margin, min(self.finger_length, approach_extent) - margin, k)
         if depths is None:
             return []
         common = dict(
@@ -648,7 +655,8 @@ class ParallelJawGripper(GripperBase):
         # Per-orientation feasibility (#70): span-x slides in y (band hy), span-y slides
         # in x (band hx). A thin dimension empties only its dependent orientation; keep
         # the perpendicular one instead of rejecting the whole face.
-        hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
+        margin = self._edge_margin(clearance, max(box_x, box_y, box_z))  # slide edges (#121)
+        hx, hy = box_x / 2.0 - margin, box_y / 2.0 - margin
 
         if not name:
             name = f"{reference.title()} Box Top Grasp"
@@ -734,7 +742,8 @@ class ParallelJawGripper(GripperBase):
             )
         # Per-orientation feasibility (#70): a thin dimension empties only its dependent
         # orientation, keeping the perpendicular one.
-        hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
+        margin = self._edge_margin(clearance, max(box_x, box_y, box_z))  # slide edges (#121)
+        hx, hy = box_x / 2.0 - margin, box_y / 2.0 - margin
 
         if not name:
             name = f"{reference.title()} Box Bottom Grasp"
@@ -821,8 +830,9 @@ class ParallelJawGripper(GripperBase):
             )
         # Per-orientation feasibility (#70): span-y slides in z (band hz_half), span-z
         # slides in y (band hy). A thin dimension empties only its dependent orientation.
-        hy = box_y / 2.0 - clearance
-        hz_half = box_z / 2.0 - clearance
+        margin = self._edge_margin(clearance, max(box_x, box_y, box_z))  # slide edges (#121)
+        hy = box_y / 2.0 - margin
+        hz_half = box_z / 2.0 - margin
 
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
@@ -917,8 +927,9 @@ class ParallelJawGripper(GripperBase):
             )
         # Per-orientation feasibility (#70): span-x slides in z (band hz_half), span-z
         # slides in x (band hx). A thin dimension empties only its dependent orientation.
-        hx = box_x / 2.0 - clearance
-        hz_half = box_z / 2.0 - clearance
+        margin = self._edge_margin(clearance, max(box_x, box_y, box_z))  # slide edges (#121)
+        hx = box_x / 2.0 - margin
+        hz_half = box_z / 2.0 - margin
 
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
