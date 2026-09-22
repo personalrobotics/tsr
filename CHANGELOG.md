@@ -110,7 +110,9 @@ parallel-jaw grasp templates (epic #65).
   #72). Samples a TSR with rotations Haar-uniform over its Bw box by drawing roll and
   yaw uniformly and `sin(pitch)` uniformly (the ZYX Haar density is `∝ cos(pitch)`);
   translation is uniform. Requires pitch bounds within `[-π/2, π/2]` (exact, else
-  `ValueError`), reproducible under an explicit `rng`, and kept separate from
+  `ValueError`); a nonzero pitch interval may touch `±π/2`, but a pitch fixed exactly
+  at the ZYX gimbal lock is rejected, since roll and yaw are coupled there (#116).
+  Reproducible under an explicit `rng`, and kept separate from
   `TSR.sample`, which is unchanged. For sphere grasps it gives approach directions
   uniform by area over the sphere or lune. Deterministic KS tests
   (`tests/tsr/test_haar_sampling.py`, `tests/tsr/hands/test_sphere_sampling.py`)

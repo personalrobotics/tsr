@@ -12,7 +12,7 @@ uniform ``TSR.sample`` fails the same test by many orders of magnitude.
 import unittest
 
 import numpy as np
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from numpy import pi
 from scipy import stats
@@ -69,6 +69,25 @@ class TestHaarSamplerContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 sample_haar_xyzrpy(TSR(Bw=_box((0.0, lo, 0.0), (0.0, hi, 0.0))))
 
+    def test_point_pitch_at_gimbal_lock_raises(self):
+        # At pitch = ±pi/2 roll and yaw are coupled: independent uniform roll/yaw in
+        # [0, 1] would give a triangular (not uniform) effective angle (#116).
+        for p in (pi / 2, -pi / 2):
+            with self.assertRaises(ValueError):
+                sample_haar_xyzrpy(TSR(Bw=_box((0.0, p, 0.0), (1.0, p, 1.0))))
+
+    def test_point_pitch_just_inside_gimbal_lock_is_valid(self):
+        for p in (float(np.nextafter(pi / 2, 0.0)), float(np.nextafter(-pi / 2, 0.0))):
+            tsr = TSR(Bw=_box((0.0, p, 0.0), (1.0, p, 1.0)))
+            xyzrpy = sample_haar_xyzrpy(tsr, np.random.default_rng(0))
+            self.assertEqual(xyzrpy[4], p)
+            self.assertTrue(all(tsr.is_valid(xyzrpy)))
+
+    def test_nonzero_pitch_interval_touching_gimbal_lock_is_valid(self):
+        for lo, hi in ((0.5, pi / 2), (-pi / 2, -0.5)):
+            tsr = TSR(Bw=_box((0.0, lo, 0.0), (1.0, hi, 1.0)))
+            self.assertTrue(all(tsr.is_valid(sample_haar_xyzrpy(tsr, np.random.default_rng(0)))))
+
     def test_exact_half_pi_pitch_bounds_are_valid(self):
         tsr = TSR(Bw=FULL)
         self.assertTrue(all(tsr.is_valid(sample_haar_xyzrpy(tsr, np.random.default_rng(0)))))
@@ -85,6 +104,7 @@ class TestHaarSamplerContract(unittest.TestCase):
         seed=st.integers(0, 2**32 - 1),
     )
     def test_samples_lie_in_the_represented_set(self, xyz_lo, xyz_w, roll_lo, roll_w, p, yaw_lo, yaw_w, seed):
+        assume(not (p[0] == p[1] and abs(p[0]) == pi / 2))  # gimbal-lock point, rejected (#116)
         xyz = tuple((lo, lo + w) for lo, w in zip(xyz_lo, xyz_w))
         Bw = _box((roll_lo, min(p), yaw_lo), (roll_lo + roll_w, max(p), yaw_lo + yaw_w), xyz)
         tsr = TSR(Bw=Bw)

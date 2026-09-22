@@ -272,20 +272,30 @@ def sample_haar_xyzrpy(tsr: TSR, rng: Optional[np.random.Generator] = None) -> n
 
     Args:
         tsr: TSR to sample from. Its pitch bounds must lie within ``[-π/2, π/2]``
-            so that the box maps one-to-one onto rotations.
+            so that the box maps one-to-one onto rotations almost everywhere. The
+            gimbal-lock endpoints ``±π/2`` are a measure-zero singular set, so a
+            nonzero pitch interval may touch them, but a pitch fixed exactly at
+            ``±π/2`` is rejected: roll and yaw are coupled there, and sampling both
+            independently would not be uniform over the represented rotations.
         rng: Optional random number generator. If None, uses default RNG.
 
     Returns:
         A valid xyzrpy 6-vector for ``tsr`` (roll/pitch/yaw wrapped to ``[-π, π]``).
 
     Raises:
-        ValueError: If the pitch bounds are unordered or lie outside ``[-π/2, π/2]``.
+        ValueError: If the pitch bounds are unordered or lie outside ``[-π/2, π/2]``,
+            or if pitch is fixed exactly at ``±π/2``.
     """
     # Pitch is checked and sampled on the raw Bw (exact closed interval, no
     # tolerance): the wrapped _Bw_cont chart can differ from it by rounding.
     p_lo, p_hi = float(tsr.Bw[4, 0]), float(tsr.Bw[4, 1])
     if not (-pi / 2 <= p_lo <= p_hi <= pi / 2):
         raise ValueError(f"Haar sampling requires ordered pitch bounds within [-pi/2, pi/2], got [{p_lo}, {p_hi}]")
+    if p_lo == p_hi and abs(p_lo) == pi / 2:
+        raise ValueError(
+            f"Haar sampling cannot use a pitch fixed at the ZYX gimbal lock ({p_lo}): roll and yaw are "
+            "coupled there, so the box does not map one-to-one onto rotations"
+        )
     lo, hi = tsr._Bw_cont[:, 0], tsr._Bw_cont[:, 1]
     rng = rng or np.random.default_rng()
     u = rng.random(6)
