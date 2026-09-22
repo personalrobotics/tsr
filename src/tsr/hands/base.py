@@ -203,9 +203,20 @@ class GripperBase(ABC):
         Returns pre-grasp configurations with z_EE = [0,0,-1] (approach
         downward). TSR origin at z = cylinder_height (top face).
 
+        Insertion depth is measured from the approached (top) face and spans
+        ``d ∈ [clearance, min(finger_length, cylinder_height) − clearance]``, so
+        **which limit binds depends on the cylinder** (#122):
+
+        * ``finger_length ≤ cylinder_height`` — the palm-clearance limit binds: the
+          deepest pose puts the palm exactly one clearance above the approached rim.
+        * ``cylinder_height < finger_length`` — the far-cap limit binds: the deepest
+          pose stops the fingertips one clearance short of the **bottom** face, and
+          the palm can stay much farther than one clearance above the approached rim.
+
         Args:
             cylinder_radius: Cylinder radius [m].
-            cylinder_height: Cylinder height [m] (z of top face).
+            cylinder_height: Cylinder height [m] (z of top face); also bounds the
+                             insertion depth, see above.
             preshape:        Jaw opening [m]. Must exceed cylinder diameter.
                              Defaults to 2*r + clearance.
             k:               Number of discrete approach depths (default 3).
@@ -235,10 +246,20 @@ class GripperBase(ABC):
         Returns pre-grasp configurations with z_EE = [0,0,+1] (approach
         upward). TSR origin at z = 0 (bottom face).
 
+        Insertion depth is measured from the approached (bottom) face and spans
+        ``d ∈ [clearance, min(finger_length, cylinder_height) − clearance]``, so
+        **which limit binds depends on the cylinder** (#122):
+
+        * ``finger_length ≤ cylinder_height`` — the palm-clearance limit binds: the
+          deepest pose puts the palm exactly one clearance below the approached rim.
+        * ``cylinder_height < finger_length`` — the far-cap limit binds: the deepest
+          pose stops the fingertips one clearance short of the **top** face, and the
+          palm can stay much farther than one clearance below the approached rim.
+
         Args:
             cylinder_radius: Cylinder radius [m].
-            cylinder_height: Cylinder height [m] (unused geometrically; kept for
-                             API consistency with the other cylinder methods).
+            cylinder_height: Cylinder height [m]; bounds the insertion depth (see
+                             above). The TSR origin is the bottom face at z = 0.
             preshape:        Jaw opening [m]. Must exceed cylinder diameter.
                              Defaults to 2*r + clearance.
             k:               Number of discrete approach depths (default 3).
@@ -355,7 +376,9 @@ class GripperBase(ABC):
         Args:
             box_x:     Box width  [m].
             box_y:     Box depth  [m].
-            box_z:     Box height [m] (unused geometrically; kept for API symmetry).
+            box_z:     Box height [m]; bounds the insertion depth,
+                       ``d ∈ [clearance, min(finger_length, box_z) − clearance]``.
+                       The TSR origin is the bottom face at z = 0.
             preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
             k:         Number of discrete approach depths (default 3).
             clearance: Safety buffer [m]. Defaults to 10% of finger_length.
