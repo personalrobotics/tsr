@@ -282,6 +282,12 @@ class ParallelJawGripper(GripperBase):
         z = cylinder_height. Depth ranges from fingertips a clearance inside
         the rim (shallowest) to palm a clearance above the rim (deepest).
         Full yaw covers all finger orientations.
+
+        The insertion band is bounded by the **height** as well as the fingers,
+        ``d ∈ [clearance, min(finger_length, cylinder_height) − clearance]``, so the
+        fingertips stay a clearance short of the opposite cap on a short cylinder
+        (#122); the box approach bands use the same rule. Returns ``[]`` with
+        ``insufficient_clearance_band`` when the band is empty.
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
@@ -318,13 +324,16 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
-        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        # Bounded by the height as well as the fingers (#122): a deeper fingertip
+        # would pass the opposite cap, which the #67 oracle rejects (clause 4).
+        depths = self._usable_depths(clearance, min(self.finger_length, cylinder_height) - clearance, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_top",
                 "insufficient_clearance_band",
                 clearance=clearance,
                 finger_length=self.finger_length,
+                cylinder_height=cylinder_height,
             )
         common = dict(
             T_ref_tsr=T_ref_tsr,
@@ -389,6 +398,11 @@ class ParallelJawGripper(GripperBase):
         (bottom face). Depth ranges from fingertips a clearance inside the
         bottom face (shallowest) to palm a clearance below it (deepest).
         Full yaw covers all finger orientations.
+
+        The insertion band is bounded by the **height** as well as the fingers,
+        ``d ∈ [clearance, min(finger_length, cylinder_height) − clearance]``, so the
+        fingertips stay a clearance short of the top cap on a short cylinder (#122).
+        Returns ``[]`` with ``insufficient_clearance_band`` when the band is empty.
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
@@ -411,8 +425,7 @@ class ParallelJawGripper(GripperBase):
         if not name:
             name = f"{reference.title()} Cylinder Bottom Grasp"
 
-        del cylinder_height  # bottom face is always at z=0; accepted for interface symmetry
-        T_ref_tsr = np.eye(4)
+        T_ref_tsr = np.eye(4)  # bottom face is always at z = 0
 
         Bw = np.array(
             [
@@ -425,13 +438,15 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
-        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        # Bounded by the height as well as the fingers (#122): see grasp_cylinder_top.
+        depths = self._usable_depths(clearance, min(self.finger_length, cylinder_height) - clearance, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_bottom",
                 "insufficient_clearance_band",
                 clearance=clearance,
                 finger_length=self.finger_length,
+                cylinder_height=cylinder_height,
             )
         common = dict(
             T_ref_tsr=T_ref_tsr,

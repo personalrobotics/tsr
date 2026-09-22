@@ -10,6 +10,15 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Cylinder cap insertion depth is bounded by the height** (#122). `grasp_cylinder_top`
+  and `grasp_cylinder_bottom` built depths over `[clearance, finger_length − clearance]`
+  and ignored the cylinder, so on a short cylinder the deeper templates pushed the
+  fingertips past the opposite cap (#67 oracle clause 4) — including at the default
+  clearance, e.g. `grasp_cylinder_top(0.02, 0.03, clearance=0.006)` with 80 mm fingers
+  emitted depths 0.04 and 0.074 into a 30 mm cylinder. The band is now
+  `d ∈ [clearance, min(finger_length, cylinder_height) − clearance]`, the same rule the
+  box approach bands use, returning `[]` with `insufficient_clearance_band` when empty.
+  Found by the #73 property matrix.
 - **Grasp provenance depth-count semantics** (#81). `GraspProvenance.depth_count` is
   now documented and guaranteed to be the number of **distinct** depth levels emitted
   for a family (`≤ k`), with `depth_index` ordering them shallow to deep. The shared
