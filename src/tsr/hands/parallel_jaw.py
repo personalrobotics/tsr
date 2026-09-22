@@ -1089,51 +1089,68 @@ class ParallelJawGripper(GripperBase):
         reference: str = "torus",
         name: str = "",
         description: str = "",
+        *,
+        minor_angle_range: Tuple[float, float] = (-np.pi / 2, np.pi / 2),
     ) -> List[TSRTemplate]:
         """Side grasp templates for a torus tube — 2 * k * n_minor templates.
 
-        The gripper approaches the tube from n_minor discrete angles α in the
-        tube cross-section plane (the plane containing the radial and vertical
-        axes), ranging from directly below (α = −π/2) to directly above
-        (α = +π/2) via the outside equator (α = 0):
+        The gripper approaches the tube from ``n_minor`` discrete minor angles ``α``
+        in the tube cross-section plane (spanned by the radial and vertical axes),
+        sampled from ``minor_angle_range`` (default ``[−π/2, +π/2]``):
 
             α = −π/2  from below    (matches span-bottom geometry)
-            α = −π/4  from below-outside
             α =  0    from outside  (pure radial equatorial approach)
-            α = +π/4  from above-outside
             α = +π/2  from above    (matches span-top geometry)
 
-        At each α the Bw yaw samples the full azimuth around the torus ring
-        (major radius), giving complete coverage of the tube surface. Two hand
-        flip variants (fingers open in ±tangential direction) are generated per
-        (α, depth) combination.
+        **Coverage.** ``[−π/2, +π/2]`` is the externally accessible **outer half** of
+        the tube cross-section (the side facing away from the ring axis). Inner-hole
+        approaches (``|α| > π/2``) require the hand to fit through the ring hole and
+        are **out of scope**: ``minor_angle_range`` must lie within ``[−π/2, +π/2]``.
+        The represented set is exactly the sampled minor angles crossed with the full
+        azimuth (``angle_range``) around the ring.
 
-        Gripper position in TSR frame at depth d, minor angle α:
-            tx = R + (r + fl − d) · cos α   (radial offset from torus axis)
-            tz =     (r + fl − d) · sin α   (height above equatorial plane)
-        z_EE = (−cos α, 0, −sin α)   (points toward tube center)
+        ``n_minor == 1`` samples the **centre** of ``minor_angle_range`` (the pure
+        equatorial approach ``α = 0`` for the default range), not an endpoint.
 
-        Depth range (fingertip distance from tube center = |ro_minor − fl|):
-            depth 1/k : fingertips at the tube center
-            depth k/k : fingertips at the inner tube surface (or palm at outer surface)
+        Two hand flip variants (fingers open in ±tangential direction) per
+        (α, depth). Gripper position in TSR frame at depth d, minor angle α:
+            tx = R + (r + fl − d) · cos α ,  tz = (r + fl − d) · sin α
+        z_EE = (−cos α, 0, −sin α)   (points toward the tube centre).
+
+        The depth band applies the same reach/clearance rule as the cylinder-side
+        and sphere families: ``d ∈ [tube_radius, min(2·tube_radius, finger_length) −
+        clearance]`` keeps the palm a clearance outside the tube surface.
 
         Args:
-            n_minor:   Discrete approach angles around the tube cross-section
-                       (default 5: evenly spaced in [−π/2, +π/2]).
-            clearance: Safety buffer [m]. Defaults to 10% of finger_length.
+            n_minor:           Discrete approach angles across the tube cross-section
+                               (default 5).
+            minor_angle_range: Closed minor-angle interval within the outer half
+                               (default ``[−π/2, +π/2]``).
+            clearance:         Safety buffer [m]. Defaults to 10% of finger_length.
 
-        Returns 2*k*n_minor TSRTemplates. Returns [] if preshape ≤ tube
-        diameter or finger_length ≤ tube_radius (finger too short to reach
-        tube centerline). Raises ValueError for invalid geometry.
+        Returns 2*k*n_minor TSRTemplates. Returns [] with ``finger_too_short`` if
+        ``finger_length < tube_radius + clearance``, with ``insufficient_clearance_band``
+        if reach is ample but ``clearance > tube_radius`` empties the far-surface limit,
+        or with the straddle reason if the tube diameter cannot be spanned. Raises
+        ValueError for invalid geometry, including a ``minor_angle_range`` endpoint
+        strictly outside ``[−π/2, +π/2]``.
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
         self._check_count("n_minor", n_minor)
+        self._check_angle_range(minor_angle_range)
+        # Exact closed-interval policy (#105, #113): endpoints inside or exactly on
+        # [-pi/2, pi/2] are valid; anything strictly outside raises. No tolerance.
+        if minor_angle_range[0] < -np.pi / 2 or minor_angle_range[1] > np.pi / 2:
+            raise ValueError(
+                f"minor_angle_range must lie within the externally accessible outer half "
+                f"[-pi/2, pi/2]; inner-hole approaches are out of scope, got {minor_angle_range}"
+            )
         self._validate_torus(torus_radius, tube_radius, preshape)
         clearance = self._resolve_clearance(clearance, min(self.finger_length, tube_radius))
         if preshape is None:
             preshape = 2.0 * tube_radius + clearance
-        reason = self._infeasibility_reason(preshape, 2.0 * tube_radius)
+        reason = self._infeasibility_reason(preshape, 2.0 * tube_radius, scale=torus_radius + tube_radius)
         if reason:
             return self._empty(
                 "grasp_torus_side",
@@ -1159,16 +1176,23 @@ class ParallelJawGripper(GripperBase):
             ]
         )
 
-        # Start: fingertips at the tube center (requires finger_length >= tube_radius).
-        # End:   fingertips at the inner tube surface, or palm at outer surface.
-        d_shallow = tube_radius
-        d_deep = min(2 * tube_radius, self.finger_length)
-        if d_shallow >= d_deep:
+        # Reach/clearance band (same rule as cylinder-side and sphere, #69/#71):
+        # fingertips reach the tube centre (d >= tube_radius) and the palm stays a
+        # clearance outside the tube surface (d <= min(2r, L) - clearance). The band is
+        # empty either because the fingers are too short
+        # (finger_length < tube_radius + clearance) or because an excessive clearance
+        # relative to the tube radius empties the far-surface limit;
+        # _radial_band_reason names the failed constraint (#114).
+        depths = self._usable_depths(tube_radius, min(2 * tube_radius, self.finger_length) - clearance, k)
+        if depths is None:
             return self._empty(
-                "grasp_torus_side", "finger_too_short", finger_length=self.finger_length, tube_radius=tube_radius
+                "grasp_torus_side",
+                self._radial_band_reason(tube_radius, clearance),
+                finger_length=self.finger_length,
+                tube_radius=tube_radius,
+                clearance=clearance,
             )
-        depths = np.linspace(d_shallow, d_deep, max(k, 1))
-        minor_angles = np.linspace(-np.pi / 2, np.pi / 2, max(n_minor, 1))
+        minor_angles = self._sample_range(minor_angle_range, n_minor)
 
         common = dict(
             T_ref_tsr=T_ref_tsr,
@@ -1284,10 +1308,18 @@ class ParallelJawGripper(GripperBase):
         Bw = np.zeros((6, 2))
         Bw[5, 1] = 2 * np.pi
 
-        depths = self._usable_depths(clearance, self.finger_length - clearance, k)
+        # Reach band (#71): the fingertip must reach the equatorial plane (z = 0, the
+        # widest outer diameter), which needs an insertion d >= tube_radius, while the
+        # palm stands off a clearance above the tube top (d <= finger_length -
+        # clearance). Empty when finger_length < tube_radius + clearance.
+        depths = self._usable_depths(tube_radius, self.finger_length - clearance, k)
         if depths is None:
             return self._empty(
-                "grasp_torus_span", "insufficient_clearance_band", clearance=clearance, finger_length=self.finger_length
+                "grasp_torus_span",
+                "finger_too_short",
+                finger_length=self.finger_length,
+                tube_radius=tube_radius,
+                clearance=clearance,
             )
         templates = []
         for i, d in enumerate(depths):

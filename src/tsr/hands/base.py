@@ -481,11 +481,18 @@ class GripperBase(ABC):
         angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
         subject: str = "gripper",
         reference: str = "torus",
+        *,
+        minor_angle_range: Tuple[float, float] = (-np.pi / 2, np.pi / 2),
     ) -> List[TSRTemplate]:
         """Generate TSRTemplates for all torus grasp modes.
 
         Combines radial side grasps (always) and span grasps (when the outer
         diameter fits within max_aperture).
+
+        ``minor_angle_range`` (keyword-only) selects the tube cross-section approach
+        interval for the **side** grasps only (span grasps have no minor angle); it
+        must lie within the externally accessible outer half ``[−π/2, +π/2]``.
+        ``n_minor == 1`` samples the interval centre. See :meth:`grasp_torus_side`.
 
         Torus coordinate convention: center at origin, axis along +z.
             torus_radius R: distance from center to tube center.
@@ -531,6 +538,7 @@ class GripperBase(ABC):
             tube_radius,
             n_minor=n_minor,
             angle_range=angle_range,
+            minor_angle_range=minor_angle_range,
             **shared,
         ) + self.grasp_torus_span(torus_radius, tube_radius, **shared)
 
@@ -547,26 +555,37 @@ class GripperBase(ABC):
         reference: str = "torus",
         name: str = "",
         description: str = "",
+        *,
+        minor_angle_range: Tuple[float, float] = (-np.pi / 2, np.pi / 2),
     ) -> List[TSRTemplate]:
         """Side grasp templates for a torus tube — 2 * k * n_minor templates.
 
-        The gripper approaches from n_minor discrete angles in the tube
-        cross-section plane (α ∈ [−π/2, +π/2]), with full azimuthal yaw
-        freedom around the torus ring. Two hand flip variants per (α, depth).
+        The gripper approaches from ``n_minor`` discrete minor angles ``α`` in the
+        tube cross-section plane, sampled from ``minor_angle_range`` (keyword-only,
+        default ``[−π/2, +π/2]``), with full azimuthal yaw freedom around the ring.
+        Two hand flip variants per (α, depth).
+
+        **Coverage.** ``[−π/2, +π/2]`` is the externally accessible **outer half** of
+        the tube cross-section; ``minor_angle_range`` must lie within it (inner-hole
+        approaches are out of scope). ``n_minor == 1`` samples the interval **centre**
+        (the equator ``α = 0`` for the default range), not an endpoint.
 
         Args:
-            torus_radius:  Major radius R [m].
-            tube_radius:   Minor radius r [m].
-            preshape:      Jaw opening [m]. Defaults to 2*r + clearance.
-            k:             Number of discrete approach depths (default 3).
-            n_minor:       Discrete approach angles in the tube cross-section
-                           (default 5: −π/2, −π/4, 0, +π/4, +π/2).
-            clearance:     Safety buffer [m]. Defaults to 10% of finger_length.
-            angle_range:   Yaw freedom (default full 360°).
+            torus_radius:      Major radius R [m].
+            tube_radius:       Minor radius r [m].
+            preshape:          Jaw opening [m]. Defaults to 2*r + clearance.
+            k:                 Number of discrete approach depths (default 3).
+            n_minor:           Discrete approach angles in the tube cross-section
+                               (default 5).
+            clearance:         Safety buffer [m]. Defaults to 10% of finger_length.
+            angle_range:       Yaw freedom (default full 360°).
+            minor_angle_range: Closed minor-angle interval within ``[−π/2, +π/2]``
+                               (keyword-only, default the full outer half).
 
         Returns:
-            List of 2*k*n_minor TSRTemplates. Empty if preshape cannot span
-            the tube or finger_length ≤ tube_radius.
+            List of 2*k*n_minor TSRTemplates. Empty (``finger_too_short`` /
+            ``insufficient_clearance_band``) if the fingers cannot reach the tube with
+            clearance, or the straddle reason if the tube diameter cannot be spanned.
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement grasp_torus_side")
 
@@ -666,6 +685,19 @@ class GripperBase(ABC):
             raise ValueError(f"angle_range must be finite, got {angle_range}")
         if lo > hi:
             raise ValueError(f"angle_range must be (min, max) with min <= max, got {angle_range}")
+
+    @staticmethod
+    def _sample_range(interval: Tuple[float, float], n: int) -> np.ndarray:
+        """``n`` samples of a closed interval; ``n == 1`` is the CENTER, not an endpoint.
+
+        ``np.linspace(lo, hi, 1)`` returns ``lo``, which for a symmetric minor-angle
+        range would silently pick a lower approach rather than the intended equatorial
+        centre. A single sample is the interval midpoint (#71).
+        """
+        lo, hi = interval
+        if n == 1:
+            return np.array([(lo + hi) / 2.0])
+        return np.linspace(lo, hi, n)
 
     @staticmethod
     def _usable_depths(lo: float, hi: float, k: int) -> Optional[np.ndarray]:

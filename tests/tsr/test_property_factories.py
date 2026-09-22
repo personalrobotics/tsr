@@ -193,14 +193,15 @@ def test_no_template_has_nonfinite_entries(fl, ma, r, h, k):
 @given(fl=positive, ma=st.floats(0.5, 1.0, allow_nan=False), r=st.floats(0.01, 0.05, allow_nan=False), h=positive)
 def test_excess_clearance_yields_empty_not_reversed(fl, ma, r, h):
     # A clearance beyond half the finger length empties the [clearance, L-clearance]
-    # band for cap/span modes; the factory returns [] rather than silently reversing
-    # the shallow-to-deep ordering (#68). The wide aperture rules out exceeds_aperture.
+    # band for the cap and box families; the factory returns [] rather than silently
+    # reversing the shallow-to-deep ordering (#68). The wide aperture rules out
+    # exceeds_aperture. (Torus-side/span use a [tube_radius, ...] reach band with a
+    # different emptiness threshold and are covered by the #71 soundness suite.)
     g = ParallelJawGripper(finger_length=fl, max_aperture=ma)
     c = fl * 0.6  # strictly greater than fl / 2
     assert g.grasp_cylinder_top(r, h, clearance=c) == []
     assert g.grasp_cylinder_bottom(r, h, clearance=c) == []
     assert g.grasp_box_top(2 * r, 2 * r, h, clearance=c) == []
-    assert g.grasp_torus_span(2 * r, r / 2, clearance=c) == []
 
 
 def test_clearance_band_boundary_nextafter():

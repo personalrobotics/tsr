@@ -10,6 +10,32 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Torus minor-angle, reach, clearance, and coverage semantics** (#71). Torus-side
+  grasps applied no clearance to the deep depth endpoint (`min(2r, L)`), so the palm
+  could sit inside the tube surface (oracle clause 3); the band now follows the same
+  reach/clearance rule as cylinder-side and sphere,
+  `d ∈ [tube_radius, min(2·tube_radius, finger_length) − clearance]`, returning `[]`
+  with `finger_too_short` when `finger_length < tube_radius + clearance`, or with
+  `insufficient_clearance_band` when reach is ample but `clearance > tube_radius`
+  empties the far-surface limit (#114). Torus-span
+  grasps used a `[clearance, L − clearance]` depth band whose shallow depths did not
+  reach the equatorial plane (the widest outer diameter), so the fingertip stopped
+  short (oracle clause 5); the band now starts at `tube_radius` (the fingertip
+  reaches the equator) up to `finger_length − clearance`. `n_minor == 1` now samples
+  the **centre** of the minor-angle range (the equator `α = 0` by default) instead of
+  `linspace(...)[0] = −π/2` (a lower approach). A new `minor_angle_range` parameter
+  (keyword-only, default `[−π/2, +π/2]`) makes the represented set explicit and is
+  accepted by `GripperBase.grasp_torus_side`, the combined `grasp_torus`, and the
+  registry route, which forwards it to side grasps only; existing positional calls
+  are unchanged (#112). It must lie within the externally accessible **outer half**,
+  validated as an exact closed interval with no tolerance: endpoints exactly on
+  `±π/2` are valid, anything outside raises `ValueError`; inner-hole approaches are
+  out of scope (#113). Torus-side straddle feasibility uses the
+  scale-aware tolerance with the torus scale `R + r` (#107). A new oracle-backed
+  property (`tests/tsr/hands/test_torus_soundness.py`) certifies every side and span
+  pose against the #67 analytic oracle, with rotational equivariance about the axis,
+  equatorial mirror balance, reach boundaries, and the minor-angle/coverage semantics,
+  including generated custom minor-angle subintervals through the direct and combined APIs.
 - **Per-orientation box grasp feasibility** (#70). Each box face offers two
   finger-opening orientations (open along one in-face axis, slide along the other).
   The factories used to reject the **whole face** when either slide band was empty,
