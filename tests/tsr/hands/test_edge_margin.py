@@ -128,6 +128,73 @@ class TestMarginBoundaries(unittest.TestCase):
         _assert_all_sound(self, Box(0.05, thin, 0.05), templates, G, 0.0)
 
 
+class TestCylinderSideHeightEquality(unittest.TestCase):
+    """height == 2m is one valid centred height, not an empty set (#105 convention)."""
+
+    R = 0.02
+
+    def _margin(self, height, clearance):
+        return max(clearance, 2 * length_atol(max(self.R, height)))
+
+    def _templates(self, height, clearance=0.0):
+        return G.grasp_cylinder_side(self.R, height, k=1, clearance=clearance, preshape=0.06)
+
+    def test_exact_boundary_emits_one_centred_height(self):
+        c = 0.02
+        h = 2 * c  # height == 2*margin exactly
+        templates = self._templates(h, c)
+        self.assertEqual(len(templates), 2)  # one depth x two roll variants
+        for t in templates:
+            self.assertEqual((t.Bw[2, 0], t.Bw[2, 1]), (0.0, 0.0))  # zero-width band
+            self.assertAlmostEqual(t.T_ref_tsr[2, 3], h / 2, places=15)  # centred
+        _assert_all_sound(self, Cylinder(self.R, h), templates, G, c)
+
+    def test_nextafter_below_is_empty_with_reason(self):
+        c = 0.02
+        h = float(np.nextafter(2 * c, 0.0))
+        self.assertEqual(self._templates(h, c), [])
+        with self.assertLogs("tsr.hands.base", level="DEBUG") as cm:
+            self._templates(h, c)
+        self.assertTrue(any("insufficient_clearance_band" in m for m in cm.output))
+
+    def test_nextafter_above_emits_a_positive_width_band(self):
+        c = 0.02
+        h = float(np.nextafter(2 * c, 1.0))
+        templates = self._templates(h, c)
+        self.assertEqual(len(templates), 2)
+        self.assertGreater(templates[0].Bw[2, 1], 0.0)
+        _assert_all_sound(self, Cylinder(self.R, h), templates, G, c)
+
+    def test_zero_clearance_boundary_uses_the_margin(self):
+        # With clearance 0 the margin is the floor, so the boundary is height == 2*floor.
+        floor = 2 * length_atol(self.R)  # radius is the larger dimension here
+        self.assertEqual(len(self._templates(2 * floor)), 2)
+        self.assertEqual(self._templates(float(np.nextafter(2 * floor, 0.0))), [])
+
+
+class TestBoxDiagnosticsUseTheMargin(unittest.TestCase):
+    """The empty-band precheck and generation share one margin (#121)."""
+
+    def test_thin_approach_extent_reports_the_band_not_straddle(self):
+        # box_z just under 2*margin: the band is empty under the effective margin,
+        # though it would be non-empty under the raw clearance=0.
+        wide = 0.05
+        floor = 2 * length_atol(wide)
+        thin = float(np.nextafter(2 * floor, 0.0))
+        for f, dims in (
+            (G.grasp_box_top, (wide, wide, thin)),
+            (G.grasp_box_bottom, (wide, wide, thin)),
+            (G.grasp_box_face_x, (thin, wide, wide)),
+            (G.grasp_box_face_y, (wide, thin, wide)),
+        ):
+            with self.subTest(f.__name__):
+                with self.assertLogs("tsr.hands.base", level="DEBUG") as cm:
+                    self.assertEqual(f(*dims, k=3, clearance=0.0, preshape=0.07), [])
+                messages = " ".join(cm.output)
+                self.assertIn("insufficient_clearance_band", messages)
+                self.assertNotIn("cannot_straddle", messages)
+
+
 class TestEdgeMarginProperty(unittest.TestCase):
     @settings(max_examples=100, deadline=None)
     @given(
