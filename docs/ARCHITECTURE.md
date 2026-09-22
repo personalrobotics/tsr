@@ -157,7 +157,7 @@ grasp DSL:
    | `depth` | approach axis | insertion depth from the approached surface [m], `≥ 0` |
    | `approach` | object | side/family the **hand occupies** (not the sign of `z_EE`) |
    | `finger_orientation` | object | direction the pads are separated along — object axis (box) or yaw-free family `tangential`/`diameter` (fingers always close along `±y_EE`) |
-   | `depth_index`/`depth_count` | — | index (shallow → deep) and number of **distinct** depth levels emitted for the family (`≤ k`; a one-point band gives `depth_count = 1`, an empty band emits nothing) (#81) |
+   | `depth_index`/`depth_count` | — | index (shallow → deep) and number of **distinct** depth levels in the template's *depth family* (`≤ k`; a one-point band gives `depth_count = 1`, an empty band emits nothing) (#81). A depth family is the templates **within one factory result** whose non-depth fields — `primitive`, `mode`, `approach`, `finger_orientation`, `symmetry`, `metadata` — are identical; it holds one template per depth level. The counters do not identify templates across independently generated or concatenated collections. |
    | `symmetry` | — | distinguishes otherwise-equivalent templates (e.g. a roll flip) |
    | `metadata` | object | descriptive extras only — **never** geometric evidence (torus `minor_*`, box `slide_axis`/`span`) |
 

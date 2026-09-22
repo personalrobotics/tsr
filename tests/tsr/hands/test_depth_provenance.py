@@ -22,6 +22,7 @@ from tsr.hands import GripperBase, ParallelJawGripper
 
 
 def _families(templates):
+    """Partition one factory result by the documented depth-family key (#120)."""
     fam = defaultdict(list)
     for t in templates:
         p = t.provenance
@@ -139,6 +140,19 @@ class TestUlpWideBand(unittest.TestCase):
         self.assertTrue(templates)
         self.assertLess(len(templates), 10)
         _assert_depth_semantics(self, templates, 10)
+
+    def test_adjacent_dedup_matches_unique_across_scales(self):
+        # The ordered adjacent dedup (#119) equals np.unique on linspace output.
+        for e in (-300, -20, 0, 20, 300):
+            lo = 2.0**e
+            for n_ulps in (1, 2, 3, 7):
+                hi = lo
+                for _ in range(n_ulps):
+                    hi = float(np.nextafter(hi, np.inf))
+                for k in (1, 2, 3, 10, 100):
+                    got = GripperBase._usable_depths(lo, hi, k)
+                    np.testing.assert_array_equal(got, np.unique(np.linspace(lo, hi, k)))
+                    self.assertTrue(np.all(np.diff(got) > 0))
 
     def test_usable_depths_boundary_policy_is_unchanged(self):
         self.assertIsNone(GripperBase._usable_depths(0.05, 0.04, 3))

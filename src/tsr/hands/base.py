@@ -725,7 +725,12 @@ class GripperBase(ABC):
             return None
         if hi == lo:
             return np.array([float(lo)])
-        return np.unique(np.linspace(lo, hi, k))
+        depths = np.linspace(lo, hi, k)
+        # linspace is already nondecreasing: drop exact adjacent repeats, no sort (#119).
+        keep = np.empty(depths.shape, dtype=bool)
+        keep[0] = True
+        keep[1:] = depths[1:] != depths[:-1]
+        return depths[keep]
 
     @staticmethod
     def _length_atol(scale: float) -> float:
