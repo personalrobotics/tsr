@@ -27,8 +27,11 @@ Field frames and meanings (see docs/ARCHITECTURE.md): ``depth`` is the insertion
 depth from the approached surface [m]; ``approach`` is the object-relative side
 the hand occupies; ``finger_orientation`` is the object-relative direction the
 pads are separated along (fingers always close along ``±y_EE``, a library
-invariant); ``symmetry`` distinguishes otherwise-equivalent templates; ``metadata``
-is descriptive only and must never be used as geometric evidence.
+invariant); ``depth_count`` is the number of **distinct** depth levels the factory
+emitted for that family (at most the requested ``k``; fewer when the feasible band
+collapses), and ``depth_index`` in ``0..depth_count-1`` orders them shallow to deep;
+``symmetry`` distinguishes otherwise-equivalent templates; ``metadata`` is
+descriptive only and must never be used as geometric evidence.
 """
 
 from __future__ import annotations

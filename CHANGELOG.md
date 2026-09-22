@@ -10,6 +10,15 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Grasp provenance depth-count semantics** (#81). `GraspProvenance.depth_count` is
+  now documented and guaranteed to be the number of **distinct** depth levels emitted
+  for a family (`≤ k`), with `depth_index` ordering them shallow to deep. The shared
+  depth helper already collapsed an exact one-point band to a single depth (#68);
+  it now also drops duplicates when a band only a few ulps wide makes `np.linspace`
+  round samples onto the same float, which previously produced repeated depths that
+  all reported `depth_count = k`. A Hypothesis property checks the invariant for every
+  grasp factory, including the combined entry points, with one-point-band tests
+  per family and ulp-wide-band regressions.
 - **Sphere grasp coverage vs. sampling distribution** (#72). `grasp_sphere` claimed
   its roll/pitch/yaw box makes sampling produce "uniformly distributed approach
   directions"; independent uniform RPY (`TSR.sample`) is **not** Haar-uniform on
