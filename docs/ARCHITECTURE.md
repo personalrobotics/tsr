@@ -89,8 +89,10 @@ separately — a template may attain one without the next:
 
 **Coverage is not soundness, and neither is a sampling distribution.** In
 particular the sphere-grasp TSR *covers* SO(3) as a set, but sampling independent
-uniform roll/pitch/yaw is **not** Haar-uniform on SO(3) (see `#72`). Distribution
-claims require their own proof and are never implied by set coverage.
+uniform roll/pitch/yaw (`TSR.sample`) is **not** Haar-uniform on SO(3). Haar-uniform
+sampling over a TSR's rotation box is a separate API, `tsr.sampling.sample_haar`,
+which draws `sin(pitch)` uniformly (the ZYX Haar density is `∝ cos(pitch)`) (#72).
+Distribution claims require their own proof and are never implied by set coverage.
 
 ### Soundness clauses
 

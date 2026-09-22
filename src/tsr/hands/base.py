@@ -448,9 +448,12 @@ class GripperBase(ABC):
         TSR origin at the sphere center; k discrete approach depths.
 
         This is a statement about the *set* the template covers. It is **not** a
-        claim about the sampling *distribution*: sampling independent uniform
-        roll/pitch/yaw is not Haar-uniform on SO(3) (see issue #72). ``angle_range``
-        constrains the Euler yaw coordinate, not a spherical-cap measure.
+        claim about the sampling *distribution*: ``TSR.sample`` draws independent
+        uniform roll/pitch/yaw, which is not Haar-uniform on SO(3); use
+        :func:`tsr.sampling.sample_haar` for Haar-uniform rotations over the
+        represented set (#72). ``angle_range`` constrains the Euler yaw coordinate:
+        the represented approach directions form the lune ``azimuth ∈ angle_range``,
+        not a spherical cap.
 
         Sphere coordinate convention: center at origin, radius = object_radius.
 

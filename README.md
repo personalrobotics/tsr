@@ -195,6 +195,11 @@ distance, _ = tsr.distance(pose)   # distance to nearest valid pose
 is_valid = tsr.contains(pose)      # containment check
 ```
 
+`tsr.sample()` draws roll, pitch, and yaw uniformly, which covers the region but is
+not uniform over rotations. For Haar-uniform rotations over the same region (for
+example, approach directions uniform over a sphere grasp), use
+`tsr.sampling.sample_haar(tsr, rng)`.
+
 ### Save and load templates
 
 ```python
