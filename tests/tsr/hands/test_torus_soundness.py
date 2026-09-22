@@ -14,10 +14,10 @@ default), not an endpoint.
 import unittest
 
 import numpy as np
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
-from tsr.hands import ParallelJawGripper
+from tsr.hands import ParallelJawGripper, default_registry
 
 from ._grasp_oracle import Torus, certify
 
@@ -90,6 +90,107 @@ class TestMinorAngleSemantics(unittest.TestCase):
                 self.G.grasp_torus_side(0.06, 0.02, minor_angle_range=bad)
 
 
+_HALF = np.pi / 2
+_HALF_IN = float(np.nextafter(_HALF, 0.0))
+_minor_angle = st.floats(-_HALF, _HALF, allow_nan=False)
+
+
+@st.composite
+def _minor_ranges(draw):
+    """Ordered valid subintervals of the outer half, including singletons (#113)."""
+    a = draw(_minor_angle)
+    b = draw(st.one_of(st.just(a), _minor_angle))
+    return (min(a, b), max(a, b))
+
+
+def _side_angles(templates):
+    return sorted({t.provenance.metadata["minor_angle"] for t in templates if t.provenance.mode == "side"})
+
+
+class TestMinorAngleRangeProperty(unittest.TestCase):
+    """Custom minor-angle intervals are sampled exactly and oracle-sound (#113)."""
+
+    G = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+    R, r = 0.06, 0.02
+
+    @settings(max_examples=60, deadline=None)
+    @given(rng=_minor_ranges(), nm=st.integers(1, 5), c=st.floats(0.001, 0.01))
+    @example(rng=(-_HALF, _HALF), nm=5, c=0.006)
+    @example(rng=(-_HALF, -_HALF), nm=1, c=0.006)
+    @example(rng=(_HALF, _HALF), nm=3, c=0.006)
+    @example(rng=(-_HALF_IN, _HALF_IN), nm=2, c=0.006)
+    @example(rng=(0.0, _HALF), nm=1, c=0.006)
+    @example(rng=(-_HALF, 0.3), nm=4, c=0.001)
+    def test_custom_range_is_sampled_exactly_and_sound(self, rng, nm, c):
+        side = self.G.grasp_torus_side(self.R, self.r, clearance=c, n_minor=nm, minor_angle_range=rng)
+        self.assertTrue(side)
+        expected = [(rng[0] + rng[1]) / 2.0] if nm == 1 else np.linspace(rng[0], rng[1], nm)
+        np.testing.assert_allclose(_side_angles(side), sorted(set(expected)), atol=1e-12)
+        _assert_all_sound(self, Torus(self.R, self.r), side, self.G, c)
+
+        # The combined API forwards the interval to side grasps only.
+        combined = self.G.grasp_torus(self.R, self.r, clearance=c, n_minor=nm, minor_angle_range=rng)
+        combined_side = [t for t in combined if t.provenance.mode == "side"]
+        self.assertEqual(len(combined_side), len(side))
+        for a, b in zip(side, combined_side):
+            np.testing.assert_array_equal(a.Tw_e, b.Tw_e)
+            np.testing.assert_array_equal(a.Bw, b.Bw)
+        _assert_all_sound(self, Torus(self.R, self.r), combined, self.G, c)
+
+
+class TestMinorAngleBoundaryPolicy(unittest.TestCase):
+    """Exact closed-interval validation of the outer half, no tolerance (#113)."""
+
+    G = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+
+    def test_exact_endpoints_and_inner_neighbours_are_valid(self):
+        for rng in ((-_HALF, _HALF), (-_HALF, -_HALF), (_HALF, _HALF), (-_HALF_IN, _HALF_IN)):
+            self.assertTrue(self.G.grasp_torus_side(0.06, 0.02, minor_angle_range=rng), rng)
+
+    def test_outer_neighbours_raise(self):
+        below = float(np.nextafter(-_HALF, -np.inf))
+        above = float(np.nextafter(_HALF, np.inf))
+        for rng in ((below, 0.0), (0.0, above), (below, above)):
+            with self.assertRaises(ValueError):
+                self.G.grasp_torus_side(0.06, 0.02, minor_angle_range=rng)
+            with self.assertRaises(ValueError):
+                self.G.grasp_torus(0.06, 0.02, minor_angle_range=rng)
+
+
+class TestMinorAngleRangeInterface(unittest.TestCase):
+    """minor_angle_range is keyword-only and reaches every public entry point (#112)."""
+
+    G = ParallelJawGripper(finger_length=0.08, max_aperture=0.30)
+
+    def test_positional_arguments_through_description_still_bind(self):
+        templates = self.G.grasp_torus_side(
+            0.06, 0.02, None, 2, 3, 0.006, (0.0, np.pi), "hand", "ring", "My Name", "My Desc"
+        )
+        self.assertEqual(len(templates), 2 * 2 * 3)
+        for t in templates:
+            self.assertEqual((t.subject, t.reference, t.description), ("hand", "ring", "My Desc"))
+            self.assertTrue(t.name.startswith("My Name"), t.name)
+            self.assertEqual((t.Bw[5, 0], t.Bw[5, 1]), (0.0, np.pi))
+
+    def test_combined_positional_arguments_still_bind(self):
+        templates = self.G.grasp_torus(0.06, 0.02, None, 2, 3, 0.006, (0.0, np.pi), "hand", "ring")
+        self.assertTrue(templates)
+        self.assertTrue(all((t.subject, t.reference) == ("hand", "ring") for t in templates))
+
+    def test_minor_angle_range_is_keyword_only(self):
+        with self.assertRaises(TypeError):
+            self.G.grasp_torus_side(0.06, 0.02, None, 3, 5, None, (0.0, 2 * np.pi), "g", "t", "", "", (0.0, 0.5))
+        with self.assertRaises(TypeError):
+            self.G.grasp_torus(0.06, 0.02, None, 3, 5, None, (0.0, 2 * np.pi), "g", "t", (0.0, 0.5))
+
+    def test_registry_route_forwards_minor_angle_range(self):
+        gen = default_registry.get("parallel_jaw", "torus", "grasp")
+        templates = gen(self.G, torus_radius=0.06, tube_radius=0.02, n_minor=1, minor_angle_range=(0.0, _HALF))
+        angles = _side_angles(templates)
+        self.assertEqual(len(angles), 1)
+        self.assertAlmostEqual(angles[0], np.pi / 4, places=12)
+
+
 class TestTorusSoundnessProperty(unittest.TestCase):
     """Every side and span template has a valid oracle witness (#71)."""
 
@@ -157,6 +258,24 @@ class TestTorusReach(unittest.TestCase):
         with self.assertLogs("tsr.hands.base", level="DEBUG") as cm:
             g.grasp_torus_side(0.06, 0.03, clearance=0.006)
         self.assertTrue(any("finger_too_short" in m for m in cm.output))
+
+    def test_excessive_clearance_logs_clearance_band_reason(self):
+        # Ample reach (0.10 >= 0.02 + 0.03) but clearance > tube_radius empties the
+        # far-surface limit: band [0.02, 0.01] -> [] with insufficient_clearance_band (#114).
+        g = ParallelJawGripper(finger_length=0.10, max_aperture=0.50)
+        with self.assertLogs("tsr.hands.base", level="DEBUG") as cm:
+            self.assertEqual(g.grasp_torus_side(0.06, 0.02, clearance=0.03), [])
+        self.assertTrue(any("insufficient_clearance_band" in m for m in cm.output))
+        self.assertFalse(any("finger_too_short" in m for m in cm.output))
+
+    def test_coincident_band_endpoints_emit_one_depth(self):
+        # clearance == tube_radius with ample reach: band [r, 2r - c] = [r, r] (exact in
+        # binary), a single deduplicated depth -> 2 flips x 1 depth x n_minor (#114).
+        r = c = 0.03125
+        g = ParallelJawGripper(finger_length=0.10, max_aperture=0.50)
+        templates = g.grasp_torus_side(0.125, r, clearance=c, k=3, n_minor=1)
+        self.assertEqual(len(templates), 2)
+        _assert_all_sound(self, Torus(0.125, r), templates, g, c)
 
     def test_reach_boundary_and_neighbours(self):
         # The reach band [tube_radius, min(2r, L) - clearance] is nonempty iff

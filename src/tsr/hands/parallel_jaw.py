@@ -1085,11 +1085,12 @@ class ParallelJawGripper(GripperBase):
         n_minor: int = 5,
         clearance: Optional[float] = None,
         angle_range: Tuple[float, float] = (0.0, 2 * np.pi),
-        minor_angle_range: Tuple[float, float] = (-np.pi / 2, np.pi / 2),
         subject: str = "gripper",
         reference: str = "torus",
         name: str = "",
         description: str = "",
+        *,
+        minor_angle_range: Tuple[float, float] = (-np.pi / 2, np.pi / 2),
     ) -> List[TSRTemplate]:
         """Side grasp templates for a torus tube — 2 * k * n_minor templates.
 
@@ -1128,14 +1129,19 @@ class ParallelJawGripper(GripperBase):
             clearance:         Safety buffer [m]. Defaults to 10% of finger_length.
 
         Returns 2*k*n_minor TSRTemplates. Returns [] with ``finger_too_short`` if
-        ``finger_length < tube_radius + clearance``, or with the straddle reason if
-        the tube diameter cannot be spanned. Raises ValueError for invalid geometry.
+        ``finger_length < tube_radius + clearance``, with ``insufficient_clearance_band``
+        if reach is ample but ``clearance > tube_radius`` empties the far-surface limit,
+        or with the straddle reason if the tube diameter cannot be spanned. Raises
+        ValueError for invalid geometry, including a ``minor_angle_range`` endpoint
+        strictly outside ``[−π/2, +π/2]``.
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
         self._check_count("n_minor", n_minor)
         self._check_angle_range(minor_angle_range)
-        if minor_angle_range[0] < -np.pi / 2 - 1e-9 or minor_angle_range[1] > np.pi / 2 + 1e-9:
+        # Exact closed-interval policy (#105, #113): endpoints inside or exactly on
+        # [-pi/2, pi/2] are valid; anything strictly outside raises. No tolerance.
+        if minor_angle_range[0] < -np.pi / 2 or minor_angle_range[1] > np.pi / 2:
             raise ValueError(
                 f"minor_angle_range must lie within the externally accessible outer half "
                 f"[-pi/2, pi/2]; inner-hole approaches are out of scope, got {minor_angle_range}"
@@ -1172,13 +1178,16 @@ class ParallelJawGripper(GripperBase):
 
         # Reach/clearance band (same rule as cylinder-side and sphere, #69/#71):
         # fingertips reach the tube centre (d >= tube_radius) and the palm stays a
-        # clearance outside the tube surface (d <= min(2r, L) - clearance). Empty when
-        # finger_length < tube_radius + clearance.
+        # clearance outside the tube surface (d <= min(2r, L) - clearance). The band is
+        # empty either because the fingers are too short
+        # (finger_length < tube_radius + clearance) or because an excessive clearance
+        # relative to the tube radius empties the far-surface limit;
+        # _radial_band_reason names the failed constraint (#114).
         depths = self._usable_depths(tube_radius, min(2 * tube_radius, self.finger_length) - clearance, k)
         if depths is None:
             return self._empty(
                 "grasp_torus_side",
-                "finger_too_short",
+                self._radial_band_reason(tube_radius, clearance),
                 finger_length=self.finger_length,
                 tube_radius=tube_radius,
                 clearance=clearance,
