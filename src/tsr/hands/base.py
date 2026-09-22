@@ -712,16 +712,25 @@ class GripperBase(ABC):
           the caller emits ``insufficient_clearance_band`` rather than reversing the
           shallow-to-deep ordering via ``np.linspace``);
         * ``hi == lo`` -> a single depth (coincident endpoints);
-        * ``hi > lo`` -> ``k`` depths.
+        * ``hi > lo`` -> up to ``k`` depths.
 
         The comparison is exact: a positive-width interval never collapses through a
-        default (unit- or scale-dependent) ``np.isclose`` tolerance.
+        default (unit- or scale-dependent) ``np.isclose`` tolerance. The returned
+        depths are strictly increasing (shallow to deep) and **distinct**: an interval
+        only a few ulps wide can make ``np.linspace`` round samples onto the same
+        float, and those duplicates are dropped, so ``len(depths)`` is the number of
+        distinct depth levels that ``GraspProvenance.depth_count`` reports (#81).
         """
         if hi < lo:
             return None
         if hi == lo:
             return np.array([float(lo)])
-        return np.linspace(lo, hi, k)
+        depths = np.linspace(lo, hi, k)
+        # linspace is already nondecreasing: drop exact adjacent repeats, no sort (#119).
+        keep = np.empty(depths.shape, dtype=bool)
+        keep[0] = True
+        keep[1:] = depths[1:] != depths[:-1]
+        return depths[keep]
 
     @staticmethod
     def _length_atol(scale: float) -> float:
