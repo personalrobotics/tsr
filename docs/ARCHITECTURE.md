@@ -220,3 +220,62 @@ from the numbers alone. `g = ParallelJawGripper(finger_length=L, max_aperture=A)
   (tube diameter `2r=0.04 < a`). *Infeasible span:* `g.grasp_torus_span(0.06, 0.02)`
   on `A=0.14` → `[]`, because `2(R+r)+c = 0.16+ > A` (outer diameter exceeds the
   jaw). Torus coverage semantics (`n_minor`, inner/outer half) are refined in `#71`.
+
+## Verification matrix and release gate (#73)
+
+The per-primitive soundness suites (`test_reach_soundness.py`, `test_box_soundness.py`,
+`test_torus_soundness.py`, …) are the deterministic regressions. On top of them,
+`tests/tsr/hands/_grasp_matrix.py` drives **every** public `grasp_*` factory — the
+combined entry points and the named grippers included — through the independent
+oracle. A guard test fails if a new factory is added without joining the matrix.
+
+**Cases.** Primitive dimensions are drawn relative to the hand's reach and aperture
+across scale regimes, together with `k`, `n_minor`, restricted yaw and minor-angle
+ranges, and explicit or default preshape and clearance. `boundary_cases` additionally
+solves one clearance that places a documented feasibility boundary *exactly*, then
+offsets it by ±1 ulp: aperture (`span + c = A`), radial reach (`c = L − r`), radial
+band collapse (`c = r`), cap and box approach bands (`c = min(L, extent)/2`), box
+slide (`c = dim/2`), and torus span. Solving for the clearance rather than the
+gripper keeps the named hardware in the matrix.
+
+**Invariants.** Each is a pure check returning failures, shared with the gate:
+
+| # | invariant |
+|---|---|
+| 1 | every pose (Bw midpoint, per-axis extrema, corners, interior points) has an oracle witness, and its provenance passes native conformance |
+| 2 | invalid arguments raise `ValueError`; physical infeasibility returns `[]` |
+| 3 | equivariance: `instantiate(T)` maps every pose by `T` and preserves the witness |
+| 4 | symmetries: rotation about the object axis, and the x/y/z mirrors, preserve the witness under the mapped side labels; declared opposite-side pairs have equal depth multisets |
+| 5 | monotonicity: more reach or a wider aperture never removes a family |
+| 6 | declared families are all emitted; structured keys are unique; a combined entry point equals the union of its parts (matched by key — emission order is not contractual) |
+| 7 | dict/JSON/YAML round-trips preserve poses and the witness |
+
+**Mutation gate** (`test_grasp_mutation_gate.py`). A suite that never fails proves
+nothing, so each bug class named in #73 is injected and the same checks must reject
+it: approach sign, face origin, axis mapping, object extent, clearance term and reach
+as black-box mutants over the factory output, plus code mutants that patch the real
+generator (`_resolve_clearance`, `_usable_depths`, `_infeasibility_reason`).
+Detection is required per (mutant, factory), aggregated over a deterministic corpus —
+one case suffices, since a mutation can be harmless in one geometry and fatal in
+another. Two exclusions are explicit, and both are *correctness* statements:
+
+- rotating a **sphere's** TSR frame is a symmetry, so the axis-mapping mutant stays
+  sound (`KNOWN_SYMMETRIC`, re-certified rather than skipped);
+- **inflating** an object is not by itself unsound — a grasp planned for a larger
+  object can execute soundly on the real, smaller one — so the extent mutant shrinks.
+
+The corpus includes a deliberately short-fingered hand (`L < 2r`), because the radial
+deep limit `min(L, 2r) − c` only *binds* there; with long fingers it is conservative
+and exceeding it is still a sound grasp that no check may reject.
+
+**Runtime.** Budgets scale with `TSR_MATRIX_SCALE` (default 1): the matrix and gate
+add ~11 s to a ~40 s suite. The `release-gate` CI job runs them at `TSR_MATRIX_SCALE=10`
+on a weekly schedule and on demand (`workflow_dispatch`); run it locally with
+
+```bash
+TSR_MATRIX_SCALE=10 uv run pytest tests/tsr/hands/test_grasp_matrix.py tests/tsr/hands/test_grasp_mutation_gate.py
+```
+
+Hypothesis runs with `deadline=None` and prints a reproduction blob on failure, so
+results are stable across Python 3.10–3.14. A confirmed counterexample is shrunk and
+promoted to a deterministic regression next to the primitive it belongs to.
