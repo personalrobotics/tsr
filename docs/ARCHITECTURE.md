@@ -135,6 +135,16 @@ or force closure under arbitrary friction — an explicit non-goal.
   `≥ c − atol`.
 - Frames follow the library convention: `z_EE` = approach, `y_EE` = finger
   opening (fingers always close along `±y_EE`), `x_EE = y_EE × z_EE`.
+- **Edge-facing band limits use `m = max(c, 2·atol)`** (#121). A limit that faces an
+  edge of the primitive — the approached face, the opposite face or cap, a lateral
+  slide edge, a cylinder rim — keeps contacts strictly off that edge, where the
+  surface normal is ambiguous and the insertion would be degenerate. `c = 0` is a
+  valid request (#104), and a clearance below `atol` is indistinguishable from it, so
+  the generator floors these limits. The floor is *twice* `atol` because the pose's
+  realized insertion is recovered by a cancelling subtraction, so exactly `atol`
+  loses to rounding. This mirrors the scale-aware straddle margin, under which the
+  object must clear each pad by `atol`. Palm clearance and the default preshape still
+  use the requested `c`.
 
 ### Structured provenance — three separate layers (#84)
 

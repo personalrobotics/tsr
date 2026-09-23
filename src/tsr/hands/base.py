@@ -204,14 +204,16 @@ class GripperBase(ABC):
         downward). TSR origin at z = cylinder_height (top face).
 
         Insertion depth is measured from the approached (top) face and spans
-        ``d ∈ [clearance, min(finger_length, cylinder_height) − clearance]``, so
-        **which limit binds depends on the cylinder** (#122):
+        ``d ∈ [m, min(finger_length, cylinder_height) − m]``, where
+        ``m = max(clearance, 2 · atol(scale))`` is the edge margin (#121; ``m`` is the
+        requested clearance except at or below the contract tolerance). **Which limit
+        binds depends on the cylinder** (#122):
 
         * ``finger_length ≤ cylinder_height`` — the palm-clearance limit binds: the
-          deepest pose puts the palm exactly one clearance above the approached rim.
+          deepest pose puts the palm exactly ``m`` above the approached rim.
         * ``cylinder_height < finger_length`` — the far-cap limit binds: the deepest
-          pose stops the fingertips one clearance short of the **bottom** face, and
-          the palm can stay much farther than one clearance above the approached rim.
+          pose stops the fingertips ``m`` short of the **bottom** face, and the palm
+          can stay much farther than ``m`` above the approached rim.
 
         Args:
             cylinder_radius: Cylinder radius [m].
@@ -247,14 +249,16 @@ class GripperBase(ABC):
         upward). TSR origin at z = 0 (bottom face).
 
         Insertion depth is measured from the approached (bottom) face and spans
-        ``d ∈ [clearance, min(finger_length, cylinder_height) − clearance]``, so
-        **which limit binds depends on the cylinder** (#122):
+        ``d ∈ [m, min(finger_length, cylinder_height) − m]``, where
+        ``m = max(clearance, 2 · atol(scale))`` is the edge margin (#121; ``m`` is the
+        requested clearance except at or below the contract tolerance). **Which limit
+        binds depends on the cylinder** (#122):
 
         * ``finger_length ≤ cylinder_height`` — the palm-clearance limit binds: the
-          deepest pose puts the palm exactly one clearance below the approached rim.
+          deepest pose puts the palm exactly ``m`` below the approached rim.
         * ``cylinder_height < finger_length`` — the far-cap limit binds: the deepest
-          pose stops the fingertips one clearance short of the **top** face, and the
-          palm can stay much farther than one clearance below the approached rim.
+          pose stops the fingertips ``m`` short of the **top** face, and the palm can
+          stay much farther than ``m`` below the approached rim.
 
         Args:
             cylinder_radius: Cylinder radius [m].
@@ -377,8 +381,9 @@ class GripperBase(ABC):
             box_x:     Box width  [m].
             box_y:     Box depth  [m].
             box_z:     Box height [m]; bounds the insertion depth,
-                       ``d ∈ [clearance, min(finger_length, box_z) − clearance]``.
-                       The TSR origin is the bottom face at z = 0.
+                       ``d ∈ [m, min(finger_length, box_z) − m]`` with the edge margin
+                       ``m = max(clearance, 2 · atol(scale))`` (#121). The TSR origin
+                       is the bottom face at z = 0.
             preshape:  Jaw opening [m]. Defaults to max_aperture / 2.
             k:         Number of discrete approach depths (default 3).
             clearance: Safety buffer [m]. Defaults to 10% of finger_length.
@@ -765,6 +770,29 @@ class GripperBase(ABC):
         characteristic dimension.
         """
         return 1e-9 + 1e-6 * scale
+
+    def _edge_margin(self, clearance: float, scale: float) -> float:
+        """Edge-facing band margin ``m = max(clearance, 2 * _length_atol(scale))`` (#121).
+
+        A band limit that faces an **edge** of the primitive -- the approached face,
+        the opposite face or cap, a lateral slide edge, a cylinder rim -- must keep the
+        contacts strictly off that edge, where the surface normal is ambiguous and the
+        insertion would be degenerate. ``clearance = 0`` is a valid request (#104), and
+        a clearance below the contract tolerance is indistinguishable from zero, so
+        edge limits use at least ``_length_atol(scale)``. This mirrors the scale-aware
+        straddle margin (#107) and matches the #67 oracle, which requires a positive
+        insertion and off-edge contacts.
+
+        The floor is **twice** ``_length_atol(scale)``: the oracle compares the pose's
+        *realized* insertion against ``_length_atol``, and recovering that depth from
+        the pose cancels two coordinates, so a floor of exactly the tolerance loses to
+        rounding. Twice the tolerance clears it and stays sub-micron at hand scale
+        (0.23 µm for a 0.11 m box).
+
+        Palm clearance and the default preshape still use the requested ``clearance``;
+        only edge-facing band limits use this margin.
+        """
+        return max(clearance, 2.0 * self._length_atol(scale))
 
     def _infeasibility_reason(
         self, preshape: float, object_span: float, scale: Optional[float] = None

@@ -10,14 +10,26 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Box and cylinder contacts stay off the edges at zero or sub-tolerance clearance**
+  (#121). `clearance = 0` is a valid request (#104), but the closed bands used the
+  edges themselves as limits, so contacts landed exactly on an edge: zero insertion
+  (`grasp_box_top(0.05, 0.05, 0.05, clearance=0)` emitted a depth-0 template whose
+  fingertips only touch the face), a contact on the far face, a lateral slide edge, or
+  a cylinder rim, where the surface normal is ambiguous. Every edge-facing band limit
+  now uses `m = max(clearance, 2 · _length_atol(scale))`, mirroring the scale-aware
+  straddle margin (#107): the box approach and slide bands, the cylinder cap bands,
+  and the cylinder-side height band. Clearances above the tolerance are unchanged, and
+  palm clearance and the default preshape still use the requested clearance. Found by
+  the #73 property matrix.
 - **Cylinder cap insertion depth is bounded by the height** (#122). `grasp_cylinder_top`
   and `grasp_cylinder_bottom` built depths over `[clearance, finger_length − clearance]`
   and ignored the cylinder, so on a short cylinder the deeper templates pushed the
   fingertips past the opposite cap (#67 oracle clause 4) — including at the default
   clearance, e.g. `grasp_cylinder_top(0.02, 0.03, clearance=0.006)` with 80 mm fingers
   emitted depths 0.04 and 0.074 into a 30 mm cylinder. The band is now
-  `d ∈ [clearance, min(finger_length, cylinder_height) − clearance]`, the same rule the
-  box approach bands use, returning `[]` with `insufficient_clearance_band` when empty.
+  `d ∈ [m, min(finger_length, cylinder_height) − m]` with the edge margin
+  `m = max(clearance, 2 · atol(scale))` (#121), the same rule the box approach bands
+  use, returning `[]` with `insufficient_clearance_band` when empty.
   Found by the #73 property matrix.
 - **Grasp provenance depth-count semantics** (#81). `GraspProvenance.depth_count` is
   now documented and guaranteed to be the number of **distinct** depth levels emitted

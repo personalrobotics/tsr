@@ -162,8 +162,12 @@ class ParallelJawGripper(GripperBase):
                 diameter=2.0 * cylinder_radius,
                 max_aperture=self.max_aperture,
             )
-        h0, h1 = clearance, cylinder_height - clearance
-        if h1 <= h0:
+        # Height band limits face the cylinder rims, so they use the edge margin (#121).
+        margin = self._edge_margin(clearance, max(cylinder_radius, cylinder_height))
+        h0, h1 = margin, cylinder_height - margin
+        # Exact-interval convention (#105): height == 2*margin is ONE valid centred
+        # height (zero-width band), not an empty set; only h1 < h0 is empty.
+        if h1 < h0:
             return self._empty(
                 "grasp_cylinder_side", "insufficient_clearance_band", height=cylinder_height, clearance=clearance
             )
@@ -285,20 +289,22 @@ class ParallelJawGripper(GripperBase):
         **height** as well as the fingers (#122) — the same rule the box approach
         bands use:
 
-            d ∈ [clearance, min(finger_length, cylinder_height) − clearance]
+            d ∈ [m, min(finger_length, cylinder_height) − m]
 
-        The shallowest pose puts the fingertips one clearance inside the top face.
+        where ``m = max(clearance, 2 · atol(scale))`` is the edge margin (#121), equal
+        to the requested clearance except at or below the contract tolerance. The
+        shallowest pose puts the fingertips ``m`` inside the top face.
         Which limit binds at the deep end depends on the cylinder:
 
         * ``finger_length ≤ cylinder_height`` — the palm-clearance limit binds: the
-          palm ends up exactly one clearance above the approached rim.
+          palm ends up exactly ``m`` above the approached rim.
         * ``cylinder_height < finger_length`` — the far-cap limit binds: the
-          fingertips stop one clearance short of the bottom face, and the palm stays
-          ``finger_length − (cylinder_height − clearance)`` above the rim, which can
-          be much more than one clearance.
+          fingertips stop ``m`` short of the bottom face, and the palm stays
+          ``finger_length − (cylinder_height − m)`` above the rim, which can be much
+          more than ``m``.
 
         Returns ``[]`` with ``insufficient_clearance_band`` when the band is empty
-        (``min(finger_length, cylinder_height) < 2 · clearance``).
+        (``min(finger_length, cylinder_height) < 2 · m``).
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
@@ -337,7 +343,9 @@ class ParallelJawGripper(GripperBase):
 
         # Bounded by the height as well as the fingers (#122): a deeper fingertip
         # would pass the opposite cap, which the #67 oracle rejects (clause 4).
-        depths = self._usable_depths(clearance, min(self.finger_length, cylinder_height) - clearance, k)
+        # Both limits face a cap, so they use the edge margin (#121).
+        margin = self._edge_margin(clearance, max(cylinder_radius, cylinder_height))
+        depths = self._usable_depths(margin, min(self.finger_length, cylinder_height) - margin, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_top",
@@ -411,20 +419,22 @@ class ParallelJawGripper(GripperBase):
         Insertion depth is measured from the bottom face and is bounded by the
         **height** as well as the fingers (#122):
 
-            d ∈ [clearance, min(finger_length, cylinder_height) − clearance]
+            d ∈ [m, min(finger_length, cylinder_height) − m]
 
-        The shallowest pose puts the fingertips one clearance inside the bottom face.
+        where ``m = max(clearance, 2 · atol(scale))`` is the edge margin (#121), equal
+        to the requested clearance except at or below the contract tolerance. The
+        shallowest pose puts the fingertips ``m`` inside the bottom face.
         Which limit binds at the deep end depends on the cylinder:
 
         * ``finger_length ≤ cylinder_height`` — the palm-clearance limit binds: the
-          palm ends up exactly one clearance below the approached rim.
+          palm ends up exactly ``m`` below the approached rim.
         * ``cylinder_height < finger_length`` — the far-cap limit binds: the
-          fingertips stop one clearance short of the top face, and the palm stays
-          ``finger_length − (cylinder_height − clearance)`` below the rim, which can
-          be much more than one clearance.
+          fingertips stop ``m`` short of the top face, and the palm stays
+          ``finger_length − (cylinder_height − m)`` below the rim, which can be much
+          more than ``m``.
 
         Returns ``[]`` with ``insufficient_clearance_band`` when the band is empty
-        (``min(finger_length, cylinder_height) < 2 · clearance``).
+        (``min(finger_length, cylinder_height) < 2 · m``).
         """
         self._check_depth_count(k)
         self._check_angle_range(angle_range)
@@ -461,7 +471,9 @@ class ParallelJawGripper(GripperBase):
         )
 
         # Bounded by the height as well as the fingers (#122): see grasp_cylinder_top.
-        depths = self._usable_depths(clearance, min(self.finger_length, cylinder_height) - clearance, k)
+        # Both limits face a cap, so they use the edge margin (#121).
+        margin = self._edge_margin(clearance, max(cylinder_radius, cylinder_height))
+        depths = self._usable_depths(margin, min(self.finger_length, cylinder_height) - margin, k)
         if depths is None:
             return self._empty(
                 "grasp_cylinder_bottom",
@@ -573,9 +585,11 @@ class ParallelJawGripper(GripperBase):
 
         # Insertion depth is bounded by BOTH the finger length (palm clears the
         # approached face) and the box's extent along the approach axis (the fingertip
-        # clears the far face), each by a clearance (#70). Empty band -> [] silently;
+        # clears the far face), each by the edge margin m = max(clearance, 2*atol)
+        # (#70, #121). Empty band -> [] silently;
         # the public box_* method logs once at its boundary.
-        depths = self._usable_depths(clearance, min(self.finger_length, approach_extent) - clearance, k)
+        margin = self._edge_margin(clearance, box_scale)  # both limits face a box face (#121)
+        depths = self._usable_depths(margin, min(self.finger_length, approach_extent) - margin, k)
         if depths is None:
             return []
         common = dict(
@@ -641,14 +655,21 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, min(self.finger_length, box_z) - clearance, k) is None:
-            return self._empty("grasp_box_top", "insufficient_clearance_band", clearance=clearance, box_z=box_z)
+        # One margin for the diagnostic precheck AND for generation (#121): prechecking
+        # with the raw clearance would report cannot_straddle where the real cause is an
+        # empty band under the effective margin.
+        box_scale = max(box_x, box_y, box_z)
+        margin = self._edge_margin(clearance, box_scale)
+        if self._usable_depths(margin, min(self.finger_length, box_z) - margin, k) is None:
+            return self._empty(
+                "grasp_box_top", "insufficient_clearance_band", clearance=clearance, margin=margin, box_z=box_z
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty("grasp_box_top", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture)
         # Per-orientation feasibility (#70): span-x slides in y (band hy), span-y slides
         # in x (band hx). A thin dimension empties only its dependent orientation; keep
         # the perpendicular one instead of rejecting the whole face.
-        hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
+        hx, hy = box_x / 2.0 - margin, box_y / 2.0 - margin  # slide edges use the same margin
 
         if not name:
             name = f"{reference.title()} Box Top Grasp"
@@ -661,7 +682,7 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
-            box_scale=max(box_x, box_y, box_z),
+            box_scale=box_scale,
             approach_extent=box_z,
             subject=subject,
             reference=reference,
@@ -726,15 +747,22 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, min(self.finger_length, box_z) - clearance, k) is None:
-            return self._empty("grasp_box_bottom", "insufficient_clearance_band", clearance=clearance, box_z=box_z)
+        # One margin for the diagnostic precheck AND for generation (#121): prechecking
+        # with the raw clearance would report cannot_straddle where the real cause is an
+        # empty band under the effective margin.
+        box_scale = max(box_x, box_y, box_z)
+        margin = self._edge_margin(clearance, box_scale)
+        if self._usable_depths(margin, min(self.finger_length, box_z) - margin, k) is None:
+            return self._empty(
+                "grasp_box_bottom", "insufficient_clearance_band", clearance=clearance, margin=margin, box_z=box_z
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_bottom", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
             )
         # Per-orientation feasibility (#70): a thin dimension empties only its dependent
         # orientation, keeping the perpendicular one.
-        hx, hy = box_x / 2.0 - clearance, box_y / 2.0 - clearance
+        hx, hy = box_x / 2.0 - margin, box_y / 2.0 - margin  # slide edges use the same margin
 
         if not name:
             name = f"{reference.title()} Box Bottom Grasp"
@@ -746,7 +774,7 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
-            box_scale=max(box_x, box_y, box_z),
+            box_scale=box_scale,
             approach_extent=box_z,
             subject=subject,
             reference=reference,
@@ -813,16 +841,23 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, min(self.finger_length, box_x) - clearance, k) is None:
-            return self._empty("grasp_box_face_x", "insufficient_clearance_band", clearance=clearance, box_x=box_x)
+        # One margin for the diagnostic precheck AND for generation (#121): prechecking
+        # with the raw clearance would report cannot_straddle where the real cause is an
+        # empty band under the effective margin.
+        box_scale = max(box_x, box_y, box_z)
+        margin = self._edge_margin(clearance, box_scale)
+        if self._usable_depths(margin, min(self.finger_length, box_x) - margin, k) is None:
+            return self._empty(
+                "grasp_box_face_x", "insufficient_clearance_band", clearance=clearance, margin=margin, box_x=box_x
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_face_x", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
             )
         # Per-orientation feasibility (#70): span-y slides in z (band hz_half), span-z
         # slides in y (band hy). A thin dimension empties only its dependent orientation.
-        hy = box_y / 2.0 - clearance
-        hz_half = box_z / 2.0 - clearance
+        hy = box_y / 2.0 - margin  # slide edges use the same margin
+        hz_half = box_z / 2.0 - margin
 
         if not name:
             name = f"{reference.title()} Box X-Face Grasp"
@@ -838,7 +873,7 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
-            box_scale=max(box_x, box_y, box_z),
+            box_scale=box_scale,
             approach_extent=box_x,
             subject=subject,
             reference=reference,
@@ -909,16 +944,23 @@ class ParallelJawGripper(GripperBase):
         self._check_depth_count(k)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         self._validate_box(box_x, box_y, box_z, preshape)
-        if self._usable_depths(clearance, min(self.finger_length, box_y) - clearance, k) is None:
-            return self._empty("grasp_box_face_y", "insufficient_clearance_band", clearance=clearance, box_y=box_y)
+        # One margin for the diagnostic precheck AND for generation (#121): prechecking
+        # with the raw clearance would report cannot_straddle where the real cause is an
+        # empty band under the effective margin.
+        box_scale = max(box_x, box_y, box_z)
+        margin = self._edge_margin(clearance, box_scale)
+        if self._usable_depths(margin, min(self.finger_length, box_y) - margin, k) is None:
+            return self._empty(
+                "grasp_box_face_y", "insufficient_clearance_band", clearance=clearance, margin=margin, box_y=box_y
+            )
         if preshape is not None and preshape > self.max_aperture:
             return self._empty(
                 "grasp_box_face_y", "exceeds_aperture", preshape=preshape, max_aperture=self.max_aperture
             )
         # Per-orientation feasibility (#70): span-x slides in z (band hz_half), span-z
         # slides in x (band hx). A thin dimension empties only its dependent orientation.
-        hx = box_x / 2.0 - clearance
-        hz_half = box_z / 2.0 - clearance
+        hx = box_x / 2.0 - margin  # slide edges use the same margin
+        hz_half = box_z / 2.0 - margin
 
         if not name:
             name = f"{reference.title()} Box Y-Face Grasp"
@@ -934,7 +976,7 @@ class ParallelJawGripper(GripperBase):
             preshape_user=preshape,
             k=k,
             clearance=clearance,
-            box_scale=max(box_x, box_y, box_z),
+            box_scale=box_scale,
             approach_extent=box_y,
             subject=subject,
             reference=reference,
