@@ -35,6 +35,35 @@ server.stop()
 the server's lifetime is always explicit and visible at the call site. Sampling takes a
 `seed` or an `rng`, so a view can be reproduced exactly.
 
+## Scrubbing the region with sliders
+
+A static cloud of sampled poses shows a region as clutter. `explore_templates` instead
+drives **one** grasp from a slider per free `Bw` coordinate, so a continuous freedom is
+scrubbed rather than sampled:
+
+```bash
+uv run python examples/viser_cylinder_grasps.py --explore
+```
+
+```python
+from tsr.viser import explore_templates, free_coordinates
+
+free_coordinates(templates[0])
+# [(2, 'z [m]', -0.057, 0.057), (5, 'yaw [rad]', 0.0, 6.283)]
+
+server = explore_templates(templates, cylinder=(0.03, 0.12), gripper=gripper)
+```
+
+The sliders come from the template's own non-degenerate `Bw` rows, so a template is
+never given a slider for a coordinate it does not actually have: a cylinder side grasp
+offers `z` and `yaw`, a cap grasp offers `yaw` alone. A dropdown selects which template
+(so the discrete depth levels are steps, not a slider), a checkbox overlays the sampled
+cloud for comparison, and a read-only field shows the current coordinates.
+
+Moving a slider re-evaluates `tsr.to_transform(ξ)` and assigns the node's `position` and
+`wxyz`. The jaw geometry is uploaded once per template, not per frame, so scrubbing
+sends two transforms rather than re-sending geometry.
+
 ## Over SSH
 
 Viser serves HTTP and a websocket on one port; forward it and browse locally:
@@ -98,3 +127,5 @@ intend to keep a browser-free path is one of the open questions in #77.
   is absent, and none of them start a server or open a port.
 - There is no backend-neutral scene abstraction: this calls Viser's own mesh, frame and
   line-segment APIs directly, and passes plain NumPy arrays at the sstsr boundary.
+- The GUI is Viser's own: sliders and dropdowns are created through `server.gui`, and no
+  widget abstraction is introduced for one experimental backend.

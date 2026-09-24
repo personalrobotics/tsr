@@ -20,7 +20,7 @@ from tsr.hands import ParallelJawGripper
 viser_backend = __import__("importlib").util.find_spec("viser")
 if viser_backend is not None:
     from tsr.viser import _wxyz as wxyz
-    from tsr.viser import gripper_segments, sample_poses
+    from tsr.viser import free_coordinates, gripper_segments, sample_poses
 
 GRIPPER = ParallelJawGripper(finger_length=0.08, max_aperture=0.14)
 
@@ -50,6 +50,30 @@ class TestSampling(unittest.TestCase):
             tsr = template.instantiate(T)
             for pose in sample_poses([template], 4, T_ref_world=T, seed=3):
                 self.assertTrue(tsr.contains(pose))
+
+
+@unittest.skipIf(viser_backend is None, "optional extra 'viser' is not installed")
+class TestFreeCoordinates(unittest.TestCase):
+    """The sliders are driven by the template's own non-degenerate Bw rows."""
+
+    def test_cylinder_side_is_free_in_z_and_yaw(self):
+        template = GRIPPER.grasp_cylinder_side(0.03, 0.12)[0]
+        free = free_coordinates(template)
+        self.assertEqual([row for row, _, _, _ in free], [2, 5])
+        self.assertEqual([label for _, label, _, _ in free], ["z [m]", "yaw [rad]"])
+        for row, _label, lo, hi in free:
+            self.assertEqual((lo, hi), (template.Bw[row, 0], template.Bw[row, 1]))
+            self.assertLess(lo, hi)
+
+    def test_cylinder_top_is_free_in_yaw_only(self):
+        template = GRIPPER.grasp_cylinder_top(0.03, 0.12)[0]
+        self.assertEqual([label for _, label, _, _ in free_coordinates(template)], ["yaw [rad]"])
+
+    def test_degenerate_rows_are_never_offered(self):
+        # A zero-width row is not a freedom; putting a slider on it would be a lie.
+        for template in GRIPPER.grasp_box_top(0.05, 0.05, 0.05):
+            for row, _label, lo, hi in free_coordinates(template):
+                self.assertGreater(hi, lo, row)
 
 
 @unittest.skipIf(viser_backend is None, "optional extra 'viser' is not installed")
