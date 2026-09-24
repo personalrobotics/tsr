@@ -136,6 +136,26 @@ parallel-jaw grasp templates (epic #65).
   integral/non-integral counts.
 
 ### Added
+- **Hypothesis property matrix and mutation-sensitive release gate** (#73).
+  `tests/tsr/hands/_grasp_matrix.py` drives every public `grasp_*` factory — combined
+  entry points and named grippers included — through the independent #67 oracle, with
+  cases across scale and aspect regimes and `boundary_cases` that sit exactly on, and
+  one ulp either side of, every documented feasibility boundary. Seven invariants are
+  checked: oracle witness at Bw extrema/corners/interior points, argument validation
+  vs. physical infeasibility, rigid-transform equivariance, primitive and
+  opposite-face symmetries, feasibility monotonicity, declared coverage and structured
+  uniqueness (including combined == parts, compared as whole templates so semantic and
+  display fields count), and witness preservation through dict/JSON/YAML round-trips.
+  Documented feasibility boundaries are additionally pinned per factory family and
+  asserted as below/exact/above *transitions*, since an empty result satisfies the
+  other checks vacuously. `tests/tsr/hands/test_grasp_mutation_gate.py` injects
+  each bug class from #73 — approach sign, face origin, axis mapping, object extent,
+  clearance term, reach, plus code mutants patching `_resolve_clearance`,
+  `_usable_depths` and `_infeasibility_reason` — and requires the same checks to
+  reject it, with two documented, re-certified exclusions where the "mutation" is a
+  true symmetry. Budgets scale with `TSR_MATRIX_SCALE` (default 1, ~11 s); the new
+  weekly/on-demand `release-gate` workflow runs at 10x in its own concurrency group. The matrix found #121 and #122
+  on its first run. See docs/ARCHITECTURE.md, "Verification matrix and release gate".
 - **`sample_haar` / `sample_haar_xyzrpy`** (`tsr.sampling`, exported from `tsr`;
   #72). Samples a TSR with rotations Haar-uniform over its Bw box by drawing roll and
   yaw uniformly and `sin(pitch)` uniformly (the ZYX Haar density is `∝ cos(pitch)`);

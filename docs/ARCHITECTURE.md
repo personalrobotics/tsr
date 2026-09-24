@@ -220,3 +220,92 @@ from the numbers alone. `g = ParallelJawGripper(finger_length=L, max_aperture=A)
   (tube diameter `2r=0.04 < a`). *Infeasible span:* `g.grasp_torus_span(0.06, 0.02)`
   on `A=0.14` → `[]`, because `2(R+r)+c = 0.16+ > A` (outer diameter exceeds the
   jaw). Torus coverage semantics (`n_minor`, inner/outer half) are refined in `#71`.
+
+## Verification matrix and release gate (#73)
+
+The per-primitive soundness suites (`test_reach_soundness.py`, `test_box_soundness.py`,
+`test_torus_soundness.py`, …) are the deterministic regressions. On top of them,
+`tests/tsr/hands/_grasp_matrix.py` drives **every** public `grasp_*` factory — the
+combined entry points and the named grippers included — through the independent
+oracle. A guard test fails if a new factory is added without joining the matrix.
+
+**Cases.** Primitive dimensions are drawn relative to the hand's reach and aperture
+across scale regimes, together with `k`, `n_minor`, restricted yaw and minor-angle
+ranges, and explicit or default preshape and clearance. `boundary_cases` additionally
+solves one clearance that places a boundary **active for that factory** exactly, then
+offsets it by ±1 ulp. Solving for the clearance rather than the gripper keeps the
+named hardware in the matrix.
+
+**Boundaries are behavioural, not just biased** (#126). A random case sitting near a
+boundary proves little: an empty result satisfies soundness, equivariance, symmetry,
+serialization and uniqueness *vacuously*, so a closed interval silently becoming open
+(the #124 bug class) would escape. `BOUNDARIES` therefore pins each documented
+boundary with dimensions that leave every unrelated constraint slack, and asserts the
+**transition** of the family it governs across below / exact / above — empty on the
+infeasible side, non-empty and oracle-sound on the feasible side and, where the
+interval is closed, at the boundary itself. All dimensions are dyadic multiples of a
+scale (small `1e-3`, ordinary `1`, large `1e3`), so identities like `h − h/2 == h/2`
+hold exactly in binary and the `nextafter` neighbours really do straddle the
+comparison the generator makes:
+
+| boundary | active for | closes at |
+|---|---|---|
+| cap band (#122) | cylinder top/bottom | `c = h/2` (short cylinder, `h < L`) |
+| side height band (#124) | cylinder side | `c = h/2` |
+| radial reach | sphere, cylinder side, torus side | `c = L − r` (`L < 2r`) |
+| radial far surface | sphere, cylinder side, torus side | `c = r` (`2r ≤ L`) |
+| box approach band | each box face | `c = min(L, extent)/2` |
+| box slide band (#110) | box top | `c = dim/2` |
+| torus span reach | torus span | `c = L − r` |
+| aperture limit | box top | `c = A − span` |
+| straddle floor (#107, #121) | default preshape | `c = 2·atol(scale)` |
+
+The straddle floor asserts presence but not certification *at* the boundary: the
+oracle's clause-2 strictness uses the same `atol`, so certification there is decided
+by the rounding of a rotated `Bw` sample. That knife edge is #129; soundness is
+asserted one step onto the feasible side until it is fixed.
+
+**Invariants.** Each is a pure check returning failures, shared with the gate:
+
+| # | invariant |
+|---|---|
+| 1 | every pose (Bw midpoint, per-axis extrema, corners, interior points) has an oracle witness, and its provenance passes native conformance |
+| 2 | invalid arguments raise `ValueError`; physical infeasibility returns `[]` |
+| 3 | equivariance: `instantiate(T)` maps every pose by `T` and preserves the witness |
+| 4 | symmetries: rotation about the object axis, and the x/y/z mirrors, preserve the witness under the mapped side labels; declared opposite-side pairs have equal depth multisets |
+| 5 | monotonicity: more reach or a wider aperture never removes a family |
+| 6 | declared families are all emitted; structured keys are unique; a combined entry point equals the union of its parts — matched by structured key (emission order is not contractual), then compared as whole templates via `to_dict()`, so semantic and display fields (`subject`, `reference`, `name`, …) are covered too (#127) |
+| 7 | dict/JSON/YAML round-trips preserve poses and the witness |
+
+**Mutation gate** (`test_grasp_mutation_gate.py`). A suite that never fails proves
+nothing, so each bug class named in #73 is injected and the same checks must reject
+it: approach sign, face origin, axis mapping, object extent, clearance term and reach
+as black-box mutants over the factory output, plus code mutants that patch the real
+generator (`_resolve_clearance`, `_usable_depths`, `_infeasibility_reason`).
+Detection is required per (mutant, factory), aggregated over a deterministic corpus —
+one case suffices, since a mutation can be harmless in one geometry and fatal in
+another. Two exclusions are explicit, and both are *correctness* statements:
+
+- rotating a **sphere's** TSR frame is a symmetry, so the axis-mapping mutant stays
+  sound (`KNOWN_SYMMETRIC`, re-certified rather than skipped);
+- **inflating** an object is not by itself unsound — a grasp planned for a larger
+  object can execute soundly on the real, smaller one — so the extent mutant shrinks.
+
+The corpus includes a deliberately short-fingered hand (`L < 2r`), because the radial
+deep limit `min(L, 2r) − c` only *binds* there; with long fingers it is conservative
+and exceeding it is still a sound grasp that no check may reject.
+
+**Runtime.** Budgets scale with `TSR_MATRIX_SCALE` (default 1): the matrix and gate
+add ~13 s to a ~41 s suite. A separate `.github/workflows/release-gate.yml` runs them
+at `TSR_MATRIX_SCALE=10` weekly and on demand (`workflow_dispatch`). It is its own
+workflow, with its own concurrency group, so a scheduled run does not also launch the
+five-version suite and a push to `main` can neither cancel a running gate nor be
+cancelled by one (#128). Run it locally with
+
+```bash
+TSR_MATRIX_SCALE=10 uv run pytest tests/tsr/hands/test_grasp_matrix.py tests/tsr/hands/test_grasp_mutation_gate.py
+```
+
+Hypothesis runs with `deadline=None` and prints a reproduction blob on failure, so
+results are stable across Python 3.10–3.14. A confirmed counterexample is shrunk and
+promoted to a deterministic regression next to the primitive it belongs to.
