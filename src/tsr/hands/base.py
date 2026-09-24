@@ -801,16 +801,32 @@ class GripperBase(ABC):
 
         ``"exceeds_aperture"`` — the jaws cannot open wider than the object;
         ``"cannot_straddle"`` — the object does not fit **strictly between** the open
-        jaws by the contract's scale-aware tolerance. The object must clear each pad by
-        at least ``_length_atol(scale)`` (so both contacts lie strictly inside the open
-        jaws by that margin) -- matching the analytic oracle's clause 2 (#107), not
-        merely be narrower than the preshape. ``scale`` defaults to ``object_span / 2``.
+        jaws by the contract's scale-aware tolerance, matching the analytic oracle's
+        clause 2 (#107), rather than merely being narrower than the preshape.
+        ``scale`` defaults to ``object_span / 2``.
+
+        The test is on the **margin**, not on the two sums (#129). The jaw margin
+        ``preshape - object_span`` is exact by Sterbenz whenever the two are within a
+        factor of two of each other, whereas comparing ``preshape`` against
+        ``object_span + 2·atol`` rounds both operands: when the margin is many orders
+        of magnitude smaller than the span, that addition loses it and a margin below
+        the floor is accepted.
+
+        Each pad must clear the object by ``2 · _length_atol(scale)`` -- **twice** the
+        oracle's tolerance, so a total margin of ``4 · atol``. The oracle admits a pose
+        when the contacts sit inside the open jaws by ``atol``; at a total margin of
+        exactly ``2 · atol`` that bound evaluates to the contact coordinate itself, so
+        whether a pose certifies is decided by the rounding of ``(r + atol) - atol``
+        and of the contact coordinate. Measured on a sphere at three scales, a margin
+        of exactly ``2 · atol`` left ~59% of sampled poses uncertifiable, while any
+        margin strictly above it left none. Doubling mirrors the edge-margin floor
+        (#121), which doubles for the same reason: arithmetic eats one tolerance.
         """
         if preshape > self.max_aperture:
             return "exceeds_aperture"
         if scale is None:
             scale = object_span / 2.0
-        if preshape < object_span + 2.0 * self._length_atol(scale):
+        if preshape - object_span < 4.0 * self._length_atol(scale):
             return "cannot_straddle"
         return None
 

@@ -121,13 +121,22 @@ class TestApertureTolerance(unittest.TestCase):
         self.assertEqual(g.grasp_cylinder_side(0.0625, 0.125, clearance=1e-9, k=1), [])
 
     def test_straddle_boundary_and_neighbours(self):
-        # Explicit-preshape aperture boundary at 2r + 2*atol, across scales (#107). The
-        # clearance is scaled to the radius so only the aperture constraint is exercised.
+        # Explicit-preshape straddle boundary across scales (#107). Each pad must clear
+        # the object by 2*atol, so the margin floor is 4*atol (#129): at exactly 2*atol
+        # the oracle's own clause-2 bound lands on the contact coordinate and most poses
+        # are uncertifiable. The clearance is scaled to the radius so only the straddle
+        # constraint is exercised.
         g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
         for r in (0.002, 0.05, 0.15):  # small / ordinary / large scale
             c = 0.1 * r
             atol = 1e-9 + 1e-6 * r  # sphere scale = r
-            boundary = 2 * r + 2 * atol
+            self.assertEqual(g.grasp_sphere(r, preshape=2 * r + 2 * atol, clearance=c), [])  # old floor
+            # The rule tests the MARGIN preshape - 2r (exact by Sterbenz), so the
+            # boundary is the smallest preshape whose margin clears 4*atol; the naive
+            # sum can round a hair under it (#129).
+            boundary = 2 * r + 4 * atol
+            while boundary - 2 * r < 4 * atol:
+                boundary = np.nextafter(boundary, np.inf)
             self.assertEqual(g.grasp_sphere(r, preshape=np.nextafter(boundary, -np.inf), clearance=c), [])
             at = g.grasp_sphere(r, preshape=boundary, clearance=c)
             self.assertGreater(len(at), 0)
@@ -141,8 +150,8 @@ class TestApertureTolerance(unittest.TestCase):
         # (#107). The exact 1-ulp boundary lives in the explicit-preshape test above,
         # since here 2r dominates the sub-tolerance term in the sum.
         g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
-        r = 0.05  # 2*atol ~ 1.0e-7 at this scale
-        self.assertEqual(g.grasp_sphere(r, clearance=1e-9), [])  # below 2*atol
+        r = 0.05  # 4*atol ~ 2.0e-7 at this scale
+        self.assertEqual(g.grasp_sphere(r, clearance=1e-9), [])  # below 4*atol
         self.assertGreater(len(g.grasp_sphere(r, clearance=1e-6)), 0)  # above 2*atol
 
     def test_clearly_feasible_preshape_unchanged(self):

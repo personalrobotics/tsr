@@ -135,6 +135,17 @@ or force closure under arbitrary friction — an explicit non-goal.
   `≥ c − atol`.
 - Frames follow the library convention: `z_EE` = approach, `y_EE` = finger
   opening (fingers always close along `±y_EE`), `x_EE = y_EE × z_EE`.
+- **Straddle feasibility is decided on the margin, with slack** (#107, #129). The
+  object fits between the open jaws when the margin `preshape − span` is at least
+  `4·atol`, i.e. each pad clears the object by `2·atol`. Two points matter. First the
+  test is on the *margin*, which is exact by Sterbenz, not on `preshape` versus
+  `span + 4·atol`: when the margin is orders of magnitude smaller than the span, that
+  addition loses it and a margin under the floor is accepted. Second the floor is
+  *twice* the oracle's tolerance, because at a margin of exactly `2·atol` the oracle's
+  clause-2 bound evaluates to the contact coordinate itself and certification is
+  decided by rounding — measured at ~59% of sampled poses failing on a sphere. The
+  realized margin is quantized by `ulp(span)`, so that, not `ulp(margin)`, is the
+  resolution at which the boundary can be probed.
 - **Edge-facing band limits use `m = max(c, 2·atol)`** (#121). A limit that faces an
   edge of the primitive — the approached face, the opposite face or cap, a lateral
   slide edge, a cylinder rim — keeps contacts strictly off that edge, where the
@@ -258,7 +269,7 @@ comparison the generator makes:
 | box slide band (#110) | box top | `c = dim/2` |
 | torus span reach | torus span | `c = L − r` |
 | aperture limit | box top | `c = A − span` |
-| straddle floor (#107, #121) | default preshape | `c = 2·atol(scale)` |
+| straddle floor (#107, #129) | explicit preshape | margin `= 4·atol(scale)` |
 
 The straddle floor asserts presence but not certification *at* the boundary: the
 oracle's clause-2 strictness uses the same `atol`, so certification there is decided
