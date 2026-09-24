@@ -4,10 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] — 2026-09
 
-Work toward 2.2.0 — establishing the *geometric* correctness of primitive
-parallel-jaw grasp templates (epic #65).
+Establishes the *geometric* correctness of primitive parallel-jaw grasp templates
+(epic #65). 2.1.0 guaranteed that a template was well **formed**; 2.2.0 guarantees
+that every pose it admits is a viable parallel-jaw pre-grasp, certified against an
+independent analytic oracle rather than against the generator's own formulas.
+
+**Highlights**
+
+- An executable **geometric contract** (`docs/ARCHITECTURE.md`) and an independent
+  **analytic oracle** for boxes, cylinders, spheres and tori (#66, #67).
+- **Seven generator defects fixed**, each with a deterministic regression: palm
+  inside the object beyond finger reach (#69), whole-face rejection from one thin
+  box dimension (#70), torus minor-angle and coverage semantics (#71), cylinder caps
+  ignoring the height (#122), contacts on edges at near-zero clearance (#121),
+  straddle feasibility decided on sums without slack (#129), and a default preshape
+  that could refuse the clearance it was asked for (#131).
+- A **Hypothesis property matrix** over every factory, combined entry point and
+  named gripper, plus a **mutation gate** that fails if the generator is corrupted
+  (#73) — it found #121, #122 and #129.
+- **Structured provenance** on every template (#66, #81), and set coverage separated
+  from sampling distribution, with a Haar-uniform sampler (#72).
+
+Templates that were previously emitted but are not geometrically sound are now
+withheld: short-cylinder cap grasps beyond the far cap, near-zero-clearance box and
+cylinder poses on edges, and grasps whose jaw margin sits below the straddle floor.
 
 ### Changed
 - **Packaged YAML templates have an explicit assurance boundary** (#75). The seven
