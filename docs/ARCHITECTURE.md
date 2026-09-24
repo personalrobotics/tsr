@@ -67,7 +67,7 @@ section governs *what a returned grasp template geometrically means*. It is the
 executable specification the `#67` analytic oracle and the `#73` Hypothesis
 matrix test against (issue `#66`).
 
-### Four assurance layers
+### Three assurance layers
 
 A generated grasp template can be validated at increasing strength. Each layer
 is a strictly stronger claim than the one above it, and each is tested
@@ -76,16 +76,19 @@ separately — a template may attain one without the next:
 1. **Representation validity** — the recipe and instantiated `TSR` are
    well-formed: finite `T_ref_tsr`/`Tw_e`/`Bw`, orthonormal rotation, ordered
    bounds, `sample() ⇔ contains() ⇔ distance≈0`. (Established in 2.1.0.)
-2. **Geometric soundness** — *every* pose admitted by the template is a
-   kinematically viable parallel-jaw pre-grasp (clauses below). Applies to every
-   returned template.
+2. **Geometric soundness** — *every* pose admitted by a template returned by a
+   primitive grasp factory is a kinematically viable parallel-jaw pre-grasp
+   (clauses below).
 3. **Coverage** — every approach family the API advertises is represented,
    subject to explicitly documented discretization by `k` (depths) and `n_minor`
    (torus minor angles). A statement about *which modes exist*, not about any one
    template.
-4. **Embodied conformance** — a *named* gripper realizes the idealized template
-   in its pinned MuJoCo collision model without unintended penetration
-   (validated downstream; see `#74`).
+
+These factory guarantees do not extend automatically to hand-authored
+`TSRTemplate` recipes. The YAML examples packaged with sstsr are checked for
+representation validity, but omit the primitive dimensions and gripper model needed
+by the analytic oracle. Their authors and users remain responsible for geometric
+feasibility in the intended scene.
 
 **Coverage is not soundness, and neither is a sampling distribution.** In
 particular the sphere-grasp TSR *covers* SO(3) as a set, but sampling independent

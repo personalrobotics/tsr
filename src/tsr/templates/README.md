@@ -33,7 +33,7 @@ from tsr import load_package_template, load_package_templates_by_category
 import numpy as np
 
 # Load a single template
-t = load_package_template("grasps/screwdriver_grasp.yaml")
+t = load_package_template("grasps", "screwdriver_grasp.yaml")
 
 # Bind to an object pose and sample
 screwdriver_pose = np.eye(4)
@@ -42,8 +42,17 @@ tsr = t.instantiate(screwdriver_pose)
 gripper_pose = tsr.sample()
 
 # Load all grasp templates
-grasps = load_package_templates_by_category("grasp")
+grasps = load_package_templates_by_category("grasps")
 ```
+
+## Assurance Boundary
+
+These files are illustrative, hand-authored pose-constraint recipes. The test suite
+loads and instantiates every packaged YAML file, establishing representation validity.
+They do not include the primitive dimensions and gripper model required by the
+analytic grasp oracle, so they do not carry the geometric soundness guarantee of
+templates produced by the primitive grasp factories. Users remain responsible for
+checking them against the intended object, gripper, and scene.
 
 ## Coordinate Frame Convention
 
