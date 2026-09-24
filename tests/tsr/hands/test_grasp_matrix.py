@@ -11,16 +11,27 @@ budgets scale with ``TSR_MATRIX_SCALE`` (default 1; the release gate uses 10); s
 """
 
 import unittest
+from dataclasses import replace
+from unittest import mock
 
 import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 
+from tsr.hands import GripperBase
+
 from .._hypothesis_strategies import transforms
 from ._grasp_matrix import (
+    BOUNDARIES,
     FACTORIES,
+    GraspCase,
+    GripperSpec,
+    _respawn,
     any_cases,
     apply_override,
+    boundary_clearances,
+    boundary_transition_failures,
+    boundary_triplet,
     combined_failures,
     coverage_failures,
     equivariance_failures,
@@ -137,6 +148,139 @@ class TestCoverageAndUniqueness(unittest.TestCase):
         }[case.spec.primitive]
         comfortable = case.replace(dims=dims, options={"k": k, "clearance": size / 50})
         self.assertEqual(coverage_failures(comfortable, comfortable.run()), [], comfortable)
+
+
+def _shift(T, dx=1e-6):
+    """A copy of transform ``T`` translated along x (a minimal geometry change)."""
+    out = T.copy()
+    out[0, 3] += dx
+    return out
+
+
+class TestCombinedEqualityIsExact(unittest.TestCase):
+    """(6) The combined == parts check compares the WHOLE template (#127)."""
+
+    CASES = [
+        GraspCase(GripperSpec("ParallelJawGripper", 0.08, 0.2), f, dict(dims), {"k": 2, "clearance": 0.004})
+        for f, dims in (
+            ("grasp_cylinder", {"cylinder_radius": 0.02, "cylinder_height": 0.12}),
+            ("grasp_box", {"box_x": 0.05, "box_y": 0.04, "box_z": 0.06}),
+            ("grasp_torus", {"torus_radius": 0.03, "tube_radius": 0.01}),
+        )
+    ]
+
+    def test_combined_entry_points_match_their_parts_exactly(self):
+        for case in self.CASES:
+            self.assertEqual(combined_failures(case, case.run()), [], case.factory)
+
+    def test_any_altered_field_is_rejected(self):
+        # One mutation per public field group; each must be caught.
+        mutations = {
+            "Tw_e": lambda t: _respawn(t, Tw_e=_shift(t.Tw_e)),
+            "T_ref_tsr": lambda t: _respawn(t, T_ref_tsr=_shift(t.T_ref_tsr)),
+            "Bw": lambda t: _respawn(t, Bw=t.Bw + 1e-6),
+            "preshape": lambda t: _respawn(t, preshape=t.preshape * 1.01),
+            "subject": lambda t: _respawn(t, subject=t.subject + "_x"),
+            "reference": lambda t: _respawn(t, reference=t.reference + "_x"),
+            "name": lambda t: _respawn(t, name=t.name + " (edited)"),
+            "description": lambda t: _respawn(t, description=t.description + "!"),
+            "variant": lambda t: _respawn(t, variant="mutant"),
+            "task": lambda t: _respawn(t, task=t.task + "_x"),
+            "stability_margin": lambda t: _respawn(t, stability_margin=0.5),
+        }
+        for case in self.CASES:
+            templates = case.run()
+            for field, mutate in mutations.items():
+                with self.subTest(factory=case.factory, field=field):
+                    mutated = [mutate(t) for t in templates]
+                    self.assertNotEqual(combined_failures(case, mutated), [], field)
+
+    def test_provenance_change_is_rejected(self):
+        for case in self.CASES:
+            templates = case.run()
+            mutated = [
+                _respawn(t, provenance=replace(t.provenance, depth=t.provenance.depth + 1e-6)) for t in templates
+            ]
+            self.assertNotEqual(combined_failures(case, mutated), [], case.factory)
+
+    def test_matching_stays_order_independent(self):
+        for case in self.CASES:
+            self.assertEqual(combined_failures(case, list(reversed(case.run()))), [], case.factory)
+
+
+SCALES = (1e-3, 1.0, 1e3)  # small / ordinary / large
+
+
+class TestBoundaryTransitions(unittest.TestCase):
+    """(2) Documented feasibility boundaries are exact, active, and behavioural (#126).
+
+    Soundness alone is satisfied vacuously by an empty result, so these assert the
+    below/exact/above transition of the family each boundary governs.
+    """
+
+    def test_every_boundary_transitions_as_documented(self):
+        failures = []
+        for b in BOUNDARIES:
+            for factory in b.factories:
+                for scale in SCALES:
+                    failures += boundary_transition_failures(b, factory, scale)
+        self.assertEqual(failures, [])
+
+    def test_boundaries_cover_the_short_cylinder_and_straddle_floor(self):
+        names = {b.name for b in BOUNDARIES}
+        self.assertIn("cap_band_height_half", names)  # #122
+        self.assertIn("cylinder_side_height_half", names)  # #124
+        self.assertIn("straddle_two_atol", names)  # #107/#121
+        cap = next(b for b in BOUNDARIES if b.name == "cap_band_height_half")
+        for factory in ("grasp_cylinder_top", "grasp_cylinder_bottom", "grasp_cylinder"):
+            self.assertIn(factory, cap.factories)
+
+    def test_each_boundary_is_active_for_its_factories(self):
+        # "Active" = the family really is feasible on one side and empty on the other,
+        # so no unrelated constraint masks the boundary under test.
+        for b in BOUNDARIES:
+            for factory in b.factories:
+                triplet = boundary_triplet(b, factory, 1.0)
+                self.assertEqual([expect for _, _, expect in triplet].count(True), 2, (b.name, factory))
+
+    def test_random_boundary_clearances_are_factory_relevant(self):
+        # A cap formula must not be offered for a side-only factory, and vice versa.
+        L, A = 0.08, 0.2
+        side = FACTORIES["grasp_cylinder_side"]
+        caps = FACTORIES["grasp_cylinder_top"]
+        dims = {"cylinder_radius": 0.02, "cylinder_height": 0.03}
+        self.assertIn(dims["cylinder_height"] / 2, boundary_clearances(side, dims, L, A))
+        self.assertIn(min(L, dims["cylinder_height"]) / 2, boundary_clearances(caps, dims, L, A))
+        self.assertNotIn(L - dims["cylinder_radius"], boundary_clearances(caps, dims, L, A))
+
+
+def _strict_usable_depths(lo, hi, k):
+    """`_usable_depths` with the CLOSED interval made open: equality returns empty."""
+    if hi <= lo:
+        return None
+    return np.unique(np.linspace(lo, hi, k))
+
+
+class TestInclusiveBoundaryMutant(unittest.TestCase):
+    """A closed interval turned open must be caught (the #124 bug class)."""
+
+    BAND_BOUNDARIES = (
+        "cap_band_height_half",
+        "radial_reach",
+        "radial_far_surface",
+        "box_approach_band",
+        "torus_span_reach",
+    )
+
+    def test_strict_depth_band_is_detected(self):
+        caught = set()
+        with mock.patch.object(GripperBase, "_usable_depths", staticmethod(_strict_usable_depths)):
+            for b in BOUNDARIES:
+                for factory in b.factories:
+                    if boundary_transition_failures(b, factory, 1.0):
+                        caught.add(b.name)
+        for name in self.BAND_BOUNDARIES:
+            self.assertIn(name, caught, f"{name} did not detect an exclusive depth band")
 
 
 class TestMonotonicity(unittest.TestCase):

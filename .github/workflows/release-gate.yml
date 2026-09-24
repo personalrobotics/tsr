@@ -1,0 +1,35 @@
+name: Release gate
+
+# Deep run of the #73 property matrix and mutation gate at 10x the example budget.
+# It lives in its own workflow so that (a) a scheduled run does not also launch the
+# ordinary five-version suite, and (b) its concurrency group is separate from CI's,
+# so a push to main can neither cancel a running gate nor be cancelled by one.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"  # Mondays 04:17 UTC
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true  # a newer gate supersedes an older one of the same kind
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Property matrix and mutation gate (TSR_MATRIX_SCALE=10)
+        env:
+          TSR_MATRIX_SCALE: "10"
+        run: uv run pytest tests/tsr/hands/test_grasp_matrix.py tests/tsr/hands/test_grasp_mutation_gate.py -v

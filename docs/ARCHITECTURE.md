@@ -232,11 +232,38 @@ oracle. A guard test fails if a new factory is added without joining the matrix.
 **Cases.** Primitive dimensions are drawn relative to the hand's reach and aperture
 across scale regimes, together with `k`, `n_minor`, restricted yaw and minor-angle
 ranges, and explicit or default preshape and clearance. `boundary_cases` additionally
-solves one clearance that places a documented feasibility boundary *exactly*, then
-offsets it by ±1 ulp: aperture (`span + c = A`), radial reach (`c = L − r`), radial
-band collapse (`c = r`), cap and box approach bands (`c = min(L, extent)/2`), box
-slide (`c = dim/2`), and torus span. Solving for the clearance rather than the
-gripper keeps the named hardware in the matrix.
+solves one clearance that places a boundary **active for that factory** exactly, then
+offsets it by ±1 ulp. Solving for the clearance rather than the gripper keeps the
+named hardware in the matrix.
+
+**Boundaries are behavioural, not just biased** (#126). A random case sitting near a
+boundary proves little: an empty result satisfies soundness, equivariance, symmetry,
+serialization and uniqueness *vacuously*, so a closed interval silently becoming open
+(the #124 bug class) would escape. `BOUNDARIES` therefore pins each documented
+boundary with dimensions that leave every unrelated constraint slack, and asserts the
+**transition** of the family it governs across below / exact / above — empty on the
+infeasible side, non-empty and oracle-sound on the feasible side and, where the
+interval is closed, at the boundary itself. All dimensions are dyadic multiples of a
+scale (small `1e-3`, ordinary `1`, large `1e3`), so identities like `h − h/2 == h/2`
+hold exactly in binary and the `nextafter` neighbours really do straddle the
+comparison the generator makes:
+
+| boundary | active for | closes at |
+|---|---|---|
+| cap band (#122) | cylinder top/bottom | `c = h/2` (short cylinder, `h < L`) |
+| side height band (#124) | cylinder side | `c = h/2` |
+| radial reach | sphere, cylinder side, torus side | `c = L − r` (`L < 2r`) |
+| radial far surface | sphere, cylinder side, torus side | `c = r` (`2r ≤ L`) |
+| box approach band | each box face | `c = min(L, extent)/2` |
+| box slide band (#110) | box top | `c = dim/2` |
+| torus span reach | torus span | `c = L − r` |
+| aperture limit | box top | `c = A − span` |
+| straddle floor (#107, #121) | default preshape | `c = 2·atol(scale)` |
+
+The straddle floor asserts presence but not certification *at* the boundary: the
+oracle's clause-2 strictness uses the same `atol`, so certification there is decided
+by the rounding of a rotated `Bw` sample. That knife edge is #129; soundness is
+asserted one step onto the feasible side until it is fixed.
 
 **Invariants.** Each is a pure check returning failures, shared with the gate:
 
@@ -247,7 +274,7 @@ gripper keeps the named hardware in the matrix.
 | 3 | equivariance: `instantiate(T)` maps every pose by `T` and preserves the witness |
 | 4 | symmetries: rotation about the object axis, and the x/y/z mirrors, preserve the witness under the mapped side labels; declared opposite-side pairs have equal depth multisets |
 | 5 | monotonicity: more reach or a wider aperture never removes a family |
-| 6 | declared families are all emitted; structured keys are unique; a combined entry point equals the union of its parts (matched by key — emission order is not contractual) |
+| 6 | declared families are all emitted; structured keys are unique; a combined entry point equals the union of its parts — matched by structured key (emission order is not contractual), then compared as whole templates via `to_dict()`, so semantic and display fields (`subject`, `reference`, `name`, …) are covered too (#127) |
 | 7 | dict/JSON/YAML round-trips preserve poses and the witness |
 
 **Mutation gate** (`test_grasp_mutation_gate.py`). A suite that never fails proves
@@ -269,8 +296,11 @@ deep limit `min(L, 2r) − c` only *binds* there; with long fingers it is conser
 and exceeding it is still a sound grasp that no check may reject.
 
 **Runtime.** Budgets scale with `TSR_MATRIX_SCALE` (default 1): the matrix and gate
-add ~11 s to a ~40 s suite. The `release-gate` CI job runs them at `TSR_MATRIX_SCALE=10`
-on a weekly schedule and on demand (`workflow_dispatch`); run it locally with
+add ~13 s to a ~41 s suite. A separate `.github/workflows/release-gate.yml` runs them
+at `TSR_MATRIX_SCALE=10` weekly and on demand (`workflow_dispatch`). It is its own
+workflow, with its own concurrency group, so a scheduled run does not also launch the
+five-version suite and a push to `main` can neither cancel a running gate nor be
+cancelled by one (#128). Run it locally with
 
 ```bash
 TSR_MATRIX_SCALE=10 uv run pytest tests/tsr/hands/test_grasp_matrix.py tests/tsr/hands/test_grasp_mutation_gate.py

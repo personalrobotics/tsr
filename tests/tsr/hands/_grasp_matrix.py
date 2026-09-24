@@ -292,29 +292,60 @@ def grasp_cases(draw, factories: Sequence[str] = tuple(FACTORIES), named: bool =
     return GraspCase(g, spec.name, dims, opts)
 
 
-def boundary_clearances(primitive: str, dims: Dict[str, float], L: float, A: float) -> List[float]:
-    """Clearances placing a documented feasibility boundary exactly (default preshape).
+# 2*atol is the straddle floor; a hair above it is the nearest unambiguously
+# feasible clearance while #129 is open.
+_STRADDLE_SLACK = 2.0 * (1.0 + 1e-3)
 
-    Every boundary in the contract is solved for ``c`` (never the gripper), so the
-    named grippers participate too:
 
-    * aperture: ``span + c == A`` (default preshape ``span + c``);
-    * radial reach: ``c == L - r``; radial band collapse: ``c == r``;
-    * cap / box approach band: ``c == min(L, extent) / 2``; box slide: ``c == dim / 2``;
-    * torus span: ``2(R + r) + c == A`` and reach ``c == L - r``.
+def boundary_clearances(spec: Factory, dims: Dict[str, float], L: float, A: float) -> List[float]:
+    """Clearances that place a boundary **active for this factory** exactly (#126).
+
+    Factory-aware, not merely primitive-aware: a cap band is irrelevant to
+    ``grasp_cylinder_side`` and a height band is irrelevant to ``grasp_cylinder_top``,
+    and selecting an irrelevant formula wastes the case. Every boundary in the
+    contract is solved for ``c`` (never for the gripper), so the named hardware
+    participates. See ``BOUNDARIES`` for the same boundaries pinned with slack
+    dimensions and asserted as feasibility transitions.
     """
-    if primitive == "sphere":
-        r = dims["object_radius"]
-        cands = [A - 2 * r, L - r, r]
-    elif primitive == "cylinder":
-        r = dims["cylinder_radius"]
-        cands = [A - 2 * r, L - r, r, L / 2]
-    elif primitive == "box":
-        ds = [dims["box_x"], dims["box_y"], dims["box_z"]]
-        cands = [A - d for d in ds] + [min(L, d) / 2 for d in ds] + [d / 2 for d in ds]
+    name, primitive = spec.name, spec.primitive
+    emits = {f for f in (spec.name, *spec.parts)}
+    cands: List[float] = []
+
+    if primitive in ("sphere", "cylinder", "torus"):
+        r = _radius(dims)
+        if primitive == "sphere":
+            scale = r
+        elif primitive == "cylinder":
+            scale = max(r, dims["cylinder_height"])
+        else:
+            scale = dims["torus_radius"] + r
+        radial = {"grasp_sphere", "grasp_cylinder_side", "grasp_torus_side"} & emits
+        if radial:
+            cands += [L - r, r]  # reach (L < 2r) and far surface (2r <= L)
+        if {"grasp_cylinder_top", "grasp_cylinder_bottom"} & emits:
+            cands.append(min(L, dims["cylinder_height"]) / 2)  # cap band (#122)
+        if "grasp_cylinder_side" in emits:
+            cands.append(dims["cylinder_height"] / 2)  # side height band (#124)
+        if "grasp_torus_span" in emits:
+            cands += [L - r, A - 2 * (dims["torus_radius"] + r)]
+        # Aperture, and the straddle floor nudged just inside its feasible side: the
+        # floor itself is a one-ulp knife edge the generator currently mis-decides
+        # (#129), pinned instead by BOUNDARIES["straddle_two_atol"].
+        cands += [A - 2 * r, _STRADDLE_SLACK * (1e-9 + 1e-6 * scale)]
     else:
-        R, r = dims["torus_radius"], dims["tube_radius"]
-        cands = [A - 2 * r, L - r, r, A - 2 * (R + r)]
+        ds = {"box_x": dims["box_x"], "box_y": dims["box_y"], "box_z": dims["box_z"]}
+        scale = max(ds.values())
+        extents = (
+            [ds[BOX_APPROACH_AXIS[f]] for f in emits if f in BOX_APPROACH_AXIS]
+            if emits & set(BOX_APPROACH_AXIS)
+            else list(ds.values())
+        )
+        cands += [min(L, e) / 2 for e in extents]  # approach bands
+        cands += [d / 2 for d in ds.values()]  # slide bands
+        cands += [A - d for d in ds.values()]  # aperture, per span dimension
+        cands.append(_STRADDLE_SLACK * (1e-9 + 1e-6 * scale))  # straddle floor (see #129)
+
+    del name
     return [c for c in cands if c >= 0.0 and math.isfinite(c)]
 
 
@@ -329,7 +360,7 @@ def boundary_cases(draw, factories: Sequence[str] = tuple(FACTORIES), named: boo
     """A case whose clearance sits on a feasibility boundary, or one ulp either side."""
     case = draw(grasp_cases(factories, named=named))
     L, A = case.gripper.finger_length, case.gripper.max_aperture
-    cands = boundary_clearances(case.spec.primitive, case.dims, L, A)
+    cands = boundary_clearances(case.spec, case.dims, L, A)
     if not cands:
         return case.replace(options={**case.options, "preshape": None, "clearance": 0.0})
     c = _nudge(draw(st.sampled_from(cands)), draw(st.sampled_from([-1, 0, 1])))
@@ -674,19 +705,22 @@ def combined_failures(case: GraspCase, templates) -> List[str]:
     if len(parts) != len(templates):
         return [f"{case.factory}: {len(templates)} templates, parts give {len(parts)}"]
     # Matched by structured key, not position: the emission ORDER of a combined entry
-    # point is not part of the contract (grasp_box emits the faces first).
+    # point is not part of the contract (grasp_box emits the faces first). Once matched,
+    # the WHOLE template must agree -- geometry, provenance, preshape and the public
+    # semantic/display fields (task, subject, reference, name, description, variant,
+    # stability_margin) -- so ``to_dict`` is compared rather than a partial field list
+    # that silently omits what it does not name (#127).
     by_key = {structured_key(t.provenance): t for t in parts}
     out: List[str] = []
     for a in templates:
         b = by_key.get(structured_key(a.provenance))
         if b is None:
             out.append(f"{_label(a)}: no matching template from the part factories")
-        elif not (
-            np.array_equal(a.Tw_e, b.Tw_e) and np.array_equal(a.Bw, b.Bw) and np.array_equal(a.T_ref_tsr, b.T_ref_tsr)
-        ):
-            out.append(f"{_label(a)}: geometry differs from the part factory")
-        elif a.provenance != b.provenance or not np.array_equal(a.preshape, b.preshape):
-            out.append(f"{_label(a)}: provenance or preshape differs from the part factory")
+            continue
+        da, db = a.to_dict(), b.to_dict()
+        if da != db:
+            differing = sorted(k for k in set(da) | set(db) if da.get(k) != db.get(k))
+            out.append(f"{_label(a)}: differs from the part factory in {differing}")
     return out
 
 
@@ -849,3 +883,225 @@ def detected(case: GraspCase, templates) -> bool:
         or mirror_family_failures(case, templates)
         or symmetry_failures(case, templates)
     )
+
+
+# --------------------------------------------------------------------------- #
+# Factory-aware feasibility boundaries (#126)
+# --------------------------------------------------------------------------- #
+#
+# ``boundary_cases`` above biases a random case toward a boundary; that is a
+# soundness aid only, and an EMPTY result satisfies it vacuously. The descriptors
+# below instead pin one boundary per factory family and assert the documented
+# feasibility TRANSITION across it: the infeasible side is empty, while the feasible
+# side -- and the boundary value itself, when the interval is closed -- is non-empty
+# AND oracle-sound. That is what catches a closed interval silently becoming open
+# (the #124 bug class), which every other check passes vacuously.
+#
+# All dimensions are dyadic multiples of a scale, so the boundary identities
+# (``h - h/2 == h/2``, ``L - (L - r) == r``) hold EXACTLY in binary and the
+# ``nextafter`` neighbours really do straddle the comparison the generator makes.
+
+
+@dataclass(frozen=True)
+class Boundary:
+    """One documented feasibility boundary, for the factories where it is active."""
+
+    name: str
+    factories: Tuple[str, ...]
+    setup: Callable[[float, str], Tuple[float, float, Dict[str, float]]]  # (scale, factory) -> L, A, dims
+    clearance: Callable[[float, float, Dict[str, float], str], float]  # (L, A, dims, factory) -> exact c
+    family: Callable[[Any], bool]  # the provenance records this boundary governs
+    equality_feasible: bool = True  # is the boundary value itself feasible?
+    feasible_below: bool = True  # which side of the boundary is feasible
+    relative_step: bool = False  # step by a relative epsilon instead of one ulp
+    # Certify the boundary value itself? False only where the ORACLE's own tolerance
+    # sits on the same value, so certification there is ambiguous by one ulp; presence
+    # is still asserted.
+    certify_exact: bool = True
+
+    def neighbours(self, c: float) -> Tuple[float, float]:
+        """``(below, above)`` the boundary value."""
+        if self.relative_step:
+            # The generator compares ``span + c`` against ``span + 2*atol``; one ulp of
+            # ``c`` vanishes inside that sum, so step by a fraction of the value.
+            return c * (1.0 - 1e-3), c * (1.0 + 1e-3)
+        return _nudge(c, -1), _nudge(c, 1)
+
+
+CAP_FACTORIES = ("grasp_cylinder_top", "grasp_cylinder_bottom", "grasp_cylinder")
+RADIAL_FACTORIES = ("grasp_sphere", "grasp_cylinder_side", "grasp_cylinder", "grasp_torus_side", "grasp_torus")
+BOX_FACE_FACTORIES = ("grasp_box_top", "grasp_box_bottom", "grasp_box_face_x", "grasp_box_face_y", "grasp_box")
+
+# Which object axis a box factory approaches along (the combined entry point is
+# pinned on its ±z faces).
+BOX_APPROACH_AXIS = {
+    "grasp_box_top": "box_z",
+    "grasp_box_bottom": "box_z",
+    "grasp_box_face_x": "box_x",
+    "grasp_box_face_y": "box_y",
+    "grasp_box": "box_z",
+}
+
+
+def _radius(dims: Dict[str, float]) -> float:
+    for key in ("object_radius", "cylinder_radius", "tube_radius"):
+        if key in dims:
+            return dims[key]
+    raise KeyError(dims)
+
+
+def _radial_setup(scale, factory, l_mult, r_mult):
+    """A radial-family case: sphere, tall cylinder (height slack), or torus tube."""
+    L, r = l_mult * scale, r_mult * scale
+    if "sphere" in factory:
+        return L, 0.5 * scale, {"object_radius": r}
+    if "torus" in factory:
+        return L, 0.75 * scale, {"torus_radius": 8 * r, "tube_radius": r}
+    return L, 0.5 * scale, {"cylinder_radius": r, "cylinder_height": 0.5 * scale}
+
+
+def _box_setup(scale, factory):
+    """Box dims whose APPROACH extent is the binding one; slides stay slack."""
+    dims = {
+        "box_x": (0.125, 0.25, 0.375),
+        "box_y": (0.25, 0.125, 0.375),
+        "box_z": (0.25, 0.375, 0.125),
+    }[BOX_APPROACH_AXIS[factory]]
+    return 0.25 * scale, 0.75 * scale, dict(zip(("box_x", "box_y", "box_z"), (d * scale for d in dims)))
+
+
+def _box_approach_clearance(L, A, dims, factory):
+    return min(L, dims[BOX_APPROACH_AXIS[factory]]) / 2
+
+
+def _is_cap(p):
+    return p.mode in ("top", "bottom")
+
+
+def _is_radial(p):
+    return p.mode in ("surface", "side")
+
+
+def _is_box_face(factory):
+    axis = BOX_APPROACH_AXIS[factory]
+    if axis == "box_z":
+        return _is_cap
+    sign = {"box_x": ("+x", "-x"), "box_y": ("+y", "-y")}[axis]
+    return lambda p: p.approach in sign
+
+
+BOUNDARIES: Tuple[Boundary, ...] = (
+    # Short-cylinder cap band: the fingertip must stop a margin short of the far cap,
+    # so the band [m, min(L, h) - m] closes at c == h/2 when h < L (#122).
+    Boundary(
+        name="cap_band_height_half",
+        factories=CAP_FACTORIES,
+        setup=lambda s, f: (0.125 * s, 0.5 * s, {"cylinder_radius": 0.03125 * s, "cylinder_height": 0.0625 * s}),
+        clearance=lambda L, A, d, f: d["cylinder_height"] / 2,
+        family=_is_cap,
+    ),
+    # Cylinder-side HEIGHT band: c == h/2 is one centred height, not empty (#124).
+    Boundary(
+        name="cylinder_side_height_half",
+        factories=("grasp_cylinder_side", "grasp_cylinder"),
+        setup=lambda s, f: (0.125 * s, 0.5 * s, {"cylinder_radius": 0.0625 * s, "cylinder_height": 0.0625 * s}),
+        clearance=lambda L, A, d, f: d["cylinder_height"] / 2,
+        family=lambda p: p.mode == "side",
+    ),
+    # Radial reach with short fingers (L < 2r): the band [r, L - c] closes at c == L - r.
+    Boundary(
+        name="radial_reach",
+        factories=RADIAL_FACTORIES,
+        setup=lambda s, f: _radial_setup(s, f, 0.03125, 0.015625),
+        clearance=lambda L, A, d, f: L - _radius(d),
+        family=_is_radial,
+    ),
+    # Radial far-surface limit with long fingers (2r <= L): closes at c == r.
+    Boundary(
+        name="radial_far_surface",
+        factories=RADIAL_FACTORIES,
+        setup=lambda s, f: _radial_setup(s, f, 0.25, 0.0625),
+        clearance=lambda L, A, d, f: _radius(d),
+        family=_is_radial,
+    ),
+    # Box approach band: closes at c == min(L, approach extent) / 2.
+    Boundary(
+        name="box_approach_band",
+        factories=BOX_FACE_FACTORIES,
+        setup=_box_setup,
+        clearance=_box_approach_clearance,
+        family=lambda p: True,  # replaced per factory in boundary_transition_failures
+    ),
+    # Box slide band: a slide dimension of exactly 2c is one centred pose (#110).
+    Boundary(
+        name="box_slide_band",
+        factories=("grasp_box_top", "grasp_box"),
+        setup=lambda s, f: (0.25 * s, 0.75 * s, {"box_x": 0.125 * s, "box_y": 0.25 * s, "box_z": 0.25 * s}),
+        clearance=lambda L, A, d, f: d["box_x"] / 2,
+        family=lambda p: p.mode == "top" and p.finger_orientation == "y",  # spans y, slides along x
+    ),
+    # Torus span reach: the band [r, L - c] closes at c == L - r.
+    Boundary(
+        name="torus_span_reach",
+        factories=("grasp_torus_span", "grasp_torus"),
+        setup=lambda s, f: (0.125 * s, 0.75 * s, {"torus_radius": 0.125 * s, "tube_radius": 0.03125 * s}),
+        clearance=lambda L, A, d, f: L - d["tube_radius"],
+        family=lambda p: p.mode == "span",
+    ),
+    # Default-preshape aperture limit: span + c <= A closes at c == A - span.
+    Boundary(
+        name="aperture_max",
+        factories=("grasp_box_top", "grasp_box"),
+        setup=lambda s, f: (0.25 * s, 0.5 * s, {"box_x": 0.4375 * s, "box_y": 0.25 * s, "box_z": 0.25 * s}),
+        clearance=lambda L, A, d, f: A - d["box_x"],
+        family=lambda p: p.mode == "top" and p.finger_orientation == "x",  # spans box_x
+        # The generator compares ``box_x + c`` against ``A``; one ulp of the smaller
+        # ``c`` is lost in that sum, so step relatively.
+        relative_step=True,
+    ),
+    # Scale-aware straddle floor: the default preshape span + c clears each pad only
+    # for c >= 2*length_atol(scale) (#107, #121). Feasible ABOVE the boundary.
+    Boundary(
+        name="straddle_two_atol",
+        factories=("grasp_sphere",),
+        setup=lambda s, f: (0.5 * s, 0.5 * s, {"object_radius": 0.0625 * s}),
+        clearance=lambda L, A, d, f: 2.0 * (1e-9 + 1e-6 * d["object_radius"]),
+        family=lambda p: p.mode == "surface",
+        feasible_below=False,
+        relative_step=True,
+        # The generator calls c == 2*atol feasible, but the oracle's clause-2 strictness
+        # uses that same atol, so the contacts land on its threshold and certification
+        # there is decided by the rounding of a rotated Bw sample (#129). Presence is
+        # asserted here; soundness is asserted on the feasible side, one step above.
+        certify_exact=False,
+    ),
+)
+
+
+def boundary_triplet(b: Boundary, factory: str, scale: float) -> List[Tuple[str, GraspCase, bool]]:
+    """``(position, case, expect_family)`` for below / exact / above the boundary."""
+    L, A, dims = b.setup(scale, factory)
+    spec = GripperSpec("ParallelJawGripper", L, A)
+    c = b.clearance(L, A, dims, factory)
+    below, above = b.neighbours(c)
+    out = []
+    for position, value in (("below", below), ("exact", c), ("above", above)):
+        expect = b.equality_feasible if position == "exact" else (position == "below") == b.feasible_below
+        out.append((position, GraspCase(spec, factory, dims, {"k": 3, "clearance": value}), expect))
+    return out
+
+
+def boundary_transition_failures(b: Boundary, factory: str, scale: float) -> List[str]:
+    """The family appears on the feasible side, vanishes on the other, and is sound."""
+    family = _is_box_face(factory) if b.name == "box_approach_band" else b.family
+    out: List[str] = []
+    for position, case, expect in boundary_triplet(b, factory, scale):
+        templates = [t for t in case.run() if family(t.provenance)]
+        where = f"{b.name}/{factory}/scale={scale:g}/{position}"
+        if expect and not templates:
+            out.append(f"{where}: expected the family to be feasible, got none")
+        elif not expect and templates:
+            out.append(f"{where}: expected no templates, got {len(templates)}")
+        elif expect and (position != "exact" or b.certify_exact):
+            out.extend(f"{where}: {f}" for f in soundness_failures(case, templates))
+    return out

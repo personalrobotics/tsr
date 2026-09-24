@@ -6,8 +6,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "17 4 * * 1"  # release gate, Mondays 04:17 UTC (#73)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -40,28 +38,6 @@ jobs:
 
       - name: Pytest
         run: uv run pytest tests/ -v
-
-  # Deep run of the #73 property matrix and mutation gate: 10x the example budget.
-  # Not on pull requests -- the default budget already runs there in ~11 s.
-  release-gate:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
-
-      - name: Property matrix and mutation gate (TSR_MATRIX_SCALE=10)
-        env:
-          TSR_MATRIX_SCALE: "10"
-        run: uv run pytest tests/tsr/hands/test_grasp_matrix.py tests/tsr/hands/test_grasp_mutation_gate.py -v
 
   notify-robot-code:
     needs: test
