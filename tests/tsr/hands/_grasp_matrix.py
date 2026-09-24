@@ -292,8 +292,9 @@ def grasp_cases(draw, factories: Sequence[str] = tuple(FACTORIES), named: bool =
     return GraspCase(g, spec.name, dims, opts)
 
 
-# The straddle floor: each pad clears the object by 2*atol, so the margin is 4*atol
-# (#107, #129). With the default preshape the margin IS the requested clearance.
+# The straddle floor: each pad clears the object by 2*atol, so the realized margin
+# floor is 4*atol (#107, #129). A default preshape realizes AT LEAST the requested
+# clearance (#131), quantized by ulp(span), so it is not exactly equal to it.
 _STRADDLE_FLOOR = 4.0
 
 

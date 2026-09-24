@@ -137,7 +137,8 @@ or force closure under arbitrary friction — an explicit non-goal.
   opening (fingers always close along `±y_EE`), `x_EE = y_EE × z_EE`.
 - **Straddle feasibility is decided on the margin, with slack** (#107, #129). The
   object fits between the open jaws when the margin `preshape − span` is at least
-  `4·atol`, i.e. each pad clears the object by `2·atol`. Two points matter. First the
+  `4·atol`, i.e. each pad clears the object by `2·atol` — twice the `atol` at which the
+  oracle's clause 2 admits a pose, leaving one tolerance of slack per side. Two points matter. First the
   test is on the *margin*, which is exact by Sterbenz, not on `preshape` versus
   `span + 4·atol`: when the margin is orders of magnitude smaller than the span, that
   addition loses it and a margin under the floor is accepted. Second the floor is
@@ -145,7 +146,11 @@ or force closure under arbitrary friction — an explicit non-goal.
   clause-2 bound evaluates to the contact coordinate itself and certification is
   decided by rounding — measured at ~59% of sampled poses failing on a sphere. The
   realized margin is quantized by `ulp(span)`, so that, not `ulp(margin)`, is the
-  resolution at which the boundary can be probed.
+  resolution at which the boundary can be probed. A **default** preshape is therefore
+  built by `_default_preshape`, which advances `span + c` until the realized margin is
+  at least the requested `c`: a public clearance request is met by the nearest
+  representable geometry rather than weakened by rounding (#131). An explicitly
+  supplied preshape is never altered — it is judged by its own realized margin.
 - **Edge-facing band limits use `m = max(c, 2·atol)`** (#121). A limit that faces an
   edge of the primitive — the approached face, the opposite face or cap, a lateral
   slide edge, a cylinder rim — keeps contacts strictly off that edge, where the
@@ -154,7 +159,7 @@ or force closure under arbitrary friction — an explicit non-goal.
   the generator floors these limits. The floor is *twice* `atol` because the pose's
   realized insertion is recovered by a cancelling subtraction, so exactly `atol`
   loses to rounding. This mirrors the scale-aware straddle margin, under which the
-  object must clear each pad by `atol`. Palm clearance and the default preshape still
+  object must clear each pad by `2·atol`. Palm clearance and the default preshape still
   use the requested `c`.
 
 ### Structured provenance — three separate layers (#84)
@@ -271,10 +276,13 @@ comparison the generator makes:
 | aperture limit | box top | `c = A − span` |
 | straddle floor (#107, #129) | explicit preshape | margin `= 4·atol(scale)` |
 
-The straddle floor asserts presence but not certification *at* the boundary: the
-oracle's clause-2 strictness uses the same `atol`, so certification there is decided
-by the rounding of a rotated `Bw` sample. That knife edge is #129; soundness is
-asserted one step onto the feasible side until it is fixed.
+The straddle floor is pinned on the **explicit-preshape** path, where the realized
+margin `preshape − span` is ulp-exact, and its boundary value is certified like any
+other. Through the *default* preshape the margin is built by `span + c`, so realized
+margins are quantized by `ulp(span)` — far coarser than `ulp(c)` — and the meaningful
+neighbour is one step of that lattice, not one ulp of the clearance (#131).
+`tests/tsr/hands/test_straddle_margin.py` exercises that public path across scales and
+every factory's own span and scale (#133).
 
 **Invariants.** Each is a pure check returning failures, shared with the gate:
 

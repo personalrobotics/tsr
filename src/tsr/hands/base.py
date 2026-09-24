@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
@@ -793,6 +794,26 @@ class GripperBase(ABC):
         only edge-facing band limits use this margin.
         """
         return max(clearance, 2.0 * self._length_atol(scale))
+
+    @staticmethod
+    def _default_preshape(object_span: float, clearance: float) -> float:
+        """``object_span + clearance``, advanced until the **realized** margin meets it.
+
+        The straddle rule is decided on the realized margin ``preshape - object_span``
+        (#129), but the sum that builds a default preshape rounds to nearest, so it can
+        land a hair *below* the requested clearance -- which would reject the very
+        clearance the caller asked for, including the documented floor itself (#131).
+        A public clearance request is met conservatively by the nearest representable
+        geometry instead: step toward +inf until the margin is at least ``clearance``
+        (normally one step, and none at ordinary magnitudes).
+
+        Only *defaults* are constructed this way. An explicitly supplied preshape is
+        never altered; it is judged by its own realized margin.
+        """
+        p = object_span + clearance
+        while p - object_span < clearance:
+            p = math.nextafter(p, math.inf)
+        return p
 
     def _infeasibility_reason(
         self, preshape: float, object_span: float, scale: Optional[float] = None

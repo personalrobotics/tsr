@@ -145,14 +145,15 @@ class TestApertureTolerance(unittest.TestCase):
             _assert_all_sound(self, Sphere(r), above, g, c)
 
     def test_default_preshape_applies_the_rule(self):
-        # The default-preshape path (preshape = 2r + clearance) is also governed by the
-        # straddle tolerance: a clearance below 2*atol cannot straddle, one above does
-        # (#107). The exact 1-ulp boundary lives in the explicit-preshape test above,
-        # since here 2r dominates the sub-tolerance term in the sum.
+        # The default-preshape path is also governed by the straddle rule: a clearance
+        # below the 4*atol margin floor cannot straddle, one above does (#107, #129).
+        # The exact boundary lives in the explicit-preshape test above and, for the
+        # public clearance path, in test_straddle_margin.py (#131), because the default
+        # preshape quantizes the realized margin by ulp(2r).
         g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
         r = 0.05  # 4*atol ~ 2.0e-7 at this scale
         self.assertEqual(g.grasp_sphere(r, clearance=1e-9), [])  # below 4*atol
-        self.assertGreater(len(g.grasp_sphere(r, clearance=1e-6)), 0)  # above 2*atol
+        self.assertGreater(len(g.grasp_sphere(r, clearance=1e-6)), 0)  # above 4*atol
 
     def test_clearly_feasible_preshape_unchanged(self):
         g = ParallelJawGripper(finger_length=0.20, max_aperture=0.50)
