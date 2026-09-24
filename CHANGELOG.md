@@ -14,7 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   static version meant `v2.2.0rc1` published `2.2.0` to TestPyPI and the rc was never
   exercised. The release workflow additionally refuses to publish when the built
   artifact's version does not equal the tag, or when an rc tag builds a final version
-  (or vice versa). See `docs/RELEASING.md`.
+  (or vice versa). In CI the version is pinned from the ref rather than inferred:
+  `git describe` must choose when several tags point at one commit — the normal
+  rc → final flow — and it resolved to the rc in CI while resolving to the final tag
+  locally. The guard caught exactly that before anything was published. See
+  `docs/RELEASING.md`.
 
 ## [2.2.0] — 2026-09
 

@@ -37,8 +37,20 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      # When building from a tag, the tag IS the version. `git describe` is ambiguous
+      # when several tags point at one commit -- which is the normal rc -> final flow,
+      # since the release usually sits on the same commit as its candidate -- and it
+      # resolved to the rc in CI while resolving to the final tag locally. Pin it.
       - name: Build
-        run: uv build
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF}" in
+            refs/tags/v*)
+              export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR="${GITHUB_REF_NAME#v}"
+              echo "building tag ${GITHUB_REF_NAME} as version ${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR}"
+              ;;
+          esac
+          uv build
 
       - name: Check metadata
         run: uvx twine check dist/*
