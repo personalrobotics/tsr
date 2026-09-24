@@ -215,3 +215,6 @@ Desktop.ini
 
 # uv specific
 .uv/
+
+# Written at build time by hatch-vcs
+src/tsr/_version.py

@@ -7,6 +7,10 @@ name: Release
 #   v*       -> build sdist + wheel, publish to real PyPI + GitHub Release
 #   (manual workflow_dispatch also builds + publishes to TestPyPI)
 #
+# The version comes from the tag (hatch-vcs), so an rc tag necessarily builds an rc
+# artifact and TestPyPI always receives a pre-release. A guard re-checks that the
+# built artifact matches the tag before any publish job runs.
+#
 # Auth: Trusted Publishing (PyPI / TestPyPI OIDC). No API tokens in CI.
 # The publish jobs run inside named GitHub environments (`release` /
 # `testpypi-release`) so the org's environment-protection rules apply.
@@ -38,6 +42,38 @@ jobs:
 
       - name: Check metadata
         run: uvx twine check dist/*
+
+      # The version is derived from the tag, so a mismatch means the tag was not
+      # what was built (dirty tree, shallow clone, wrong ref). Fail before publishing.
+      - name: Tag matches artifact version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          artifact="$(basename "$(ls dist/*.whl)" | cut -d- -f2)"
+          echo "tag=$tag artifact=$artifact"
+          if [ "$tag" != "$artifact" ]; then
+            echo "::error::tag $tag does not match built version $artifact"
+            exit 1
+          fi
+
+      # TestPyPI must only ever receive pre-releases, and PyPI only finals. The step
+      # above already tied the artifact to the tag, so checking the tag is enough.
+      - name: Tag kind matches its destination
+        run: |
+          set -euo pipefail
+          artifact="$(basename "$(ls dist/*.whl)" | cut -d- -f2)"
+          case "${GITHUB_REF_NAME}" in
+            *rc*)
+              case "$artifact" in
+                *rc*) ;;
+                *) echo "::error::rc tag ${GITHUB_REF_NAME} built a final artifact $artifact"; exit 1 ;;
+              esac ;;
+            v*)
+              case "$artifact" in
+                *rc*|*dev*) echo "::error::final tag ${GITHUB_REF_NAME} built pre-release $artifact"; exit 1 ;;
+              esac ;;
+          esac
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
