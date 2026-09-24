@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The release version comes from the git tag** (hatch-vcs). `pyproject.toml` no
+  longer carries a static `version`; `tsr.__version__` reads the build-time
+  `_version.py`, falling back to installed metadata. This makes the TestPyPI dry run
+  real: an rc tag now necessarily builds an rc artifact, whereas through 2.2.0 the
+  static version meant `v2.2.0rc1` published `2.2.0` to TestPyPI and the rc was never
+  exercised. The release workflow additionally refuses to publish when the built
+  artifact's version does not equal the tag, or when an rc tag builds a final version
+  (or vice versa). See `docs/RELEASING.md`.
+
 ## [2.2.0] — 2026-09
 
 Establishes the *geometric* correctness of primitive parallel-jaw grasp templates

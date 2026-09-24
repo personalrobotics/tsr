@@ -69,7 +69,15 @@ from .sampling import (
     weights_from_tsrs,
 )
 
-__version__ = "2.2.0"
+try:  # written at build time by hatch-vcs from the git tag
+    from ._version import __version__
+except ImportError:  # pragma: no cover - source tree without a build
+    try:
+        from importlib.metadata import PackageNotFoundError, version as _metadata_version
+
+        __version__ = _metadata_version("sstsr")
+    except PackageNotFoundError:  # pragma: no cover - not installed
+        __version__ = "0.0.0+unknown"
 
 __all__ = [
     # core
