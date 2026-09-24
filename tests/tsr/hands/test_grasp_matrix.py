@@ -230,7 +230,7 @@ class TestBoundaryTransitions(unittest.TestCase):
         names = {b.name for b in BOUNDARIES}
         self.assertIn("cap_band_height_half", names)  # #122
         self.assertIn("cylinder_side_height_half", names)  # #124
-        self.assertIn("straddle_two_atol", names)  # #107/#121
+        self.assertIn("straddle_floor", names)  # #107/#129
         cap = next(b for b in BOUNDARIES if b.name == "cap_band_height_half")
         for factory in ("grasp_cylinder_top", "grasp_cylinder_bottom", "grasp_cylinder"):
             self.assertIn(factory, cap.factories)

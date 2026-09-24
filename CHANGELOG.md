@@ -10,6 +10,20 @@ Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
 ### Fixed
+- **Straddle feasibility is decided on the margin, with slack** (#129). `_infeasibility_reason`
+  compared *sums* — `preshape` against `object_span + 2·atol` — so when the margin was
+  orders of magnitude smaller than the span the addition lost it and a margin below the
+  floor was accepted (e.g. `Robotiq2F85().grasp_sphere(0.02125, clearance=c)` with `c`
+  one ulp under the floor). It now tests `preshape − object_span`, which is exact by
+  Sterbenz, and requires `4·atol(scale)` — each pad clearing the object by `2·atol`,
+  twice the oracle's tolerance, for the same reason #121 doubles the edge margin: at
+  exactly `2·atol` the oracle's clause-2 bound lands on the contact coordinate and ~59%
+  of sampled poses were uncertifiable, while any larger margin left none. A **default**
+  preshape is now built by `GripperBase._default_preshape`, which advances `span + c`
+  until the realized margin is at least the requested clearance, so asking for the
+  documented floor is honoured instead of being rejected by the rounding of that sum
+  (#131); an explicitly supplied preshape is never altered. Ordinary clearances and
+  preshapes are unaffected. Found by the #73 property matrix.
 - **Box and cylinder contacts stay off the edges at zero or sub-tolerance clearance**
   (#121). `clearance = 0` is a valid request (#104), but the closed bands used the
   edges themselves as limits, so contacts landed exactly on an edge: zero insertion

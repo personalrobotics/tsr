@@ -292,9 +292,10 @@ def grasp_cases(draw, factories: Sequence[str] = tuple(FACTORIES), named: bool =
     return GraspCase(g, spec.name, dims, opts)
 
 
-# 2*atol is the straddle floor; a hair above it is the nearest unambiguously
-# feasible clearance while #129 is open.
-_STRADDLE_SLACK = 2.0 * (1.0 + 1e-3)
+# The straddle floor: each pad clears the object by 2*atol, so the realized margin
+# floor is 4*atol (#107, #129). A default preshape realizes AT LEAST the requested
+# clearance (#131), quantized by ulp(span), so it is not exactly equal to it.
+_STRADDLE_FLOOR = 4.0
 
 
 def boundary_clearances(spec: Factory, dims: Dict[str, float], L: float, A: float) -> List[float]:
@@ -328,10 +329,7 @@ def boundary_clearances(spec: Factory, dims: Dict[str, float], L: float, A: floa
             cands.append(dims["cylinder_height"] / 2)  # side height band (#124)
         if "grasp_torus_span" in emits:
             cands += [L - r, A - 2 * (dims["torus_radius"] + r)]
-        # Aperture, and the straddle floor nudged just inside its feasible side: the
-        # floor itself is a one-ulp knife edge the generator currently mis-decides
-        # (#129), pinned instead by BOUNDARIES["straddle_two_atol"].
-        cands += [A - 2 * r, _STRADDLE_SLACK * (1e-9 + 1e-6 * scale)]
+        cands += [A - 2 * r, _STRADDLE_FLOOR * (1e-9 + 1e-6 * scale)]  # aperture, straddle floor
     else:
         ds = {"box_x": dims["box_x"], "box_y": dims["box_y"], "box_z": dims["box_z"]}
         scale = max(ds.values())
@@ -343,7 +341,7 @@ def boundary_clearances(spec: Factory, dims: Dict[str, float], L: float, A: floa
         cands += [min(L, e) / 2 for e in extents]  # approach bands
         cands += [d / 2 for d in ds.values()]  # slide bands
         cands += [A - d for d in ds.values()]  # aperture, per span dimension
-        cands.append(_STRADDLE_SLACK * (1e-9 + 1e-6 * scale))  # straddle floor (see #129)
+        cands.append(_STRADDLE_FLOOR * (1e-9 + 1e-6 * scale))  # straddle floor
 
     del name
     return [c for c in cands if c >= 0.0 and math.isfinite(c)]
@@ -911,6 +909,13 @@ class Boundary:
     setup: Callable[[float, str], Tuple[float, float, Dict[str, float]]]  # (scale, factory) -> L, A, dims
     clearance: Callable[[float, float, Dict[str, float], str], float]  # (L, A, dims, factory) -> exact c
     family: Callable[[Any], bool]  # the provenance records this boundary governs
+    # Which argument carries the boundary. "preshape" is used where the rule is only
+    # ulp-exact through an explicit preshape: the straddle margin is
+    # ``preshape - span``, exact by Sterbenz, whereas the DEFAULT preshape recovers it
+    # from ``span + c``, whose resolution is ulp(span) -- so a single ulp of the
+    # clearance is not observable there (#129).
+    param: str = "clearance"
+    fixed_clearance: Optional[Callable[[float, float, Dict[str, float], str], float]] = None
     equality_feasible: bool = True  # is the boundary value itself feasible?
     feasible_below: bool = True  # which side of the boundary is feasible
     relative_step: bool = False  # step by a relative epsilon instead of one ulp
@@ -1059,21 +1064,17 @@ BOUNDARIES: Tuple[Boundary, ...] = (
         # ``c`` is lost in that sum, so step relatively.
         relative_step=True,
     ),
-    # Scale-aware straddle floor: the default preshape span + c clears each pad only
-    # for c >= 2*length_atol(scale) (#107, #121). Feasible ABOVE the boundary.
+    # Scale-aware straddle floor: the default preshape span + c clears each pad by
+    # 2*atol only for c >= 4*length_atol(scale) (#107, #129). Feasible ABOVE it.
     Boundary(
-        name="straddle_two_atol",
+        name="straddle_floor",
         factories=("grasp_sphere",),
         setup=lambda s, f: (0.5 * s, 0.5 * s, {"object_radius": 0.0625 * s}),
-        clearance=lambda L, A, d, f: 2.0 * (1e-9 + 1e-6 * d["object_radius"]),
+        clearance=lambda L, A, d, f: straddle_floor_preshape(2 * d["object_radius"], d["object_radius"]),
         family=lambda p: p.mode == "surface",
         feasible_below=False,
-        relative_step=True,
-        # The generator calls c == 2*atol feasible, but the oracle's clause-2 strictness
-        # uses that same atol, so the contacts land on its threshold and certification
-        # there is decided by the rounding of a rotated Bw sample (#129). Presence is
-        # asserted here; soundness is asserted on the feasible side, one step above.
-        certify_exact=False,
+        param="preshape",
+        fixed_clearance=lambda L, A, d, f: 0.1 * d["object_radius"],
     ),
 )
 
@@ -1082,13 +1083,32 @@ def boundary_triplet(b: Boundary, factory: str, scale: float) -> List[Tuple[str,
     """``(position, case, expect_family)`` for below / exact / above the boundary."""
     L, A, dims = b.setup(scale, factory)
     spec = GripperSpec("ParallelJawGripper", L, A)
-    c = b.clearance(L, A, dims, factory)
-    below, above = b.neighbours(c)
+    value = b.clearance(L, A, dims, factory)
+    below, above = b.neighbours(value)
     out = []
-    for position, value in (("below", below), ("exact", c), ("above", above)):
+    for position, v in (("below", below), ("exact", value), ("above", above)):
         expect = b.equality_feasible if position == "exact" else (position == "below") == b.feasible_below
-        out.append((position, GraspCase(spec, factory, dims, {"k": 3, "clearance": value}), expect))
+        options: Dict[str, Any] = {"k": 3}
+        if b.param == "clearance":
+            options["clearance"] = v
+        else:
+            options["preshape"] = v
+            options["clearance"] = b.fixed_clearance(L, A, dims, factory)
+        out.append((position, GraspCase(spec, factory, dims, options), expect))
     return out
+
+
+def straddle_floor_preshape(span: float, scale: float) -> float:
+    """The smallest preshape whose realized margin clears the straddle floor (#129).
+
+    ``span + 4*atol`` may round to a float whose margin is a hair under the floor, so
+    step up until the margin -- the quantity the rule actually tests -- clears it.
+    """
+    floor = 4.0 * (1e-9 + 1e-6 * scale)
+    p = span + floor
+    while p - span < floor:
+        p = math.nextafter(p, math.inf)
+    return p
 
 
 def boundary_transition_failures(b: Boundary, factory: str, scale: float) -> List[str]:

@@ -149,7 +149,7 @@ class ParallelJawGripper(GripperBase):
         self._check_angle_range(angle_range)
         clearance = self._resolve_clearance(clearance, min(self.finger_length, cylinder_radius))
         if preshape is None:
-            preshape = 2.0 * cylinder_radius + clearance
+            preshape = self._default_preshape(2.0 * cylinder_radius, clearance)
         self._validate(cylinder_radius, preshape, cylinder_height)
         reason = self._infeasibility_reason(
             preshape, 2.0 * cylinder_radius, scale=max(cylinder_radius, cylinder_height)
@@ -310,7 +310,7 @@ class ParallelJawGripper(GripperBase):
         self._check_angle_range(angle_range)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
-            preshape = 2.0 * cylinder_radius + clearance
+            preshape = self._default_preshape(2.0 * cylinder_radius, clearance)
         self._validate(cylinder_radius, preshape, cylinder_height)
         reason = self._infeasibility_reason(
             preshape, 2.0 * cylinder_radius, scale=max(cylinder_radius, cylinder_height)
@@ -440,7 +440,7 @@ class ParallelJawGripper(GripperBase):
         self._check_angle_range(angle_range)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
-            preshape = 2.0 * cylinder_radius + clearance
+            preshape = self._default_preshape(2.0 * cylinder_radius, clearance)
         self._validate(cylinder_radius, preshape, cylinder_height)
         reason = self._infeasibility_reason(
             preshape, 2.0 * cylinder_radius, scale=max(cylinder_radius, cylinder_height)
@@ -571,7 +571,7 @@ class ParallelJawGripper(GripperBase):
         # translational Bw interval per the exact-interval convention (#105, #110).
         if slide_half < 0.0:
             return []
-        preshape = preshape_user if preshape_user is not None else span_dim + clearance
+        preshape = preshape_user if preshape_user is not None else self._default_preshape(span_dim, clearance)
         # Straddle feasibility uses the box's characteristic scale (matching the
         # oracle's Box.scale = max dimension) so factory and contract agree (#107).
         if self._infeasibility_reason(preshape, span_dim, scale=box_scale) is not None:
@@ -1071,7 +1071,7 @@ class ParallelJawGripper(GripperBase):
         self._check_preshape(preshape)
         clearance = self._resolve_clearance(clearance, min(self.finger_length, object_radius))
         if preshape is None:
-            preshape = 2.0 * object_radius + clearance
+            preshape = self._default_preshape(2.0 * object_radius, clearance)
         reason = self._infeasibility_reason(preshape, 2.0 * object_radius, scale=object_radius)
         if reason:
             return self._empty(
@@ -1244,7 +1244,7 @@ class ParallelJawGripper(GripperBase):
         self._validate_torus(torus_radius, tube_radius, preshape)
         clearance = self._resolve_clearance(clearance, min(self.finger_length, tube_radius))
         if preshape is None:
-            preshape = 2.0 * tube_radius + clearance
+            preshape = self._default_preshape(2.0 * tube_radius, clearance)
         reason = self._infeasibility_reason(preshape, 2.0 * tube_radius, scale=torus_radius + tube_radius)
         if reason:
             return self._empty(
@@ -1384,7 +1384,7 @@ class ParallelJawGripper(GripperBase):
         self._validate_torus(torus_radius, tube_radius, preshape)
         clearance = self._resolve_clearance(clearance, self.finger_length)
         if preshape is None:
-            preshape = 2.0 * (torus_radius + tube_radius) + clearance
+            preshape = self._default_preshape(2.0 * (torus_radius + tube_radius), clearance)
         outer_diameter = 2.0 * (torus_radius + tube_radius)
         reason = self._infeasibility_reason(preshape, outer_diameter)
         if reason:

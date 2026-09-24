@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
@@ -794,6 +795,26 @@ class GripperBase(ABC):
         """
         return max(clearance, 2.0 * self._length_atol(scale))
 
+    @staticmethod
+    def _default_preshape(object_span: float, clearance: float) -> float:
+        """``object_span + clearance``, advanced until the **realized** margin meets it.
+
+        The straddle rule is decided on the realized margin ``preshape - object_span``
+        (#129), but the sum that builds a default preshape rounds to nearest, so it can
+        land a hair *below* the requested clearance -- which would reject the very
+        clearance the caller asked for, including the documented floor itself (#131).
+        A public clearance request is met conservatively by the nearest representable
+        geometry instead: step toward +inf until the margin is at least ``clearance``
+        (normally one step, and none at ordinary magnitudes).
+
+        Only *defaults* are constructed this way. An explicitly supplied preshape is
+        never altered; it is judged by its own realized margin.
+        """
+        p = object_span + clearance
+        while p - object_span < clearance:
+            p = math.nextafter(p, math.inf)
+        return p
+
     def _infeasibility_reason(
         self, preshape: float, object_span: float, scale: Optional[float] = None
     ) -> Optional[str]:
@@ -801,16 +822,32 @@ class GripperBase(ABC):
 
         ``"exceeds_aperture"`` — the jaws cannot open wider than the object;
         ``"cannot_straddle"`` — the object does not fit **strictly between** the open
-        jaws by the contract's scale-aware tolerance. The object must clear each pad by
-        at least ``_length_atol(scale)`` (so both contacts lie strictly inside the open
-        jaws by that margin) -- matching the analytic oracle's clause 2 (#107), not
-        merely be narrower than the preshape. ``scale`` defaults to ``object_span / 2``.
+        jaws by the contract's scale-aware tolerance, matching the analytic oracle's
+        clause 2 (#107), rather than merely being narrower than the preshape.
+        ``scale`` defaults to ``object_span / 2``.
+
+        The test is on the **margin**, not on the two sums (#129). The jaw margin
+        ``preshape - object_span`` is exact by Sterbenz whenever the two are within a
+        factor of two of each other, whereas comparing ``preshape`` against
+        ``object_span + 2·atol`` rounds both operands: when the margin is many orders
+        of magnitude smaller than the span, that addition loses it and a margin below
+        the floor is accepted.
+
+        Each pad must clear the object by ``2 · _length_atol(scale)`` -- **twice** the
+        oracle's tolerance, so a total margin of ``4 · atol``. The oracle admits a pose
+        when the contacts sit inside the open jaws by ``atol``; at a total margin of
+        exactly ``2 · atol`` that bound evaluates to the contact coordinate itself, so
+        whether a pose certifies is decided by the rounding of ``(r + atol) - atol``
+        and of the contact coordinate. Measured on a sphere at three scales, a margin
+        of exactly ``2 · atol`` left ~59% of sampled poses uncertifiable, while any
+        margin strictly above it left none. Doubling mirrors the edge-margin floor
+        (#121), which doubles for the same reason: arithmetic eats one tolerance.
         """
         if preshape > self.max_aperture:
             return "exceeds_aperture"
         if scale is None:
             scale = object_span / 2.0
-        if preshape < object_span + 2.0 * self._length_atol(scale):
+        if preshape - object_span < 4.0 * self._length_atol(scale):
             return "cannot_straddle"
         return None
 
