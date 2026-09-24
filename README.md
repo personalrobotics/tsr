@@ -75,6 +75,11 @@ pour      = load_package_template("tasks",  "mug_pour_into_sink.yaml")
 place     = load_package_template("places", "mug_on_table.yaml")
 ```
 
+These packaged YAML files are illustrative, hand-authored pose-constraint recipes.
+They are tested for representation validity, but they do not carry the geometric
+soundness guarantee of templates produced by the primitive grasp factories below.
+Users remain responsible for checking them against the intended object and gripper.
+
 ### Generate templates from object geometry
 
 #### Grasping

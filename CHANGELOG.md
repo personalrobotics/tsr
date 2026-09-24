@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Work toward 2.2.0 — establishing the *geometric* correctness of primitive
 parallel-jaw grasp templates (epic #65).
 
+### Changed
+- **Packaged YAML templates have an explicit assurance boundary** (#75). The seven
+  hand-authored examples are now smoke-tested through the public loading and
+  instantiation APIs and documented as representation-valid recipes, not as
+  analytically certified primitive grasps. This avoids a parallel validation manifest
+  for templates that intentionally omit primitive dimensions and gripper geometry.
+
 ### Fixed
 - **Straddle feasibility is decided on the margin, with slack** (#129). `_infeasibility_reason`
   compared *sums* — `preshape` against `object_span + 2·atol` — so when the margin was
