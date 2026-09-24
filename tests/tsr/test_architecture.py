@@ -8,7 +8,8 @@ These freeze the layering so a careless future import can't rot it:
 * Layer 0 (``tsr.core``) is the pure-math heart and must not import from any
   upper layer (template, hands, placement, io, sampling, viz).
 * ``import tsr`` must stay lightweight — it must not transitively pull the
-  heavy optional viz dependencies (pyvista / vtk / matplotlib).
+  heavy optional visualization dependencies (pyvista / vtk / matplotlib), nor the
+  experimental Viser backend, and importing sstsr must never start a server (#77).
 """
 
 import ast
@@ -49,6 +50,13 @@ def test_core_has_no_upward_imports():
 
 
 def test_import_tsr_does_not_pull_heavy_viz_deps():
-    code = "import tsr, sys; print([m for m in ('pyvista', 'vtk', 'matplotlib') if m in sys.modules])"
+    code = "import tsr, sys; print([m for m in ('pyvista', 'vtk', 'matplotlib', 'viser') if m in sys.modules])"
     out = subprocess.check_output([sys.executable, "-c", code], text=True).strip()
     assert out == "[]", f"`import tsr` unexpectedly imported heavy deps: {out}"
+
+
+def test_viser_backend_is_not_reachable_from_the_public_api():
+    # tsr.viser must be imported explicitly; nothing in the package pulls it in, so
+    # `import tsr` cannot start a server or require the optional extra (#77).
+    code = "import tsr, sys; print('tsr.viser' in sys.modules)"
+    assert subprocess.check_output([sys.executable, "-c", code], text=True).strip() == "False"
