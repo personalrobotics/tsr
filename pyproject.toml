@@ -51,6 +51,11 @@ viz = [
     "matplotlib>=3.8.0",
     "Pillow>=10.3.0",
 ]
+# Experimental interactive backend under evaluation in #77. Not a default, not a
+# replacement for [viz]; core sstsr never imports it.
+viser = [
+    "viser>=0.2.7",
+]
 
 [dependency-groups]
 dev = [

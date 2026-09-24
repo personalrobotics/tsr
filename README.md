@@ -280,6 +280,12 @@ TSRVisualizer(
 
 Requires the `viz` extra: `uv sync --extra viz`.
 
+There is also an **experimental** interactive viewer backed by Viser, under evaluation
+in #77 — `pip install "sstsr[viser]"`, then
+`uv run python examples/viser_cylinder_grasps.py` and open <http://localhost:8080>
+(add `--explore` for sliders over the TSR's free coordinates).
+It is not a replacement for `tsr.viz`; see [docs/VISER.md](docs/VISER.md).
+
 ## Documentation
 
 - **[Tutorial](docs/tutorial.md)** — TSR theory, math, and worked examples
