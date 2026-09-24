@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sstsr"
-version = "2.1.0"
+version = "2.2.0"
 description = "Task Space Regions for grasp and placement planning (import as `tsr`)"
 readme = "README.md"
 license = "BSD-2-Clause"
