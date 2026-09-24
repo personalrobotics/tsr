@@ -37,7 +37,7 @@ class GripperBase(ABC):
 
     The geometric meaning of a returned template — what "sound" means, the
     per-field semantics of ``TSRTemplate.provenance``, tolerances, and the
-    soundness/coverage/distribution/embodied distinctions — is specified by the
+    soundness/coverage/distribution distinctions — is specified by the
     **geometric grasp contract** in ``docs/ARCHITECTURE.md``.
 
     To convert sampled poses to another convention, apply a fixed rotation::

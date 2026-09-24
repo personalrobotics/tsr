@@ -275,6 +275,19 @@ parallel-jaw grasp templates (epic #65).
   budget, not certified nonmembership. `distance` returns `0` with the witness
   when one is found, else a best-found residual (an upper bound on the true
   minimum). Single-TSR `contains` remains the exact closed-form check.
+- **Packaged templates: assurance boundary documented and smoke-tested** (#75). The
+  seven packaged YAML recipes in `src/tsr/templates/` are hand-authored *illustrative*
+  examples: they carry relative pose constraints and deliberately omit the primitive
+  dimensions and gripper geometry the #67 oracle needs, so the geometric-soundness
+  guarantees of the `grasp_*` factories do not apply to them. Their contract is
+  representation validity, now covered by a dynamic suite that discovers every file
+  through `list_available_templates` (no manifest to maintain), loads it through the
+  public API, instantiates it at several reference poses and checks
+  `sample() ⇔ contains() ⇔ distance ≈ 0`. Both READMEs state the boundary, and the
+  packaged-template README's loader examples are corrected — `load_package_template`
+  takes `(category, name)` and the grasp category is `"grasps"`. `docs/ARCHITECTURE.md`
+  now describes the **three** layers sstsr establishes; embodied MuJoCo conformance
+  (#74) is out of scope and named as a non-goal.
 
 ## [2.1.0] — 2026-09
 

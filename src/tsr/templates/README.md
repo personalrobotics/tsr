@@ -3,6 +3,17 @@
 Hand-authored TSR templates for two manipulation narratives. Each template is a
 YAML file loadable via `load_template()` / `load_package_template()`.
 
+## Assurance boundary
+
+These are **illustrative recipes, not geometrically certified grasps.** They specify
+relative pose constraints and deliberately omit the primitive dimensions and gripper
+geometry that the analytic grasp oracle needs, so none of the geometric-soundness
+guarantees that apply to the `grasp_*` factory output (see `docs/ARCHITECTURE.md`)
+apply here. What is guaranteed, and tested for every file in the default suite, is
+**representation validity**: the file loads through the public API, instantiates, and
+satisfies `sample() ⇔ contains() ⇔ distance ≈ 0`. Whether a recipe is geometrically
+feasible for your gripper and object in your scene is yours to check.
+
 ## Narratives
 
 ### 1. Tool Use — Screwdriver
@@ -32,8 +43,8 @@ Pick up a full mug, carry it to the sink, pour it out, set it on the table.
 from tsr import load_package_template, load_package_templates_by_category
 import numpy as np
 
-# Load a single template
-t = load_package_template("grasps/screwdriver_grasp.yaml")
+# Load a single template: (category, file name)
+t = load_package_template("grasps", "screwdriver_grasp.yaml")
 
 # Bind to an object pose and sample
 screwdriver_pose = np.eye(4)
@@ -41,8 +52,8 @@ screwdriver_pose[:3, 3] = [0.4, 0.0, 0.1]
 tsr = t.instantiate(screwdriver_pose)
 gripper_pose = tsr.sample()
 
-# Load all grasp templates
-grasps = load_package_templates_by_category("grasp")
+# Load all grasp templates (the category is the directory name)
+grasps = load_package_templates_by_category("grasps")
 ```
 
 ## Coordinate Frame Convention

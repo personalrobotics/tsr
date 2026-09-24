@@ -67,7 +67,7 @@ section governs *what a returned grasp template geometrically means*. It is the
 executable specification the `#67` analytic oracle and the `#73` Hypothesis
 matrix test against (issue `#66`).
 
-### Four assurance layers
+### Three assurance layers
 
 A generated grasp template can be validated at increasing strength. Each layer
 is a strictly stronger claim than the one above it, and each is tested
@@ -83,9 +83,10 @@ separately — a template may attain one without the next:
    subject to explicitly documented discretization by `k` (depths) and `n_minor`
    (torus minor angles). A statement about *which modes exist*, not about any one
    template.
-4. **Embodied conformance** — a *named* gripper realizes the idealized template
-   in its pinned MuJoCo collision model without unintended penetration
-   (validated downstream; see `#74`).
+These three are what sstsr establishes. Collision-free execution for a detailed
+gripper model, dynamic stability and force closure are **non-goals**, as is any
+geometric claim about the packaged YAML recipes in `src/tsr/templates/`, which are
+illustrative and carry the representation-validity guarantee only (#75).
 
 **Coverage is not soundness, and neither is a sampling distribution.** In
 particular the sphere-grasp TSR *covers* SO(3) as a set, but sampling independent

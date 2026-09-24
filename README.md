@@ -54,6 +54,12 @@ uv sync --extra test
 Templates are YAML files that encode pose constraints for each step of a task.
 The library ships with two narratives:
 
+Packaged templates are **illustrative recipes**, not geometrically certified grasps:
+they carry relative pose constraints only, so the geometric guarantees described in
+`docs/ARCHITECTURE.md` for `grasp_*` factory output do not apply to them. They are
+guaranteed to be representation-valid (loadable, instantiable, self-consistent).
+
+
 ```python
 from tsr import load_package_template
 import numpy as np
