@@ -15,6 +15,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Viser stays optional: `import tsr` pulls in neither backend and never starts a server,
   and the default test suite does not require the extra.
 
+### Changed
+- **The README figures are rendered with Viser** (`scripts/render_readme_figures.py`),
+  so the documentation images no longer depend on PyVista ahead of its removal. Grasp
+  panels are captured per primitive and composed; the placement figures are single
+  shared-table scenes with each box face in a fixed colour, which is what shows that
+  the placer finds all six faces, both cylinder caps and both torus sides.
+  `tsr.viser.add_primitive` and `torus_mesh` were added to support this — Viser has no
+  native torus.
+
 ### Deprecated
 - **The PyVista backend (`tsr.viz`) is deprecated and will be removed in sstsr 3.0**
   (#139). Viser is now the recommended viewer in the README, examples and docs.

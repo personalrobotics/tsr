@@ -55,8 +55,10 @@ image = client.get_render(height=900, width=1400, transport_format="png")  # num
 ```
 
 If you need a picture with no browser in the loop at all, stay on `tsr.viz` for as long
-as 2.x is supported, and keep the generated PNG. The three images in this repository's
-README are generated that way today and will be refreshed from the viewer after 3.0.
+as 2.x is supported, and keep the generated PNG.
+
+The three images in this repository's README are already produced this way, by
+`scripts/render_readme_figures.py`, so they no longer depend on PyVista.
 
 `as_html()` is worth knowing about for documentation sites: it writes a self-contained
 interactive page, which is strictly more useful than a static image where a browser is

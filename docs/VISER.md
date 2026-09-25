@@ -122,8 +122,23 @@ With no client connected there is nothing to render from: `get_render` lives on
 1.1.1 exposes no offscreen or screenshot API, and the scene serializer produces a
 `.viser` file or a standalone interactive HTML page rather than an image.
 
-Browser-free PNG generation therefore ends with PyVista in 3.0. Images in this
-repository are regenerated from the viewer.
+Browser-free PNG generation therefore ends with PyVista in 3.0. The images in this
+repository are regenerated from the viewer:
+
+```bash
+uv run python scripts/render_readme_figures.py          # all three
+uv run python scripts/render_readme_figures.py --only placements
+```
+
+It opens a browser, waits for it to connect, sets a fixed camera per figure and
+captures a transparent PNG, which it crops to content and mattes onto the README's
+background. **Keep the viewer tab visible while it runs**: browsers throttle background
+tabs, and a throttled tab never returns a frame. The capture is bounded by a timeout
+and retried rather than waiting forever.
+
+The grasp figure is captured one primitive at a time and composed afterwards, so each
+panel is framed tightly; the placement figures are single scenes, because their point
+is several objects sharing one table.
 
 ## Constraints this respects
 
