@@ -9,6 +9,11 @@ Usage::
 
     uv run python examples/mesh_placements.py
     uv sync --extra viz && uv run python examples/mesh_placements.py
+
+NOTE: this example uses the PyVista renderer (`tsr.viz`), which is deprecated and will
+be removed in sstsr 3.0. It is kept because it generates the README image with no
+browser involved. For interactive inspection see examples/viser_cylinder_grasps.py and
+docs/MIGRATION-VISER.md.
 """
 
 import numpy as np

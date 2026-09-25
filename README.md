@@ -260,6 +260,32 @@ pose  = chain.sample()
 
 ## Visualization
 
+The recommended viewer is interactive and browser-based:
+
+```bash
+pip install "sstsr[viser]"        # or: uv sync --extra viser
+uv run python examples/viser_cylinder_grasps.py --explore
+```
+
+```python
+from tsr.hands import ParallelJawGripper
+from tsr.viser import explore_templates, show_templates
+
+gripper   = ParallelJawGripper(finger_length=0.08, max_aperture=0.14)
+templates = gripper.grasp_cylinder_side(0.03, 0.12)
+
+server = show_templates(templates, cylinder=(0.03, 0.12), gripper=gripper, seed=0)
+server = explore_templates(templates, cylinder=(0.03, 0.12), gripper=gripper)
+```
+
+Open <http://localhost:8080>. `show_templates` draws a reproducibly sampled cloud;
+`explore_templates` gives a slider per free `Bw` coordinate so one grasp can be scrubbed
+through the region. Over SSH, forward the port: `ssh -L 8080:localhost:8080 user@host`.
+Details in [docs/VISER.md](docs/VISER.md).
+
+### Static PNG rendering (PyVista, deprecated)
+
+
 ```python
 from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
 
@@ -278,13 +304,9 @@ TSRVisualizer(
 )
 ```
 
-Requires the `viz` extra: `uv sync --extra viz`.
-
-There is also an **experimental** interactive viewer backed by Viser, under evaluation
-in #77 — `pip install "sstsr[viser]"`, then
-`uv run python examples/viser_cylinder_grasps.py` and open <http://localhost:8080>
-(add `--explore` for sliders over the TSR's free coordinates).
-It is not a replacement for `tsr.viz`; see [docs/VISER.md](docs/VISER.md).
+> **Deprecated.** The PyVista renderer above (`tsr.viz`) will be removed in sstsr 3.0.
+> It keeps working throughout 2.x and the `viz` extra is unchanged, but new code should
+> use the interactive viewer below. See [docs/MIGRATION-VISER.md](docs/MIGRATION-VISER.md).
 
 ## Documentation
 
