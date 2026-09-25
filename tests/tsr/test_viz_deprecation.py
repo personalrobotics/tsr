@@ -17,10 +17,28 @@ import unittest
 import warnings
 from pathlib import Path
 
-import tomllib
-
 ROOT = Path(__file__).resolve().parents[2]
 pyvista = __import__("importlib").util.find_spec("pyvista")
+
+
+def _pyproject_block(header: str) -> str:
+    """The raw text of one pyproject table, without a TOML parser.
+
+    ``tomllib`` is stdlib only from 3.11 and the suite must collect on 3.10, and these
+    assertions are about which package names appear in which table — text is enough.
+    """
+    text = (ROOT / "pyproject.toml").read_text()
+    start = text.index(f"[{header}]") + len(header) + 2
+    rest = text[start:]
+    end = rest.index("\n[")
+    return rest[:end]
+
+
+def _extra(name: str) -> str:
+    """The dependency list of one optional extra, as raw text."""
+    block = _pyproject_block("project.optional-dependencies")
+    start = block.index(f"{name} = [")
+    return block[start : block.index("]", start)]
 
 
 @unittest.skipIf(pyvista is None, "optional extra 'viz' is not installed")
@@ -59,19 +77,17 @@ class TestDeprecationWarning(unittest.TestCase):
 class TestExtrasAreUnchanged(unittest.TestCase):
     """`viz` keeps meaning PyVista for all of 2.x; `viser` is separate and optional."""
 
-    def setUp(self):
-        self.extras = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["optional-dependencies"]
-
     def test_viz_extra_still_installs_pyvista(self):
-        viz = " ".join(self.extras["viz"])
+        viz = _extra("viz")
         self.assertIn("pyvista", viz)
         self.assertNotIn("viser", viz)  # repointing viz -> Viser is a 3.0 change, not 2.x
 
     def test_viser_extra_is_separate(self):
-        self.assertIn("viser", " ".join(self.extras["viser"]))
+        self.assertIn("viser", _extra("viser"))
 
     def test_neither_backend_is_a_core_dependency(self):
-        core = " ".join(tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"])
+        core = _pyproject_block("project")
+        core = core[core.index("dependencies = [") : core.index("]", core.index("dependencies = ["))]
         self.assertNotIn("viser", core)
         self.assertNotIn("pyvista", core)
 
