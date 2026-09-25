@@ -479,7 +479,24 @@ for t in templates:
 
 ## Visualization
 
-The `tsr.viz` module provides a PyVista-based renderer. Unlike matplotlib's painter's algorithm, PyVista uses a true depth buffer — geometry behind the object is automatically occluded.
+The recommended viewer is `tsr.viser` — an interactive browser view, with sliders over a
+template's free `Bw` coordinates so a continuous freedom can be scrubbed rather than
+sampled:
+
+```python
+from tsr.viser import explore_templates, show_templates
+
+server = show_templates(templates, cylinder=(0.04, 0.12), gripper=gripper, seed=0)
+server = explore_templates(templates, cylinder=(0.04, 0.12), gripper=gripper)
+```
+
+`pip install "sstsr[viser]"`, then open <http://localhost:8080>. See
+[VISER.md](VISER.md).
+
+The `tsr.viz` module provides a PyVista-based static renderer. It is **deprecated** and
+will be removed in sstsr 3.0 — see [MIGRATION-VISER.md](MIGRATION-VISER.md) — but it
+remains the only way to produce a PNG with no browser involved, so it is still shown
+here.
 
 ```python
 from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
@@ -509,7 +526,7 @@ TSRVisualizer(
 )
 ```
 
-Requires the `viz` extra: `uv sync --extra viz`.
+Requires the deprecated `viz` extra: `uv sync --extra viz`.
 
 **Custom renderers** follow these signatures:
 

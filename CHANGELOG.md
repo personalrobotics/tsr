@@ -6,6 +6,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Interactive Viser viewer** (`tsr.viser`, `pip install "sstsr[viser]"`; #77).
+  `show_templates` draws a reproducibly sampled pose cloud — reference object, canonical
+  end-effector axes, and jaw geometry at each template's own preshape — and
+  `explore_templates` drives a single grasp from one slider per **free** `Bw` coordinate
+  (from `free_coordinates`), so a continuous freedom is scrubbed rather than sampled.
+  Viser stays optional: `import tsr` pulls in neither backend and never starts a server,
+  and the default test suite does not require the extra.
+
+### Changed
+- **The README figures are rendered with Viser** (`scripts/render_readme_figures.py`),
+  so the documentation images no longer depend on PyVista ahead of its removal. Grasp
+  panels are captured per primitive and composed; the placement figures are single
+  shared-table scenes with each box face in a fixed colour, which is what shows that
+  the placer finds all six faces, both cylinder caps and both torus sides.
+  `tsr.viser.add_primitive` and `torus_mesh` were added to support this — Viser has no
+  native torus.
+
+### Deprecated
+- **The PyVista backend (`tsr.viz`) is deprecated and will be removed in sstsr 3.0**
+  (#139). Viser is now the recommended viewer in the README, examples and docs.
+  Constructing `TSRVisualizer` emits a `DeprecationWarning` naming the replacement, the
+  removal version and the migration guide; **importing `tsr.viz` does not warn**, so a
+  library that imports it cannot warn on its users' behalf. Nothing breaks in 2.x: the
+  backend keeps working and the `viz` extra still installs PyVista — repointing it at
+  Viser in a minor release would silently change what an install provides.
+  `docs/MIGRATION-VISER.md` states the replacement for every public PyVista workflow.
+- **Browser-free PNG rendering ends with PyVista.** Viser's pixels come from a browser's
+  WebGL context: `get_render` is a method on a *connected* `ClientHandle`, viser 1.1.1
+  exposes no offscreen or screenshot API, and the scene serializer produces a `.viser`
+  file or a standalone interactive HTML page rather than an image. This is an accepted
+  consequence of the migration, documented rather than discovered: through 2.x use
+  `tsr.viz`; from 3.0 images are captured from the viewer.
+
 ### Changed
 - **The release version comes from the git tag** (hatch-vcs). `pyproject.toml` no
   longer carries a static `version`; `tsr.__version__` reads the build-time

@@ -42,7 +42,15 @@ except ImportError as e:  # pragma: no cover - exercised by the extra being abse
         'Install with: pip install "sstsr[viser]"  (or: uv sync --extra viser)'
     ) from e
 
-__all__ = ["show_templates", "explore_templates", "free_coordinates", "sample_poses", "gripper_segments"]
+__all__ = [
+    "show_templates",
+    "explore_templates",
+    "free_coordinates",
+    "sample_poses",
+    "gripper_segments",
+    "add_primitive",
+    "torus_mesh",
+]
 
 # Bw row order, with the unit each coordinate is measured in.
 _COORDS = (("x", "m"), ("y", "m"), ("z", "m"), ("roll", "rad"), ("pitch", "rad"), ("yaw", "rad"))
@@ -61,6 +69,84 @@ def _depth_color(index: int, count: int) -> np.ndarray:
     lo = int(np.floor(t))
     hi = min(lo + 1, len(_DEPTH_COLORS) - 1)
     return _DEPTH_COLORS[lo] + (t - lo) * (_DEPTH_COLORS[hi] - _DEPTH_COLORS[lo])
+
+
+def torus_mesh(major_radius: float, minor_radius: float, *, major_segments: int = 64, minor_segments: int = 24):
+    """``(vertices, faces)`` for a torus about +z, centred at the origin.
+
+    Viser has native cylinder, box and sphere primitives but no torus, so this is the
+    one primitive sstsr has to tessellate itself. The convention matches the grasp
+    factories: ``R`` is the ring radius, ``r`` the tube radius.
+    """
+    u = np.linspace(0.0, 2.0 * np.pi, major_segments, endpoint=False)
+    v = np.linspace(0.0, 2.0 * np.pi, minor_segments, endpoint=False)
+    uu, vv = np.meshgrid(u, v, indexing="ij")
+    ring = major_radius + minor_radius * np.cos(vv)
+    vertices = np.stack([ring * np.cos(uu), ring * np.sin(uu), minor_radius * np.sin(vv)], axis=-1)
+    vertices = vertices.reshape(-1, 3)
+
+    i, j = np.meshgrid(np.arange(major_segments), np.arange(minor_segments), indexing="ij")
+    a = (i * minor_segments + j).ravel()
+    b = (((i + 1) % major_segments) * minor_segments + j).ravel()
+    c = (((i + 1) % major_segments) * minor_segments + (j + 1) % minor_segments).ravel()
+    d = (i * minor_segments + (j + 1) % minor_segments).ravel()
+    faces = np.concatenate([np.stack([a, b, c], axis=-1), np.stack([a, c, d], axis=-1)])
+    return vertices, faces.astype(np.uint32)
+
+
+def add_primitive(
+    scene,
+    name: str,
+    kind: str,
+    dims: Sequence[float],
+    *,
+    pose: Optional[np.ndarray] = None,
+    centered: bool = False,
+    color: Tuple[int, int, int] = (170, 170, 178),
+    opacity: Optional[float] = None,
+):
+    """Draw one sstsr primitive, in **its own** frame convention.
+
+    The frames are the ones sstsr uses, not Viser's, so a caller never has to remember
+    which is which.
+
+    The two conventions in the library differ, and confusing them shifts an object by
+    half its height:
+
+    * **grasp factories** put a cylinder and a box at ``z ∈ [0, height]``, centred in x
+      and y (``centered=False``, the default);
+    * **placement templates** (:class:`~tsr.placement.StablePlacer`) give the pose of
+      the object's **centre**, so pass ``centered=True`` when drawing a placed object.
+
+    A sphere and a torus are centred either way.
+
+    Args:
+        kind: ``"cylinder"`` (radius, height), ``"box"`` (x, y, z), ``"sphere"``
+            (radius) or ``"torus"`` (major, minor).
+        pose: 4x4 placement of the primitive's frame; identity by default.
+        centered: Whether ``pose`` locates the object's centre (placements) rather than
+            the factory frame (grasps).
+    """
+    pose = np.eye(4) if pose is None else np.asarray(pose, dtype=float)
+    shared = dict(wxyz=_wxyz(pose[:3, :3]), color=color, opacity=opacity)
+
+    def placed(local_offset):
+        return pose[:3, 3] + pose[:3, :3] @ np.asarray(local_offset, dtype=float)
+
+    if kind == "cylinder":
+        radius, height = dims
+        rise = 0.0 if centered else height / 2
+        return scene.add_cylinder(name, radius=radius, height=height, position=placed((0, 0, rise)), **shared)
+    if kind == "box":
+        bx, by, bz = dims
+        rise = 0.0 if centered else bz / 2
+        return scene.add_box(name, dimensions=(bx, by, bz), position=placed((0, 0, rise)), **shared)
+    if kind == "sphere":
+        return scene.add_icosphere(name, radius=dims[0], position=placed((0, 0, 0)), **shared)
+    if kind == "torus":
+        vertices, faces = torus_mesh(dims[0], dims[1])
+        return scene.add_mesh_simple(name, vertices=vertices, faces=faces, position=placed((0, 0, 0)), **shared)
+    raise ValueError(f"unknown primitive {kind!r}; expected cylinder, box, sphere or torus")
 
 
 def _wxyz(R: np.ndarray) -> np.ndarray:

@@ -24,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Callable, List, Sequence
 
@@ -49,6 +50,16 @@ SubjectRenderer = Callable[["pv.Plotter", np.ndarray, tuple], None]
 class TSRVisualizer:
     """Renders a TSR: one reference object + N sampled subject poses → PNG.
 
+    .. deprecated:: 2.3
+        The PyVista backend is deprecated in favour of the interactive Viser viewer
+        (:mod:`tsr.viser`, ``pip install "sstsr[viser]"``) and will be removed in
+        sstsr 3.0. See ``docs/MIGRATION-VISER.md``. Constructing this class warns;
+        importing :mod:`tsr.viz` does not, so a module-level import in a library
+        cannot warn on a user's behalf.
+
+        Browser-free PNG rendering goes away with it: Viser renders through a
+        connected browser, and there is no Python-side renderer to substitute.
+
     Args:
         window_size: Output resolution (width, height) in pixels.
         background:  Background hex color.
@@ -72,6 +83,15 @@ class TSRVisualizer:
         crop_pad: int = 24,
         parallel_projection: bool = False,
     ):
+        warnings.warn(
+            "tsr.viz.TSRVisualizer (PyVista backend) is deprecated and will be removed in "
+            'sstsr 3.0. Use the interactive Viser viewer: pip install "sstsr[viser]", then '
+            "tsr.viser.show_templates(...) or tsr.viser.explore_templates(...). Migration "
+            "guide: docs/MIGRATION-VISER.md. Note that browser-free PNG rendering has no "
+            "replacement — Viser captures through a connected browser.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.window_size = window_size
         self.background = background
         self.camera_dist = camera_dist

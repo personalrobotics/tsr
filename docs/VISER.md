@@ -1,11 +1,13 @@
-# Experimental interactive viewer (Viser) — evaluation
+# Interactive viewer (Viser) — the recommended backend
 
-`tsr.viser` is an **experiment** (#77), not a supported backend and not a replacement
-for `tsr.viz`. It exists to answer one question: is a browser-based interactive view a
-better way to inspect grasp templates than the current static PyVista renderer?
+`tsr.viser` is the **recommended** way to inspect grasp templates (adopted in #77,
+promoted in #139). It stays **optional**: it is not in `[project.dependencies]`, and
+`pip install sstsr` still brings no visualization dependency.
 
-PyVista is unchanged. Adoption, deprecation and removal are separately gated in #139
-and #140.
+The PyVista backend (`tsr.viz`) is **deprecated** and will be removed in sstsr 3.0. It
+keeps working throughout 2.x and the `[viz]` extra is unchanged; see
+[MIGRATION-VISER.md](MIGRATION-VISER.md), which states the replacement for each public
+PyVista workflow.
 
 Visualization is explanatory and diagnostic. Nothing rendered here is evidence that a
 template is correct — that is the analytic oracle's job (see ARCHITECTURE.md).
@@ -90,7 +92,7 @@ freedom as a band of poses rather than a single picture.
 
 ## Measured behaviour
 
-On this machine (M-series laptop, viser 1.1.1), server-side scene construction:
+On an M-series laptop, viser 1.1.1, server-side scene construction:
 
 | poses | line segments | build time |
 |---|---|---|
@@ -107,20 +109,41 @@ only bound the Python side.
 
 ## Image capture
 
-Viser captures images through a **connected browser client**:
+Viser captures images through a **connected browser client** — there is no browser-free
+path, and that is an accepted consequence of the migration (see MIGRATION-VISER.md):
 
 ```python
 client = next(iter(server.get_clients().values()))    # requires an open browser
 image = client.get_render(height=720, width=1280)     # numpy array
 ```
 
-This is not browser-free: with no client connected there is nothing to render from, so
-it does not replace `tsr.viz`'s headless PNG generation for docs or CI. Whether we
-intend to keep a browser-free path is one of the open questions in #77.
+With no client connected there is nothing to render from: `get_render` lives on
+`ClientHandle`, and `server.get_clients()` is empty until a browser attaches. viser
+1.1.1 exposes no offscreen or screenshot API, and the scene serializer produces a
+`.viser` file or a standalone interactive HTML page rather than an image.
+
+Browser-free PNG generation therefore ends with PyVista in 3.0. The images in this
+repository are regenerated from the viewer:
+
+```bash
+uv run python scripts/render_readme_figures.py          # all three
+uv run python scripts/render_readme_figures.py --only placements
+```
+
+It opens a browser, waits for it to connect, sets a fixed camera per figure and
+captures a transparent PNG, which it crops to content and mattes onto the README's
+background. **Keep the viewer tab visible while it runs**: browsers throttle background
+tabs, and a throttled tab never returns a frame. The capture is bounded by a timeout
+and retried rather than waiting forever.
+
+The grasp figure is captured one primitive at a time and composed afterwards, so each
+panel is framed tightly; the placement figures are single scenes, because their point
+is several objects sharing one table.
 
 ## Constraints this respects
 
-- Viser is not in `[project.dependencies]`; it lives in the `viser` extra.
+- Viser is not in `[project.dependencies]`; it lives in the `viser` extra, and the
+  `viz` extra still installs PyVista unchanged through 2.x.
 - `import tsr` imports neither Viser nor this module, and never starts a server
   (enforced in `tests/tsr/test_architecture.py`).
 - The default test suite does not require the extra: the backend's tests skip when it
