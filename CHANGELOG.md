@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The release build pins the version with the generic setuptools-scm variable.**
+  `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR` is silently ignored — hatch-vcs does not
+  pass the distribution name through — so a tag build still fell back to `git describe`
+  and, with an rc and its final tag on one commit, resolved to the rc. The `v2.3.0`
+  build produced `2.3.0rc1` and the tag/artifact guard stopped it before publishing.
+  Verified by building with each variable set to `9.9.9`: the per-distribution form
+  produced `2.3.0` (from describe), the generic form produced `9.9.9`.
+
 ## [2.3.0] — 2026-09
 
 Interactive visualization. `tsr.viser` replaces static rendering as the recommended way

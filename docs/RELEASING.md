@@ -22,7 +22,9 @@ Two consequences worth knowing:
   uploadable to TestPyPI.
 - **Two guards run before any publish job**: the built artifact's version must equal
   the tag, and an rc tag must build a pre-release (and a final tag must not).
-- **In CI the tag is pinned as the version** (`SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR`).
+- **In CI the tag is pinned as the version** (`SETUPTOOLS_SCM_PRETEND_VERSION`, the
+  generic setuptools-scm variable — hatch-vcs does not pass the distribution name
+  through, so the `..._FOR_SSTSR` form is silently ignored).
   `git describe` has to choose when several tags point at one commit, which is the
   normal flow — `vX.Y.Zrc1` and `vX.Y.Z` usually sit on the same commit — and it is not
   guaranteed to choose the one being built. It resolved to the rc in CI while resolving
