@@ -4,7 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0] — 2026-09
+
+Interactive visualization. `tsr.viser` replaces static rendering as the recommended way
+to inspect grasp templates: it serves a scene you interrogate rather than a picture of
+samples, with a slider per free `Bw` coordinate so a continuous freedom is scrubbed
+instead of sampled. The PyVista backend still works and is now deprecated, with a
+migration guide and one published release of warning before it is removed in 3.0.
+
+Visualization remains explanatory and diagnostic. It is never evidence that a template
+is correct — that is the analytic oracle's job.
 
 ### Added
 - **Interactive Viser viewer** (`tsr.viser`, `pip install "sstsr[viser]"`; #77).
@@ -39,8 +48,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file or a standalone interactive HTML page rather than an image. This is an accepted
   consequence of the migration, documented rather than discovered: through 2.x use
   `tsr.viz`; from 3.0 images are captured from the viewer.
-
-### Changed
 - **The release version comes from the git tag** (hatch-vcs). `pyproject.toml` no
   longer carries a static `version`; `tsr.__version__` reads the build-time
   `_version.py`, falling back to installed metadata. This makes the TestPyPI dry run
