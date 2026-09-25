@@ -37,17 +37,24 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
-      # When building from a tag, the tag IS the version. `git describe` is ambiguous
-      # when several tags point at one commit -- which is the normal rc -> final flow,
-      # since the release usually sits on the same commit as its candidate -- and it
-      # resolved to the rc in CI while resolving to the final tag locally. Pin it.
+      # When building from a tag, the tag IS the version. `git describe` has to choose
+      # when several tags point at one commit -- the normal rc -> final flow, since the
+      # release usually sits on the same commit as its candidate -- and it resolved to
+      # the rc in CI while resolving to the final tag locally, so the version is pinned
+      # from the ref rather than inferred.
+      #
+      # It must be the GENERIC setuptools-scm variable: hatch-vcs does not pass the
+      # distribution name through, so the per-distribution
+      # SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR form is silently ignored. Verified by
+      # building with each set to 9.9.9: the per-dist form produced 2.3.0 (from
+      # describe), the generic form produced 9.9.9.
       - name: Build
         run: |
           set -euo pipefail
           case "${GITHUB_REF}" in
             refs/tags/v*)
-              export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR="${GITHUB_REF_NAME#v}"
-              echo "building tag ${GITHUB_REF_NAME} as version ${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR}"
+              export SETUPTOOLS_SCM_PRETEND_VERSION="${GITHUB_REF_NAME#v}"
+              echo "building tag ${GITHUB_REF_NAME} as version ${SETUPTOOLS_SCM_PRETEND_VERSION}"
               ;;
           esac
           uv build
