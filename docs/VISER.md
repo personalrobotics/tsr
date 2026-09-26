@@ -81,6 +81,46 @@ the clearance or `n_minor` — the templates are regenerated and redrawn on ever
 The sliders and the factory list come from `PRIMITIVE_SPECS`, so they always match the
 factories' real arguments.
 
+**Show one depth at a time.** The `Show` folder isolates a single depth level or a
+single mode, which is the usual move when a band looks wrong — the cloud colours
+depths, but overlapping modes still pile up. The options are rebuilt from whatever the
+current request produced, so they never offer a selection that is empty.
+
+```python
+from tsr.viser import filter_templates, mode_of
+
+filter_templates(templates, depth_index=1)
+filter_templates(templates, mode="side/radial/tangential")
+filter_templates(templates, depth_index=1, mode="side/radial/tangential")
+```
+
+### Factory, mode, depth family
+
+Three different things, easy to conflate:
+
+| term | what it is | example |
+|---|---|---|
+| **factory** | the method you call | `grasp_cylinder` (combined) vs `grasp_cylinder_side` (one part) |
+| **mode** (`mode_of`) | `mode/approach/finger_orientation` — the viewer's grouping | `grasp_cylinder` emits 3 |
+| **depth family** | the ARCHITECTURE.md key: everything except the depth fields, *including* `symmetry` and `metadata` | `grasp_cylinder` emits 4 |
+
+The last two differ because a mode can hold several depth families:
+
+```
+grasp_cylinder        12 templates | 3 modes | 4 depth families
+grasp_cylinder_side    6 templates | 1 mode  | 2 depth families   (roll0, rollpi)
+grasp_torus_side      30 templates | 1 mode  | 10 depth families  (2 flips x 5 minor angles)
+```
+
+The viewer groups by the coarse **mode**, since one rarely wants to choose between
+`roll0` and `rollpi`, and deliberately does not call that a *family* — `depth_index`
+and `depth_count` are defined over the finer key.
+
+And because `depth_index` is per depth family, selecting `depth 0` keeps the first
+depth of *each* family, which are different distances: on a cylinder, 8 mm for the caps
+and 30 mm for the side. The panel lists each mode's depths in millimetres, so that is
+visible rather than implied.
+
 **An empty scene explains itself.** A grasp factory returns `[]` for a valid but
 infeasible request and logs the reason at debug level; the studio captures that and
 shows it, so you see *why* rather than an unexplained void:
