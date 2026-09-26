@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`tsr.viser.studio()`** — an interactive bench for debugging grasp generation.
+  Choose a primitive, drag its dimensions and the gripper's, pick a factory and change
+  `k`, clearance or `n_minor`; the templates regenerate and redraw on every change.
+  When a request yields nothing the factory's own diagnostic is surfaced
+  (`exceeds_aperture`, `finger_too_short`, `insufficient_clearance_band`), and an
+  invalid request is reported as invalid rather than as an empty feasible set — the
+  two failures the factory contract deliberately separates. Sliders and the factory
+  list are derived from `PRIMITIVE_SPECS`, so they cannot drift from the real
+  signatures.
+
 ### Fixed
 - **The release build pins the version with the generic setuptools-scm variable.**
   `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR` is silently ignored — hatch-vcs does not

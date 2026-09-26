@@ -19,8 +19,8 @@ from tsr.hands import ParallelJawGripper
 
 viser_backend = __import__("importlib").util.find_spec("viser")
 if viser_backend is not None:
+    from tsr.viser import PRIMITIVE_SPECS, _generate, free_coordinates, gripper_segments, sample_poses
     from tsr.viser import _wxyz as wxyz
-    from tsr.viser import free_coordinates, gripper_segments, sample_poses
 
 GRIPPER = ParallelJawGripper(finger_length=0.08, max_aperture=0.14)
 
@@ -74,6 +74,70 @@ class TestFreeCoordinates(unittest.TestCase):
         for template in GRIPPER.grasp_box_top(0.05, 0.05, 0.05):
             for row, _label, lo, hi in free_coordinates(template):
                 self.assertGreater(hi, lo, row)
+
+
+@unittest.skipIf(viser_backend is None, "optional extra 'viser' is not installed")
+class TestStudioDiagnostics(unittest.TestCase):
+    """The studio reports WHY a request produced nothing.
+
+    The library's contract separates two failures: an exception means the request was
+    invalid, an empty list means the feasible set is empty and the reason is logged.
+    A debugging tool that collapses them, or that shows an unexplained empty scene, is
+    worse than useless -- so the distinction is asserted here rather than assumed.
+    """
+
+    def test_a_feasible_request_reports_no_problem(self):
+        templates, diagnostics = _generate(GRIPPER, "grasp_cylinder", dict(cylinder_radius=0.03, cylinder_height=0.12))
+        self.assertTrue(templates)
+        self.assertEqual(diagnostics, [])
+
+    def test_each_infeasible_request_names_its_reason(self):
+        cases = {
+            "exceeds_aperture": (
+                ParallelJawGripper(0.08, 0.05),
+                "grasp_cylinder_side",
+                dict(cylinder_radius=0.04, cylinder_height=0.12),
+            ),
+            "finger_too_short": (ParallelJawGripper(0.02, 0.30), "grasp_sphere", dict(object_radius=0.06)),
+            "insufficient_clearance_band": (
+                ParallelJawGripper(0.08, 0.30),
+                "grasp_cylinder_top",
+                dict(cylinder_radius=0.03, cylinder_height=0.12, clearance=0.05),
+            ),
+        }
+        for reason, (gripper, factory, kwargs) in cases.items():
+            with self.subTest(reason=reason):
+                templates, diagnostics = _generate(gripper, factory, kwargs)
+                self.assertEqual(templates, [])
+                self.assertTrue(any(reason in message for message in diagnostics), diagnostics)
+
+    def test_an_invalid_request_is_reported_as_invalid_not_as_empty(self):
+        templates, diagnostics = _generate(GRIPPER, "grasp_cylinder", dict(cylinder_radius=-0.03, cylinder_height=0.12))
+        self.assertEqual(templates, [])
+        self.assertTrue(diagnostics[0].startswith("invalid request:"), diagnostics)
+        self.assertIn("cylinder_radius", diagnostics[0])
+
+    def test_diagnostic_capture_leaves_logging_untouched(self):
+        # The studio raises the log level to collect reasons; it must put it back, or a
+        # session slowly fills with debug output from an unrelated tool.
+        import logging
+
+        logger = logging.getLogger("tsr.hands")
+        before_level, before_handlers = logger.level, list(logger.handlers)
+        _generate(ParallelJawGripper(0.02, 0.30), "grasp_sphere", dict(object_radius=0.06))
+        self.assertEqual(logger.level, before_level)
+        self.assertEqual(logger.handlers, before_handlers)
+
+    def test_every_listed_factory_accepts_its_primitive_arguments(self):
+        # The studio builds its sliders from this table, so a name that does not match
+        # the factory signature would surface as a TypeError mid-session.
+        for kind, spec in PRIMITIVE_SPECS.items():
+            kwargs = {arg: initial for arg, _lo, _hi, initial in spec["dims"]}
+            for factory in spec["factories"]:
+                with self.subTest(factory=factory):
+                    templates, diagnostics = _generate(GRIPPER, factory, kwargs)
+                    self.assertFalse(any(d.startswith("invalid request") for d in diagnostics), (factory, diagnostics))
+                    self.assertTrue(templates, f"{factory} produced nothing at the studio's default dimensions")
 
 
 @unittest.skipIf(viser_backend is None, "optional extra 'viser' is not installed")

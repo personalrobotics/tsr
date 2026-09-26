@@ -66,6 +66,39 @@ Moving a slider re-evaluates `tsr.to_transform(ξ)` and assigns the node's `posi
 `wxyz`. The jaw geometry is uploaded once per template, not per frame, so scrubbing
 sends two transforms rather than re-sending geometry.
 
+## The studio: a bench for debugging generation
+
+`show_templates` and `explore_templates` answer "what does *this* template look like".
+`studio` answers the question you actually have while developing: *why did I get these
+templates, and what changes them?*
+
+```bash
+uv run python -c "from tsr.viser import studio; studio().sleep_forever()"
+```
+
+Pick a primitive, drag its dimensions and the gripper's, choose a factory, change `k`,
+the clearance or `n_minor` — the templates are regenerated and redrawn on every change.
+The sliders and the factory list come from `PRIMITIVE_SPECS`, so they always match the
+factories' real arguments.
+
+**An empty scene explains itself.** A grasp factory returns `[]` for a valid but
+infeasible request and logs the reason at debug level; the studio captures that and
+shows it, so you see *why* rather than an unexplained void:
+
+| what you changed | what the panel says |
+|---|---|
+| object wider than the jaws | `exceeds_aperture; preshape=0.084, diameter=0.08, max_aperture=0.05` |
+| fingers shorter than the radius | `finger_too_short; finger_length=0.02, radius=0.06` |
+| clearance larger than the band | `insufficient_clearance_band; clearance=0.05, finger_length=0.08` |
+| a negative dimension | `invalid request: cylinder_radius must be a finite positive number` |
+
+That last row is a different failure from the others, and the studio keeps them apart:
+an exception means the *request* was invalid, an empty list means the *feasible set*
+was empty. The panel also lists the families that were produced and how many templates
+each contributed.
+
+Captures show the 3D canvas only — Viser's `get_render` does not include the GUI panel.
+
 ## Over SSH
 
 Viser serves HTTP and a websocket on one port; forward it and browse locally:
