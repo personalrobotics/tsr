@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**Breaking: this is 3.0.** The PyVista backend is gone.
+
+### Removed
+- **The PyVista backend** (#140), after shipping deprecated in 2.3: `tsr.viz`,
+  `TSRVisualizer`, every `*_renderer`, and `GripperBase.renderer()` / the
+  `ParallelJawGripper` override that reached into it. Visualization is `tsr.viser`.
+- **PyVista, Matplotlib and Pillow as visualization dependencies.** `sstsr[viz]` and
+  `sstsr[viser]` now install the same thing — Viser — so an existing `sstsr[viz]`
+  install keeps working and gets the supported backend. `pip install sstsr` remains
+  visualization-free, and importing sstsr still loads neither backend nor starts a
+  server. Pillow moved to the dev group, where the figure script uses it.
+- **Browser-free PNG rendering.** Viser renders through a connected browser; there is
+  no replacement. Pin `sstsr<3` if you need it. `docs/MIGRATION-VISER.md` maps each
+  removed workflow to its replacement.
+- The three PyVista examples keep their printed API demonstrations and lose their
+  rendering: `scripts/render_readme_figures.py` builds those same scenes in Viser, and
+  `tsr.viser.studio()` is the interactive path, so re-implementing them would have
+  duplicated both.
+
 ### Added
 - **`tsr.viser.studio()`** — an interactive bench for debugging grasp generation.
   Choose a primitive, drag its dimensions and the gripper's, pick a factory and change

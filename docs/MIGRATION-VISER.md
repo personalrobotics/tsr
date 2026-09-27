@@ -1,16 +1,13 @@
 # Migrating from the PyVista renderer to the Viser viewer
 
-The PyVista backend (`tsr.viz`) is **deprecated** and will be removed in **sstsr 3.0**.
-The recommended visualization path is the interactive Viser viewer, `tsr.viser`.
+The PyVista backend (`tsr.viz`) was **removed in sstsr 3.0**, after shipping deprecated
+in 2.3. Visualization is the interactive Viser viewer, `tsr.viser`.
 
-Nothing breaks in 2.x. `tsr.viz` keeps working, the `[viz]` extra still installs
-PyVista, and constructing `TSRVisualizer` emits a `DeprecationWarning` pointing here.
-Merely importing `tsr.viz` does not warn, so a library that imports it cannot warn on
-its users' behalf.
+If you are still on 2.x, `tsr.viz` works and warns; this page is the map for moving off
+it. Pin `sstsr<3` if you need more time.
 
 ```bash
-pip install "sstsr[viser]"        # recommended
-pip install "sstsr[viz]"          # PyVista, deprecated, unchanged through 2.x
+pip install "sstsr[viz]"          # Viser; "sstsr[viser]" is the same set
 ```
 
 ## The shape of the change
@@ -54,8 +51,8 @@ client = next(iter(server.get_clients().values()))
 image = client.get_render(height=900, width=1400, transport_format="png")  # numpy RGBA
 ```
 
-If you need a picture with no browser in the loop at all, stay on `tsr.viz` for as long
-as 2.x is supported, and keep the generated PNG.
+If you need a picture with no browser in the loop at all, pin `sstsr<3` and keep the
+generated PNG; from 3.0 there is no browser-free renderer.
 
 The three images in this repository's README are already produced this way, by
 `scripts/render_readme_figures.py`, so they no longer depend on PyVista.

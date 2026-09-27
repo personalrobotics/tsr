@@ -37,7 +37,7 @@ import tsr             # the import name is unchanged
 
 For visualization support:
 ```bash
-pip install "sstsr[viz]"     # or: uv add "sstsr[viz]"
+pip install "sstsr[viz]"     # interactive viewer (Viser); "sstsr[viser]" is the same
 ```
 
 For development:
@@ -291,31 +291,6 @@ Open <http://localhost:8080>. `show_templates` draws a reproducibly sampled clou
 `explore_templates` gives a slider per free `Bw` coordinate so one grasp can be scrubbed
 through the region. Over SSH, forward the port: `ssh -L 8080:localhost:8080 user@host`.
 Details in [docs/VISER.md](docs/VISER.md).
-
-### Static PNG rendering (PyVista, deprecated)
-
-
-```python
-from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
-
-poses  = [t.sample(mug_pose) for t in templates]
-colors = plasma_colors(len(templates))
-
-TSRVisualizer(
-    title="Cylinder Grasp Templates",
-    focus=(0., 0., 0.06),
-).render(
-    reference_renderer=cylinder_renderer(radius=0.04, height=0.12),
-    subject_renderer=parallel_jaw_renderer(finger_length=0.055, half_aperture=0.07),
-    poses=poses,
-    colors=colors,
-    out="grasp_viz.png",
-)
-```
-
-> **Deprecated.** The PyVista renderer above (`tsr.viz`) will be removed in sstsr 3.0.
-> It keeps working throughout 2.x and the `viz` extra is unchanged, but new code should
-> use the interactive viewer below. See [docs/MIGRATION-VISER.md](docs/MIGRATION-VISER.md).
 
 ## Documentation
 

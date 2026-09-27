@@ -9,11 +9,6 @@ Usage::
 
     uv run python examples/mesh_placements.py
     uv sync --extra viz && uv run python examples/mesh_placements.py
-
-NOTE: this example uses the PyVista renderer (`tsr.viz`), which is deprecated and will
-be removed in sstsr 3.0. It is kept because it generates the README image with no
-browser involved. For interactive inspection see examples/viser_cylinder_grasps.py and
-docs/MIGRATION-VISER.md.
 """
 
 import numpy as np
@@ -174,156 +169,10 @@ mug_tmpls_viz = placer.place_mesh(mug_verts, mug_com, subject="mug", min_margin_
 print(f"         → {len(mug_tmpls_viz)} pose(s) with margin ≥ {_MIN_MARGIN_DEG}° shown in visualisation")
 
 
-# ── Visualization ─────────────────────────────────────────────────────────────
-try:
-    import pyvista as pv
-
-    from tsr.viz import TSRVisualizer, table_surface_renderer
-
-    TX, TY = 0.60, 0.40
-
-    def _pose(x, y, tmpl):
-        T = np.eye(4)
-        T[0, 3] = x
-        T[1, 3] = y
-        return T @ tmpl.Tw_e
-
-    def _row(tmpls, y, spacing=0.22):
-        xs = [(i - (len(tmpls) - 1) / 2) * spacing for i in range(len(tmpls))]
-        return [_pose(x, y, t) for x, t in zip(xs, tmpls)]
-
-    l_poses = _row(l_tmpls, y=0.18)
-    t_poses = _row(t_tmpls, y=0.00)
-    mug_poses = _row(mug_tmpls_viz, y=-0.18)
-
-    # ── Composite renderers ────────────────────────────────────────────────
-
-    def _add_box(pl, bounds, R, t_w, color):
-        """Render an axis-aligned box (in object frame) at world pose R, t_w."""
-        b = pv.Box(bounds=bounds)
-        b.points = (R @ b.points.T).T + t_w
-        pl.add_mesh(
-            b,
-            color=color,
-            smooth_shading=True,
-            lighting=True,
-            specular=0.4,
-            diffuse=0.8,
-            ambient=0.15,
-            show_edges=True,
-            edge_color="#e0e0e0",
-            line_width=1.0,
-        )
-
-    # L-shape: two boxes in object frame (origin = l_com)
-    _L_STEM = (
-        0 - l_com[0],
-        L_LX_STEM - l_com[0],
-        0 - l_com[1],
-        L_LY - l_com[1],
-        0 - l_com[2],
-        L_LZ - l_com[2],
-    )
-    _L_BASE = (
-        L_LX_STEM - l_com[0],
-        L_LX - l_com[0],
-        0 - l_com[1],
-        L_LY - l_com[1],
-        0 - l_com[2],
-        L_LZ_BASE - l_com[2],
-    )
-
-    def l_renderer(pl, pose_4x4, color):
-        R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
-        _add_box(pl, _L_STEM, R, t, color)
-        _add_box(pl, _L_BASE, R, t, color)
-
-    # T-shape: stem box + bar box in object frame (origin = t_com)
-    _T_STEM = (
-        T_SX0 - t_com[0],
-        T_SX1 - t_com[0],
-        0 - t_com[1],
-        T_LY - t_com[1],
-        0 - t_com[2],
-        T_LZ_STEM - t_com[2],
-    )
-    _T_BAR = (
-        0 - t_com[0],
-        T_LX_BAR - t_com[0],
-        0 - t_com[1],
-        T_LY - t_com[1],
-        T_LZ_STEM - t_com[2],
-        T_LZ_STEM + T_LZ_BAR - t_com[2],
-    )
-
-    def t_renderer(pl, pose_4x4, color):
-        R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
-        _add_box(pl, _T_STEM, R, t, color)
-        _add_box(pl, _T_BAR, R, t, color)
-
-    # Mug: cylinder + handle box in object frame (origin = mug_com)
-    _MUG_CYL_CTR = -mug_com  # cylinder natural-frame centre is origin
-    _MUG_HDL = (
-        MUG_R - mug_com[0],
-        MUG_R + HDL_LX - mug_com[0],
-        -HDL_LY / 2,
-        HDL_LY / 2,
-        -HDL_LZ / 2,
-        HDL_LZ / 2,
-    )
-
-    def mug_renderer(pl, pose_4x4, color):
-        R, t = pose_4x4[:3, :3], pose_4x4[:3, 3]
-        ctr_w = R @ _MUG_CYL_CTR + t
-        axis_w = R @ np.array([0.0, 0.0, 1.0])
-        cyl = pv.Cylinder(
-            center=ctr_w,
-            direction=axis_w,
-            radius=MUG_R,
-            height=MUG_H,
-            resolution=40,
-            capping=True,
-        )
-        pl.add_mesh(
-            cyl,
-            color=color,
-            smooth_shading=True,
-            lighting=True,
-            specular=0.4,
-            diffuse=0.8,
-            ambient=0.15,
-            show_edges=True,
-            edge_color="#e0e0e0",
-            line_width=0.8,
-        )
-        _add_box(pl, _MUG_HDL, R, t, color)
-
-    C_L = (0.122, 0.467, 0.706)  # blue
-    C_T = (0.173, 0.627, 0.173)  # green
-    C_MUG = (0.839, 0.153, 0.157)  # red
-
-    subjects = (
-        [(l_renderer, p, C_L) for p in l_poses]
-        + [(t_renderer, p, C_T) for p in t_poses]
-        + [(mug_renderer, p, C_MUG) for p in mug_poses]
-    )
-
-    out = "assets/mesh_placements.png"
-    TSRVisualizer(
-        window_size=(1600, 900),
-        camera_az=215.0,
-        camera_el=35.0,
-        camera_dist=1.55,
-        focus=(0.0, 0.0, 0.06),
-        title="Stable placements — L-shape · T-shape · mug",
-        crop_pad=28,
-        parallel_projection=True,
-    ).render_multi(
-        reference_renderer=table_surface_renderer(TX, TY),
-        subjects=subjects,
-        out=out,
-    )
-    print(f"\nSaved {out}")
-
-except ImportError:
-    print("\n(install viz extra for visualization: uv sync --extra viz)")
+# ── Visualization ────────────────────────────────────────────────────────────
+# Rendering lives in the Viser viewer, not in this example:
+#
+#   from tsr.viser import studio; studio().sleep_forever()   # interactive bench
+#   uv run python scripts/render_readme_figures.py           # the README figures
+#
+# Install it with: pip install "sstsr[viz]"   (see docs/VISER.md)

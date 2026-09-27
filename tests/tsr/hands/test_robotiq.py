@@ -43,10 +43,3 @@ class TestRobotiq2F140(unittest.TestCase):
             R = t.Tw_e[:3, :3]
             np.testing.assert_allclose(R @ R.T, np.eye(3), atol=1e-10)
             np.testing.assert_allclose(np.linalg.det(R), 1.0, atol=1e-10)
-
-    def test_renderer_inherited(self):
-        try:
-            r = self.gripper.renderer()
-            self.assertTrue(callable(r))
-        except ImportError:
-            pass

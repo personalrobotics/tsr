@@ -46,13 +46,12 @@ test = [
     "hypothesis>=6.112",
     "build>=1.0.0",
 ]
+# The supported visualization backend. Both names install Viser: `viz` is kept so an
+# existing `sstsr[viz]` install keeps working, and `viser` says what it is.
+# Core sstsr never imports either.
 viz = [
-    "pyvista>=0.43.0",
-    "matplotlib>=3.8.0",
-    "Pillow>=10.3.0",
+    "viser>=0.2.7",
 ]
-# Experimental interactive backend under evaluation in #77. Not a default, not a
-# replacement for [viz]; core sstsr never imports it.
 viser = [
     "viser>=0.2.7",
 ]
@@ -60,6 +59,8 @@ viser = [
 [dependency-groups]
 dev = [
     "ruff>=0.6.0",
+    # Only for scripts/render_readme_figures.py, which composes captured frames.
+    "Pillow>=10.3.0",
 ]
 
 [project.urls]

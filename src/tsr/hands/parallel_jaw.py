@@ -1498,19 +1498,6 @@ class ParallelJawGripper(GripperBase):
             )
         return templates
 
-    def renderer(self):
-        """Return a SubjectRenderer using the parallel jaw wireframe.
-
-        Requires the ``viz`` extra (pyvista). Lazy import so pyvista is not
-        required just for template generation.
-        """
-        from tsr.viz import parallel_jaw_renderer
-
-        return parallel_jaw_renderer(
-            finger_length=self.finger_length,
-            half_aperture=self.max_aperture / 2,
-        )
-
 
 class Robotiq2F140(ParallelJawGripper):
     """Robotiq 2F-140 parallel gripper.

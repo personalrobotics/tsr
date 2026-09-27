@@ -92,12 +92,6 @@ class TestParallelJawGripperCylinderSide(unittest.TestCase):
             Rot = pose[:3, :3]
             np.testing.assert_allclose(Rot @ Rot.T, np.eye(3), atol=1e-8)
 
-    def test_renderer_returns_callable(self):
-        try:
-            self.assertTrue(callable(self.gripper.renderer()))
-        except ImportError:
-            pass
-
 
 class TestParallelJawGripperCylinderTop(unittest.TestCase):
     def setUp(self):

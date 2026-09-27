@@ -493,52 +493,17 @@ server = explore_templates(templates, cylinder=(0.04, 0.12), gripper=gripper)
 `pip install "sstsr[viser]"`, then open <http://localhost:8080>. See
 [VISER.md](VISER.md).
 
-The `tsr.viz` module provides a PyVista-based static renderer. It is **deprecated** and
-will be removed in sstsr 3.0 — see [MIGRATION-VISER.md](MIGRATION-VISER.md) — but it
-remains the only way to produce a PNG with no browser involved, so it is still shown
-here.
+Install it with `pip install "sstsr[viz]"` (or the identical `sstsr[viser]`).
+
+For debugging generation itself — change a primitive's dimensions, the gripper, `k` or
+the clearance and watch the TSRs change, with the reason shown when a request yields
+nothing — use the studio:
 
 ```python
-from tsr.viz import TSRVisualizer, cylinder_renderer, parallel_jaw_renderer, plasma_colors
+from tsr.viser import studio
 
-mug_pose = np.eye(4)
-
-colors = []
-poses  = []
-n_per  = 3
-tsr_colors = plasma_colors(len(templates))
-for i, t in enumerate(templates):
-    tsr = t.instantiate(mug_pose)
-    poses.extend([tsr.sample() for _ in range(n_per)])
-    colors.extend([tsr_colors[i]] * n_per)
-
-TSRVisualizer(
-    title=f"{len(templates)} templates · {len(poses)} sampled gripper poses",
-    focus=(0., 0., 0.06),      # look at the mug's mid-height
-    camera_az=215.,             # azimuth (degrees)
-    camera_el=25.,              # elevation (degrees)
-).render(
-    reference_renderer=cylinder_renderer(radius=0.04, height=0.12),
-    subject_renderer=parallel_jaw_renderer(finger_length=0.055, half_aperture=0.07),
-    poses=poses,
-    colors=colors,
-    out="assets/tsr_grasps.png",
-)
+studio().sleep_forever()
 ```
-
-Requires the deprecated `viz` extra: `uv sync --extra viz`.
-
-**Custom renderers** follow these signatures:
-
-```python
-# reference_renderer: draws the scene object
-def my_object_renderer(pl: pv.Plotter) -> None: ...
-
-# subject_renderer: draws one end-effector at a given pose
-def my_ee_renderer(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple) -> None: ...
-```
-
----
 
 ## Practical Examples
 
@@ -660,7 +625,7 @@ plan = cbirrt.plan(start=q_start, goal=q_goal, constraints=[pour_tsr])
 | **TSRTemplate** | Serializable, reusable constraint bound at runtime |
 | **ParallelJawGripper** | Programmatic grasp templates from object geometry |
 | **StablePlacer** | Programmatic placement templates; one per stable pose |
-| **TSRVisualizer** | 3D visualization with correct occlusion via PyVista |
+| **tsr.viser** | Interactive 3D inspection in a browser (`show_templates`, `explore_templates`, `studio`) |
 
 TSRs are a single abstraction that covers grasping, placement, and trajectory constraints — the difference lies only in what $T_0^w$ refers to and how $B_w$ shapes the valid region.
 
