@@ -21,7 +21,7 @@ class GripperBase(ABC):
     """Abstract base class for gripper hand models.
 
     A hand model generates TSRTemplates from object geometry (grasp_* methods)
-    and optionally provides a renderer for visualization.
+    Visualization lives in :mod:`tsr.viser` and never in a hand.
 
     **Gripper frame convention** (canonical for this library):
 
@@ -859,14 +859,3 @@ class GripperBase(ABC):
         else:
             logger.debug("%s.%s: empty feasible set (%s)", type(self).__name__, method, reason)
         return []
-
-    def renderer(self):
-        """Return a SubjectRenderer for use with TSRVisualizer.
-
-        Returns:
-            Callable ``(pl: pv.Plotter, pose_4x4: np.ndarray, color: tuple) -> None``
-
-        Raises:
-            NotImplementedError: if this hand has no registered renderer.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not implement renderer()")

@@ -14,7 +14,7 @@ manipulation planning. The package is layered:
   :class:`ParallelJawGripper` (and ready-made hands) for grasps, and
   :class:`StablePlacer` for placements.
 * **services** — :mod:`tsr.io` (persistence), sampling helpers, and the
-  optional :mod:`tsr.viz` renderer (install with the ``viz`` extra).
+  optional :mod:`tsr.viser` viewer (install with the ``viz`` or ``viser`` extra).
 
 The spine: a factory produces recipes; a recipe instantiates to math::
 

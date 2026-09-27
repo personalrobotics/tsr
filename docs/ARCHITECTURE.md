@@ -8,7 +8,7 @@ boundary is enforced by `tests/tsr/test_architecture.py`.
 | **0 — core** | `tsr.core` (`TSR`, `TSRChain`, math helpers) | The pure-math heart: SE(3) geometry, bounds, sampling, distance, serialisation. Robot-agnostic. | NumPy (+ SciPy for the optimiser paths) |
 | **1 — recipe** | `tsr.template` (`TSRTemplate`) | A reusable, serialisable, scene-agnostic recipe that instantiates to a concrete `TSR` at a reference pose. | Layer 0 |
 | **2 — factories** | `tsr.hands` (`ParallelJawGripper`, …), `tsr.placement` (`StablePlacer`) | Domain knowledge that *produces* recipes from a described object. | Layers 0–1 |
-| **3 — services** | `tsr.io`, `tsr.sampling`, `tsr.viz` (optional `viz` extra) | Persist, select among, and render recipes/TSRs. | Layers 0–2 |
+| **3 — services** | `tsr.io`, `tsr.sampling`, `tsr.viser` (optional `viz`/`viser` extra) | Persist, select among, and inspect recipes/TSRs. | Layers 0–2 |
 
 ## The spine
 

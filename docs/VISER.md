@@ -1,13 +1,16 @@
-# Interactive viewer (Viser) — the recommended backend
+# Interactive viewer (Viser)
 
-`tsr.viser` is the **recommended** way to inspect grasp templates (adopted in #77,
-promoted in #139). It stays **optional**: it is not in `[project.dependencies]`, and
-`pip install sstsr` still brings no visualization dependency.
+`tsr.viser` is how you inspect grasp templates (adopted in #77, promoted in #139, sole
+backend since 3.0). It stays **optional**: it is not in `[project.dependencies]`, and
+`pip install sstsr` brings no visualization dependency.
 
-The PyVista backend (`tsr.viz`) is **deprecated** and will be removed in sstsr 3.0. It
-keeps working throughout 2.x and the `[viz]` extra is unchanged; see
-[MIGRATION-VISER.md](MIGRATION-VISER.md), which states the replacement for each public
-PyVista workflow.
+```bash
+pip install "sstsr[viz]"      # or the identical "sstsr[viser]"
+```
+
+The PyVista renderer it replaced was removed in 3.0 (#140);
+[MIGRATION-VISER.md](MIGRATION-VISER.md) maps each of its public workflows to the
+replacement here.
 
 Visualization is explanatory and diagnostic. Nothing rendered here is evidence that a
 template is correct — that is the analytic oracle's job (see ARCHITECTURE.md).
@@ -195,7 +198,7 @@ With no client connected there is nothing to render from: `get_render` lives on
 1.1.1 exposes no offscreen or screenshot API, and the scene serializer produces a
 `.viser` file or a standalone interactive HTML page rather than an image.
 
-Browser-free PNG generation therefore ends with PyVista in 3.0. The images in this
+Browser-free PNG generation ended with PyVista in 3.0. The images in this
 repository are regenerated from the viewer:
 
 ```bash
@@ -215,8 +218,8 @@ is several objects sharing one table.
 
 ## Constraints this respects
 
-- Viser is not in `[project.dependencies]`; it lives in the `viser` extra, and the
-  `viz` extra still installs PyVista unchanged through 2.x.
+- Viser is not in `[project.dependencies]`; it lives in the `viz` and `viser` extras,
+  which are the same set.
 - `import tsr` imports neither Viser nor this module, and never starts a server
   (enforced in `tests/tsr/test_architecture.py`).
 - The default test suite does not require the extra: the backend's tests skip when it
