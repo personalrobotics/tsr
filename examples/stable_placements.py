@@ -31,7 +31,7 @@ tsr = t.instantiate(table_pose)
 pose = tsr.sample()
 print(f"Cylinder ({len(templates)} template)")
 print(f"  variant  : {t.variant}")
-print(f"  COM z    : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.06:.3f} m)\n")
+print(f"  origin z : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.06:.3f} m)\n")
 
 
 # ── Box (cereal box, three distinct dimensions) ──────────────────────────────
@@ -39,7 +39,7 @@ templates = placer.place_box(lx=0.20, ly=0.08, lz=0.28, subject="box")
 print(f"Box ({len(templates)} templates, one per stable face)")
 for t in templates:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m")
 print()
 
 
@@ -57,7 +57,7 @@ t = templates[0]
 pose = t.sample(table_pose)
 print(f"Torus ({len(templates)} template)")
 print(f"  variant  : {t.variant}")
-print(f"  COM z    : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.012:.3f} m)\n")
+print(f"  origin z : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.012:.3f} m)\n")
 
 
 # ── Mesh (cube approximated as 8 vertices) ───────────────────────────────────
@@ -79,7 +79,7 @@ templates = placer.place_mesh(cube_verts, cube_com, subject="cube")
 print(f"Mesh/cube ({len(templates)} stable faces, sorted by stability margin)")
 for t in templates:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 
 
 # ── Visualization ────────────────────────────────────────────────────────────

@@ -240,6 +240,89 @@ from the numbers alone. `g = ParallelJawGripper(finger_length=L, max_aperture=A)
   on `A=0.14` → `[]`, because `2(R+r)+c = 0.16+ > A` (outer diameter exceeds the
   jaw). Torus coverage semantics (`n_minor`, inner/outer half) are refined in `#71`.
 
+## Geometric placement contract (stable placements on a flat surface)
+
+The counterpart of the grasp contract for `StablePlacer`. It governs what a returned
+*placement* template geometrically means, and it is the specification the independent
+placement oracle (`tests/tsr/placement/_placement_oracle.py`) and the placement matrix
+(`_placement_matrix.py`) test against (issue `#148`).
+
+### Frames and what a pose places
+
+- The **surface frame** has `z` up and its origin at the centre of the surface, so the
+  surface is the plane `z = 0` and spans `±table_x`, `±table_y`.
+- The **object frame** is the caller's own. A returned pose places *its origin*: the
+  geometric centre for the primitives, and an arbitrary point for `place_mesh`, which
+  takes the centre of mass separately and does not assume the two coincide. Poses are
+  not centre-of-mass poses; `#148` records the documentation that once said they were.
+- `table_x` / `table_y` bound the **object**, not just its origin.
+
+### Soundness clauses
+
+For an object `O`, its centre of mass `com`, and **every** pose admitted by a returned
+template — not merely the midpoint of `Bw`:
+
+1. **Resting** — `O` touches the surface and does not penetrate it: the lowest point of
+   the posed body is `z = 0` within `atol`.
+2. **Supported** — `com` projects inside the convex hull of the contact patch (the
+   points of `O` at the lowest `z`). A sphere's point contact lies directly under its
+   centre and is the neutral boundary case.
+3. **On the surface** — the whole of `O` lies within the surface footprint, at every
+   yaw the region admits.
+4. **Described** — a reported `stability_margin` is the physical tipping angle: the
+   angle through which `O` must rotate about the nearest support-polygon edge before
+   `com` passes over it. It is a property of the object and the pose, so it is
+   invariant under rigid motion of the object and under a change of the object frame,
+   and scale-free.
+
+This describes a *statically stable* resting pose. It is **not** a claim about
+dynamics, friction, or that the object will survive being let go from above it.
+
+### Construction rules that make the clauses structural
+
+- **The resting height lives in `T_ref_tsr`, and `Tw_e` is a pure rotation** (`#149`).
+  A pose is `T_ref_tsr · xyzrpy_to_trans(ξ) · Tw_e`, so a height carried by `Tw_e` is
+  rotated by `ξ`'s roll and pitch: freeing either sank the object (the sphere's centre
+  followed `r·cos(roll)·cos(pitch)`, so every admitted pose but a measure-zero set was
+  below the surface). With the height ahead of `ξ`, the resting height is invariant
+  under every rotation `Bw` admits, and a primitive that frees roll or pitch — a tilt
+  tolerance, a sphere, a cone on its side — cannot silently violate clause 1.
+- **The `xy` bounds are inset by the object's footprint radius** (`#150`): the largest
+  horizontal distance from the object-frame origin to any point of the resting object.
+  Yaw is free, so that footprint sweeps a *disc*; the inset is the circumscribed
+  radius, not an axis-aligned half-extent. For a box this is the half-diagonal of the
+  resting face — with a per-axis inset a `0.20 × 0.08 m` box still overhung by 0.112 m
+  at `yaw = 0.464`. Equality is feasible and leaves an exact zero-width interval, as
+  elsewhere in the library.
+- **An object that cannot fit is an empty feasible set**, not an unusable region: the
+  factory returns `[]` and logs `exceeds_surface` once at its boundary, per the factory
+  contract above. `place_mesh` also reports `no_stable_face` and `below_min_margin`.
+- **A `variant` that names a face is a claim about that face**: for the named face's
+  outward object-frame normal `n`, every admitted pose satisfies `R(ξ) · n = −z`.
+  Opposite faces are emitted separately (the box's six, the cylinder's two caps, the
+  torus's two sides) because which face is down is caller-visible and semantically
+  distinct for a labelled object — a mug's opening, a cereal box's front — even where
+  the bare solid is invariant under the flip that separates them (`#155`).
+- Length tolerance is the same scale-aware `atol = 1e-9 + 1e-6 · scale` as the grasp
+  contract, defined once in `tsr.core.utils.length_atol`.
+
+### Assurance
+
+Two layers, as on the grasp side. `_placement_oracle.py` certifies a *concrete* posed
+object using only support functions of the geometry the caller supplied — the lowest
+point is `t_z − h(−z)`, the reach in a horizontal direction is `t·d + h(d)` — so it
+never reuses a construction formula and a template cannot certify itself.
+`test_placement_soundness.py` drives every public `place_*` factory through it at the
+`Bw` midpoint, every free dimension's extrema, all corners and interior points, under
+an arbitrary surface pose, and a guard test fails if a new factory is added without
+joining the matrix.
+
+**Open deviations.** Clause 4 is not yet met: `stability_margin` is measured in a
+squashed projection and is under-reported by up to 40% and not frame-invariant
+(`#151`). `place_mesh` results also depend on tessellation (`#152`), containment
+tolerance is unit-dependent below ~1e-5 m (`#153`), and the primitives report no margin
+at all (`#156`). Each is tracked under `#148`.
+
 ## Verification matrix and release gate (#73)
 
 The per-primitive soundness suites (`test_reach_soundness.py`, `test_box_soundness.py`,

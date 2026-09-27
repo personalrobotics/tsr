@@ -73,7 +73,7 @@ l_tmpls = placer.place_mesh(l_verts, l_com, subject="L-shape")
 print(f"L-shape  → {len(l_tmpls)} stable pose(s)  (COM in natural frame: {l_com.round(3)})")
 for t in l_tmpls:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 print()
 
 
@@ -118,7 +118,7 @@ t_tmpls = placer.place_mesh(t_verts, t_com, subject="T-shape")
 print(f"T-shape  → {len(t_tmpls)} stable pose(s)  (COM in natural frame: {t_com.round(3)})")
 for t in t_tmpls:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 print()
 
 
@@ -164,7 +164,7 @@ mug_tmpls = placer.place_mesh(mug_verts, mug_com, subject="mug")
 print(f"Mug      → {len(mug_tmpls)} stable pose(s)  (COM in natural frame: {mug_com.round(4)})")
 for t in mug_tmpls:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 mug_tmpls_viz = placer.place_mesh(mug_verts, mug_com, subject="mug", min_margin_deg=_MIN_MARGIN_DEG)
 print(f"         → {len(mug_tmpls_viz)} pose(s) with margin ≥ {_MIN_MARGIN_DEG}° shown in visualisation")
 

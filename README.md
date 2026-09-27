@@ -147,7 +147,7 @@ placer = StablePlacer(table_x=0.60, table_y=0.40)
 
 # Analytic primitives
 templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, subject="mug")
-templates = placer.place_box(lx=0.08, ly=0.06, lz=0.18, subject="box")   # up to 3 poses
+templates = placer.place_box(lx=0.08, ly=0.06, lz=0.18, subject="box")   # one per face: 6
 templates = placer.place_sphere(radius=0.040, subject="ball")
 templates = placer.place_torus(major_radius=0.035, minor_radius=0.015, subject="ring")
 
@@ -163,7 +163,7 @@ table_pose[2, 3] = 0.75   # table surface at z = 0.75 m
 
 for t in templates:
     pose = t.sample(table_pose)
-    print(t, "→ COM z =", pose[2, 3])
+    print(t, "→ origin z =", pose[2, 3])
 ```
 
 Stability is determined by the COM-projection criterion: a face is stable if the

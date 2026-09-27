@@ -4,6 +4,52 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Freeing roll or pitch no longer sinks the object** (#149). `StablePlacer` carried
+  the resting height in `Tw_e`'s translation, which a pose's own roll and pitch rotate:
+  `place_sphere` — the one factory that frees them, and advertises it — put the sphere's
+  centre at `r·cos(roll)·cos(pitch)`, so every admitted pose but a measure-zero set
+  penetrated the surface, at `roll = π` entirely below it. The height now lives in
+  `T_ref_tsr`, ahead of the region's rotation, and `Tw_e` is a pure rotation, so the
+  resting height is invariant under every rotation `Bw` admits. Poses are unchanged for
+  the templates that fix roll and pitch.
+- **Placement regions no longer admit poses hanging off the surface** (#150). The `xy`
+  bounds slid the object's *origin* over the full surface extent, so at the region's
+  edge half a box hung off, and 61% of uniformly sampled placements overhung. Bounds
+  are now inset by the object's footprint radius — the circumscribed radius, because
+  yaw is free, so a per-axis inset would still overhang by the half-diagonal. An object
+  too large for the surface now returns `[]` and logs `exceeds_surface`, per the
+  factory contract, instead of a region no pose of which is valid.
+- **Non-finite placement input is rejected at ingress** (#154). `nan` and `inf`
+  dimensions passed `x <= 0` and produced entirely finite templates, leaving no trace
+  of the invalid request; `place_mesh` reported a non-finite vertex as a degenerate
+  hull, and `min_margin_deg=nan` as an empty feasible set. Dimensions, surface extents,
+  `vertices`, `com` and `min_margin_deg` now raise `ValueError` naming the argument.
+
+### Added
+- **An independent placement oracle and soundness matrix** (#148). The placement
+  counterpart of the #67/#73 grasp work: `tests/tsr/placement/_placement_oracle.py`
+  certifies a concrete posed object from support functions of the caller's own
+  geometry, never from a construction formula, and `test_placement_soundness.py` drives
+  every public `place_*` factory through it at the `Bw` midpoint, every free
+  dimension's extrema, all corners and interior points, under an arbitrary surface
+  pose. A guard test fails if a new factory skips the matrix.
+- **The geometric placement contract** in `docs/ARCHITECTURE.md`: frames, what a pose
+  places, surface-extent semantics, four soundness clauses, the construction rules that
+  make them structural, and the open deviations still tracked under #148.
+
+### Changed
+- `place_torus`'s docstring said it returned one template while it returned two
+  (#155). Both sides are returned, as for the box's faces and the cylinder's caps,
+  because which side is down is caller-visible in `variant` and distinct for a labelled
+  object; the documented count now matches, and the rule is stated once in the contract.
+- Placement documentation called a placed pose a "COM z" throughout, a leftover from
+  the C2 fix that was off by half an object for a mesh whose origin is not its centre.
+  It is the object frame origin. `README.md` also claimed `place_box` returns "up to 3
+  poses"; it returns six.
+
 ## [3.0.0] — 2026-09
 
 **Breaking.** The PyVista backend is removed. `sstsr[viz]` now installs Viser, so an

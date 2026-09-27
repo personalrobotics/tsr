@@ -409,7 +409,7 @@ grasp_poses = [t.sample(mug_pose) for t in templates]
 
 ## Generating Placement Templates
 
-`StablePlacer` generates one `TSRTemplate` per stable resting pose for objects placed on a flat surface. It uses the same TSR math as grasp templates — `Tw_e` encodes the stable orientation and COM height, `Bw` covers the table's xy footprint.
+`StablePlacer` generates one `TSRTemplate` per stable resting pose for objects placed on a flat surface. It uses the same TSR math as grasp templates — `Tw_e` encodes the stable orientation, `T_ref_tsr` the height at which the object frame origin rests, and `Bw` slides the object over the surface within its own footprint.
 
 ```python
 from tsr.placement import StablePlacer
@@ -436,10 +436,18 @@ templates = placer.place_torus(major_radius=0.035, minor_radius=0.015, subject="
 ```
 
 Bw structure for all placement templates:
-- `[±table_x, ±table_y]` — object slides anywhere on the table
-- `z = [0, 0]` — exactly on the surface
-- `roll = pitch = [0, 0]` — fixed by the stable orientation (Tw_e)
+- `[±(table_x − footprint), ±(table_y − footprint)]` — the object slides anywhere it
+  stays fully on the table. Yaw is free, so the inset is the object's *circumscribed*
+  footprint radius (the half-diagonal of a box's resting face), not its half-extent.
+- `z = [0, 0]` — exactly on the surface. The resting height itself lives in
+  `T_ref_tsr`, where no rotation `Bw` admits can move it.
+- `roll = pitch = [0, 0]` — fixed by the stable orientation (`Tw_e`), except for the
+  sphere, which frees both because every orientation rests identically.
 - `yaw = [-π, π]` — free rotation about the vertical axis
+
+An object too large for the table is a valid request with no feasible pose, so the
+factory returns `[]` and logs `exceeds_surface` at `DEBUG` — the same contract the
+grasp factories follow. Non-finite or non-positive dimensions raise `ValueError`.
 
 ### Arbitrary Mesh
 
@@ -469,7 +477,7 @@ table_pose[2, 3] = 0.75   # table surface at z = 0.75 m
 
 for t in templates:
     pose = t.sample(table_pose)
-    print(t, "→ COM z =", round(pose[2, 3], 4))
+    print(t, "→ origin z =", round(pose[2, 3], 4))
     # TSRTemplate(task='place', subject='widget', variant='face-1', margin=31.9°)
 ```
 
@@ -532,7 +540,7 @@ templates = placer.place_cylinder(cylinder_radius=0.040, cylinder_height=0.120, 
 table_pose = perception.get_table_pose()
 for t in templates:
     pose = t.sample(table_pose)
-    print(t, "→ COM z =", round(pose[2, 3], 4))
+    print(t, "→ origin z =", round(pose[2, 3], 4))
 ```
 
 ### Example 3: Stable Placements for Arbitrary Shape (Mesh)
