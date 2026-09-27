@@ -7,6 +7,17 @@ from numpy import pi
 EPSILON = 0.001
 
 
+def length_atol(scale: float) -> float:
+    """Scale-aware length tolerance from the geometric contract (docs/ARCHITECTURE.md).
+
+    ``atol = 1e-9 + 1e-6 · scale``, where ``scale`` is the object's characteristic
+    dimension. This is the canonical definition: grasp feasibility, placement
+    containment and the analytic oracles all measure lengths against it, so a
+    millimetre-scale object and a metre-scale one get the same relative slack.
+    """
+    return 1e-9 + 1e-6 * float(scale)
+
+
 def wrap_to_interval(angles: np.ndarray, lower: np.ndarray = None) -> np.ndarray:
     """
     Wrap a vector of angles to a continuous interval starting at `lower`.
