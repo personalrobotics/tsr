@@ -28,10 +28,11 @@ Usage::
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from .hands import ParallelJawGripper
 from .template import TSRTemplate
 
 try:
@@ -50,6 +51,9 @@ __all__ = [
     "gripper_segments",
     "add_primitive",
     "torus_mesh",
+    "studio",
+    "filter_templates",
+    "mode_of",
 ]
 
 # Bw row order, with the unit each coordinate is measured in.
@@ -195,6 +199,11 @@ def sample_poses(
 def gripper_segments(finger_length: float, aperture: float) -> np.ndarray:
     """Line segments of an idealized parallel jaw, in the end-effector frame.
 
+    ``aperture`` is the **commanded preshape** of the template being drawn -- ``span +
+    clearance`` -- not the gripper's ``max_aperture`` and not the closed width. The
+    drawn opening therefore differs per template: a torus side grasp closes on the tube
+    (a narrow jaw) while a torus span grasp swallows the whole ring (a wide one).
+
     The library convention (docs/ARCHITECTURE.md): ``z_EE`` approaches the object,
     ``y_EE`` is the finger-opening direction, ``x_EE = y_EE × z_EE``. Returns an
     ``(S, 2, 3)`` array of segment endpoints: the palm crossbar, the two fingers, and
@@ -310,6 +319,8 @@ def explore_templates(
         if jaw is not None:
             jaw.position, jaw.wxyz = pose[:3, 3], _wxyz(pose[:3, :3])
         free = ", ".join(f"{lab.split(' ')[0]}={xi[row]:+.3f}" for row, lab, _, _ in free_coordinates(template))
+        if template.preshape is None:
+            free = (free or "(no continuous freedom)") + "  |  no preshape: jaws not drawn"
         readout.value = free or "(no continuous freedom)"
 
     def _rebuild(_=None) -> None:
@@ -324,10 +335,11 @@ def explore_templates(
                 slider = gui.add_slider(label, min=lo, max=hi, step=(hi - lo) / 200.0, initial_value=(lo + hi) / 2.0)
                 slider.on_update(_apply)
                 sliders.append(slider)
-        if gripper is not None:
-            aperture = float(template.preshape[0]) if template.preshape is not None else gripper.max_aperture
-            if jaw is not None:
-                jaw.remove()
+        if jaw is not None:
+            jaw.remove()
+            jaw = None
+        if gripper is not None and template.preshape is not None:
+            aperture = float(template.preshape[0])
             jaw = scene.add_line_segments(
                 f"/{name}/jaw",
                 points=gripper_segments(gripper.finger_length, aperture),
@@ -445,12 +457,19 @@ def _draw_pose_cloud(
     if gripper is not None:
         points, colors = [], []
         for template, group in zip(templates, per_template):
-            aperture = float(template.preshape[0]) if template.preshape is not None else gripper.max_aperture
-            segments = gripper_segments(gripper.finger_length, aperture)
+            # Draw the jaws only at a width the TEMPLATE claims. Falling back to the
+            # gripper's max_aperture would invent a number the template never stated and
+            # show a far coarser grasp than intended, which in a debugging tool is worse
+            # than showing nothing: the axes still mark the pose.
+            if template.preshape is None:
+                continue
+            segments = gripper_segments(gripper.finger_length, float(template.preshape[0]))
             points.append(_posed_segments(segments, group))
             color = _depth_color(template.provenance.depth_index, template.provenance.depth_count)
             colors.append(np.broadcast_to(color, (len(group) * len(segments), 2, 3)))
         # World-space thickness keeps the jaws readable as solid geometry, not hairlines.
+        if not points:
+            return handles
         handles.append(
             scene.add_line_segments(
                 f"/{name}/jaws",
@@ -461,3 +480,260 @@ def _draw_pose_cloud(
             )
         )
     return handles
+
+
+# --------------------------------------------------------------------------- #
+# Interactive studio: pick a primitive, change its parameters, regenerate TSRs
+# --------------------------------------------------------------------------- #
+
+# Each primitive's factory arguments, as (name, min, max, initial) slider specs, and
+# the factories that accept them. The sliders are derived from this table rather than
+# hand-written per primitive, so adding a factory argument is a one-line change.
+PRIMITIVE_SPECS: Dict[str, Dict[str, Any]] = {
+    "cylinder": {
+        "dims": (("cylinder_radius", 0.005, 0.12, 0.03), ("cylinder_height", 0.01, 0.40, 0.12)),
+        "factories": ("grasp_cylinder", "grasp_cylinder_side", "grasp_cylinder_top", "grasp_cylinder_bottom"),
+    },
+    "box": {
+        "dims": (("box_x", 0.005, 0.30, 0.06), ("box_y", 0.005, 0.30, 0.05), ("box_z", 0.005, 0.30, 0.10)),
+        "factories": ("grasp_box", "grasp_box_top", "grasp_box_bottom", "grasp_box_face_x", "grasp_box_face_y"),
+    },
+    "sphere": {"dims": (("object_radius", 0.005, 0.12, 0.04),), "factories": ("grasp_sphere",)},
+    "torus": {
+        "dims": (("torus_radius", 0.01, 0.20, 0.05), ("tube_radius", 0.003, 0.05, 0.015)),
+        "factories": ("grasp_torus", "grasp_torus_side", "grasp_torus_span"),
+    },
+}
+
+
+def mode_of(provenance) -> str:
+    """The ``mode/approach/finger_orientation`` label a template belongs to.
+
+    Deliberately **coarser** than the *depth family* of ``docs/ARCHITECTURE.md``, which
+    also fixes ``symmetry`` and ``metadata``: a cylinder side grasp has two roll
+    variants in one mode, and a torus side grasp has ten depth families (two hand flips
+    x five minor angles) behind a single mode label. Coarse is the useful granularity
+    for a viewer control -- one rarely wants to choose between ``roll0`` and ``rollpi``
+    -- but it is not the partition ``depth_index``/``depth_count`` are defined over, so
+    it does not reuse the word *family*.
+    """
+    return f"{provenance.mode}/{provenance.approach}/{provenance.finger_orientation}"
+
+
+def filter_templates(templates: Sequence[TSRTemplate], *, depth_index=None, mode=None) -> List[TSRTemplate]:
+    """Templates narrowed to one depth level and/or one :func:`mode_of` label.
+
+    Isolating a single depth is the usual debugging move: the cloud colours depths, but
+    overlapping modes still pile up, and "what does depth 2 alone look like" is the
+    question when a band looks wrong.
+
+    ``depth_index`` is per depth family, so selecting an index keeps that level of every
+    family rather than one distance: a cap grasp's first depth is not a side grasp's.
+    """
+    shown = list(templates)
+    if depth_index is not None:
+        shown = [t for t in shown if t.provenance.depth_index == depth_index]
+    if mode is not None:
+        shown = [t for t in shown if mode_of(t.provenance) == mode]
+    return shown
+
+
+class _ReasonLog(__import__("logging").Handler):
+    """Collects the factories' ``empty feasible set`` diagnostics while generating.
+
+    A grasp factory returns ``[]`` for a *valid but infeasible* request and logs why at
+    debug level. That reason is the single most useful thing when a request produces
+    nothing, so the studio surfaces it instead of leaving an empty scene unexplained.
+    """
+
+    def __init__(self):
+        super().__init__(level=10)
+        self.messages: List[str] = []
+
+    def emit(self, record) -> None:
+        self.messages.append(record.getMessage())
+
+
+def _generate(gripper, factory: str, kwargs: Dict[str, Any]):
+    """Call a factory, returning ``(templates, diagnostics)``."""
+    import logging
+
+    logger = logging.getLogger("tsr.hands")
+    collector = _ReasonLog()
+    previous = logger.level
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(collector)
+    try:
+        templates = getattr(gripper, factory)(**kwargs)
+    except ValueError as e:
+        # An exception means the REQUEST was invalid, which is a different failure from
+        # an empty feasible set; the studio has to show them differently.
+        return [], [f"invalid request: {e}"]
+    finally:
+        logger.removeHandler(collector)
+        logger.setLevel(previous)
+    return templates, collector.messages
+
+
+def studio(
+    *,
+    server: Optional["_viser.ViserServer"] = None,
+    port: int = 8080,
+    finger_length: float = 0.08,
+    max_aperture: float = 0.14,
+    name: str = "studio",
+) -> "_viser.ViserServer":
+    """An interactive bench for grasp generation: change inputs, watch the TSRs change.
+
+    Pick a primitive, drag its dimensions and the gripper's, choose a factory, and the
+    templates are regenerated and redrawn on every change. When a request yields
+    nothing, the factories' own diagnostic is shown -- ``cannot_straddle``,
+    ``finger_too_short``, ``insufficient_clearance_band`` -- so an empty scene explains
+    itself rather than leaving you guessing.
+
+    This is a debugging tool, not evidence: what it draws is the generator's claim, and
+    correctness is the analytic oracle's business (docs/ARCHITECTURE.md).
+    """
+    server = _viser.ViserServer(port=port) if server is None else server
+    scene, gui = server.scene, server.gui
+    state: Dict[str, Any] = {"nodes": [], "dim_sliders": [], "dim_folder": None}
+
+    with gui.add_folder("Object"):
+        primitive = gui.add_dropdown("Primitive", tuple(PRIMITIVE_SPECS), initial_value="cylinder")
+
+    with gui.add_folder("Gripper"):
+        finger = gui.add_slider("finger_length [m]", min=0.01, max=0.30, step=0.001, initial_value=finger_length)
+        aperture = gui.add_slider("max_aperture [m]", min=0.01, max=0.40, step=0.001, initial_value=max_aperture)
+
+    with gui.add_folder("Grasps"):
+        factory = gui.add_dropdown("Factory", PRIMITIVE_SPECS["cylinder"]["factories"], initial_value="grasp_cylinder")
+        k = gui.add_slider("k (depths)", min=1, max=8, step=1, initial_value=3)
+        auto_clearance = gui.add_checkbox("clearance: default", True)
+        clearance = gui.add_slider("clearance [m]", min=0.0, max=0.05, step=0.0005, initial_value=0.006)
+        n_minor = gui.add_slider("n_minor (torus)", min=1, max=9, step=1, initial_value=5)
+        samples = gui.add_slider("samples per template", min=1, max=8, step=1, initial_value=2)
+        seed = gui.add_number("seed", initial_value=0, step=1)
+
+    with gui.add_folder("Show"):
+        # Depth and family isolation: the cloud colours depths, but overlapping families
+        # still pile up, and "what does depth 2 alone look like" is the question that
+        # comes up when a band looks wrong. Options are rebuilt from whatever the
+        # current request actually produced, so they never offer an empty selection.
+        depth_filter = gui.add_dropdown("Depth", ("all",), initial_value="all")
+        mode_filter = gui.add_dropdown("Mode", ("all",), initial_value="all")
+
+    status = gui.add_markdown("")
+
+    def _kwargs() -> Dict[str, Any]:
+        spec = PRIMITIVE_SPECS[primitive.value]
+        kwargs: Dict[str, Any] = {
+            arg: slider.value for arg, slider in zip([d[0] for d in spec["dims"]], state["dim_sliders"])
+        }
+        kwargs["k"] = int(k.value)
+        if not auto_clearance.value:
+            kwargs["clearance"] = float(clearance.value)
+        if factory.value in ("grasp_torus", "grasp_torus_side"):
+            kwargs["n_minor"] = int(n_minor.value)
+        return kwargs
+
+    def _sync_filters(templates) -> None:
+        """Offer only the depths and families this request produced."""
+        depths = sorted({t.provenance.depth_index for t in templates})
+        depth_options = ("all",) + tuple(f"depth {i}" for i in depths)
+        mode_options = ("all",) + tuple(sorted({mode_of(t.provenance) for t in templates}))
+        state["syncing"] = True  # assigning options fires on_update; do not recurse
+        try:
+            if tuple(depth_filter.options) != depth_options:
+                depth_filter.options = depth_options
+                depth_filter.value = "all" if depth_filter.value not in depth_options else depth_filter.value
+            if tuple(mode_filter.options) != mode_options:
+                mode_filter.options = mode_options
+                mode_filter.value = "all" if mode_filter.value not in mode_options else mode_filter.value
+        finally:
+            state["syncing"] = False
+
+    def _selected(templates):
+        return filter_templates(
+            templates,
+            depth_index=None if depth_filter.value == "all" else int(depth_filter.value.split()[-1]),
+            mode=None if mode_filter.value == "all" else mode_filter.value,
+        )
+
+    def _refresh(_=None) -> None:
+        if state.get("syncing"):
+            return
+        for node in state["nodes"]:
+            node.remove()
+        state["nodes"] = []
+
+        gripper = ParallelJawGripper(finger_length=float(finger.value), max_aperture=float(aperture.value))
+        kind, kwargs = primitive.value, _kwargs()
+        templates, diagnostics = _generate(gripper, factory.value, kwargs)
+        _sync_filters(templates)
+        shown = _selected(templates)
+
+        dims = [kwargs[arg] for arg, *_ in PRIMITIVE_SPECS[kind]["dims"]]
+        state["nodes"].append(add_primitive(scene, f"/{name}/object", kind, dims, color=(170, 170, 178), opacity=0.7))
+        state["nodes"].extend(
+            _draw_pose_cloud(
+                scene,
+                shown,
+                f"{name}/grasps",
+                gripper=gripper,
+                n_per_template=int(samples.value),
+                seed=int(seed.value),
+                rng=None,
+                axes_length=max(0.2 * min(dims), 0.004),
+            )
+        )
+
+        modes = {mode_of(t.provenance) for t in templates}
+        header = f"**{len(templates)} templates** in {len(modes)} mode{'' if len(modes) == 1 else 's'}"
+        if len(shown) != len(templates):
+            header += f" — showing **{len(shown)}**"
+        lines = [header]
+        for mode in sorted(modes):
+            members = [t for t in templates if mode_of(t.provenance) == mode]
+            depths = ", ".join(
+                f"{t.provenance.depth * 1000:.0f}" for t in sorted(members, key=lambda t: t.provenance.depth_index)
+            )
+            lines.append(f"- `{mode}` x{len(members)} at {depths} mm")
+        for message in diagnostics:
+            lines.append(f"- {message.split(': ', 1)[-1]}")
+        if not templates and not diagnostics:
+            lines.append("- no templates and no diagnostic: the family is empty for these dimensions")
+        status.content = "\n".join(lines)
+
+    def _rebuild_dims(_=None) -> None:
+        spec = PRIMITIVE_SPECS[primitive.value]
+        if state["dim_folder"] is not None:
+            state["dim_folder"].remove()
+        state["dim_sliders"] = []
+        folder = gui.add_folder("Dimensions")
+        with folder:
+            for arg, lo, hi, initial in spec["dims"]:
+                slider = gui.add_slider(f"{arg} [m]", min=lo, max=hi, step=(hi - lo) / 400.0, initial_value=initial)
+                slider.on_update(_refresh)
+                state["dim_sliders"].append(slider)
+        state["dim_folder"] = folder
+        factory.options = spec["factories"]
+        factory.value = spec["factories"][0]
+        _refresh()
+
+    primitive.on_update(_rebuild_dims)
+    for control in (
+        factory,
+        k,
+        auto_clearance,
+        clearance,
+        n_minor,
+        samples,
+        seed,
+        finger,
+        aperture,
+        depth_filter,
+        mode_filter,
+    ):
+        control.on_update(_refresh)
+    _rebuild_dims()
+    return server

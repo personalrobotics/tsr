@@ -278,6 +278,15 @@ server = show_templates(templates, cylinder=(0.03, 0.12), gripper=gripper, seed=
 server = explore_templates(templates, cylinder=(0.03, 0.12), gripper=gripper)
 ```
 
+For debugging generation itself — change a primitive's dimensions, the gripper, `k` or
+the clearance and watch the TSRs change, with the reason shown when a request yields
+nothing — use the studio:
+
+```python
+from tsr.viser import studio
+studio().sleep_forever()
+```
+
 Open <http://localhost:8080>. `show_templates` draws a reproducibly sampled cloud;
 `explore_templates` gives a slider per free `Bw` coordinate so one grasp can be scrubbed
 through the region. Over SSH, forward the port: `ssh -L 8080:localhost:8080 user@host`.

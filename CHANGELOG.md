@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`tsr.viser.studio()`** — an interactive bench for debugging grasp generation.
+  Choose a primitive, drag its dimensions and the gripper's, pick a factory and change
+  `k`, clearance or `n_minor`; the templates regenerate and redraw on every change.
+  When a request yields nothing the factory's own diagnostic is surfaced
+  (`exceeds_aperture`, `finger_too_short`, `insufficient_clearance_band`), and an
+  invalid request is reported as invalid rather than as an empty feasible set — the
+  two failures the factory contract deliberately separates. Sliders and the factory
+  list are derived from `PRIMITIVE_SPECS`, so they cannot drift from the real
+  signatures. A `Show` folder isolates one depth level or one **mode**
+  (`filter_templates` / `mode_of`, available without the GUI); the options are rebuilt
+  from whatever the request produced. A *mode* is `mode/approach/finger_orientation`,
+  deliberately coarser than the *depth family* of `docs/ARCHITECTURE.md` (which also
+  fixes `symmetry` and `metadata`): a torus side grasp is one mode covering ten depth
+  families. The viewer wants the coarse grouping, so it does not reuse the word
+  *family* for it.
+- The viewer draws jaws at the **template's own preshape** (`span + clearance`), so the
+  opening differs per template — a torus side grasp closes on the tube, a torus span
+  grasp swallows the ring. A template carrying no preshape is drawn as axes only rather
+  than substituting the gripper's `max_aperture`, which would show a far coarser grasp
+  than the template claims.
+
 ### Fixed
 - **The release build pins the version with the generic setuptools-scm variable.**
   `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SSTSR` is silently ignored — hatch-vcs does not
