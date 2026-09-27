@@ -4,9 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.0] — 2026-09
 
-**Breaking: this is 3.0.** The PyVista backend is gone.
+**Breaking.** The PyVista backend is removed. `sstsr[viz]` now installs Viser, so an
+existing install keeps working and gets the supported backend; code importing
+`tsr.viz` must move to `tsr.viser` — see `docs/MIGRATION-VISER.md`, which maps every
+removed workflow. Pin `sstsr<3` if you need browser-free PNG rendering, which has no
+replacement.
+
+Visualization is now one thing: an interactive viewer you interrogate, rather than a
+picture of samples. `studio()` closes the loop for development — change a primitive,
+the gripper or the clearance and watch the TSRs change, with the factory's own reason
+shown when a request yields nothing.
+
+Nothing about grasp geometry changed in this release: the 2.2.0 correctness work and
+its oracle-backed matrix are untouched, and `pip install sstsr` remains
+visualization-free.
 
 ### Removed
 - **The PyVista backend** (#140), after shipping deprecated in 2.3: `tsr.viz`,
