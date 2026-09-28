@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+import itertools
 from typing import Iterator, Tuple
 
 import numpy as np
 from scipy.spatial import ConvexHull, QhullError
+
+from ..core.utils import length_atol
 
 
 def _rotation_to_align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -33,39 +35,97 @@ def _rotation_180_perp(a: np.ndarray) -> np.ndarray:
     return 2.0 * np.outer(perp, perp) - np.eye(3)
 
 
-def _dist_point_to_segment_2d(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
-    ab = b - a
-    denom = float(np.dot(ab, ab))
-    if denom < 1e-20:
-        return float(np.linalg.norm(p - a))
-    t = float(np.clip(np.dot(p - a, ab) / denom, 0.0, 1.0))
-    return float(np.linalg.norm(p - (a + t * ab)))
+#: Tolerance on a unit face normal when deciding whether two facets are coplanar. For
+#: unit vectors this is the angle between them in radians. It has to absorb the error in
+#: normals computed from float32 vertices (~1e-7, and every common mesh format -- STL,
+#: OBJ, glTF, MuJoCo -- stores float32), while staying far below the angle between
+#: genuinely distinct faces: a cylinder tessellated into ``n`` sides separates its
+#: neighbours by ``2*pi/n``, which stays 600x above this tolerance even at n = 10000.
+_NORMAL_ATOL = 1e-6
+
+#: The 81 cells adjacent to a cell in the 4D plane grid, including the cell itself.
+_NEIGHBOURS = np.array(list(itertools.product((-1, 0, 1), repeat=4)))
 
 
-def _point_in_convex_polygon_2d(p: np.ndarray, poly: np.ndarray) -> bool:
-    """True if point p is inside or on the boundary of convex polygon poly.
+def _group_coplanar_facets(hull: ConvexHull, atol: float) -> Iterator[Tuple[np.ndarray, list]]:
+    """Group hull facets that lie in the same plane, and yield ``(plane, facet indices)``.
 
-    poly: (M, 2) vertices in any consistent winding order.
+    A convex solid's face is triangulated into several facets whose planes agree only to
+    floating-point precision, so they must be grouped by *proximity*. Rounding the normal
+    to a fixed number of decimals and bucketing on the result -- what this replaces --
+    fragments a face whenever its facets straddle a bucket boundary. On a rotated box
+    with float32 vertices that splits all six faces into twelve single-triangle "faces",
+    each too small to support the centre of mass, so the box has no stable placement at
+    all (#152).
+
+    Facets are indexed in a 4D grid over ``(n, d)`` whose cells are one tolerance wide,
+    and each facet joins a group whose *representative* plane is within tolerance,
+    searching the 81 surrounding cells. Matching against the representative rather than
+    any member bounds the group to one tolerance, so groups cannot drift by chaining, and
+    searching the neighbours removes the boundary sensitivity that caused the defect.
     """
-    n = len(poly)
-    sign = None
-    for i in range(n):
-        a = poly[i]
-        b = poly[(i + 1) % n]
-        cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
-        if abs(cross) < 1e-10:
-            continue  # point on this edge; check remaining edges
-        if sign is None:
-            sign = cross > 0
-        elif (cross > 0) != sign:
-            return False
-    return True
+    cell = np.array([_NORMAL_ATOL, _NORMAL_ATOL, _NORMAL_ATOL, atol])
+    groups: list = []  # (representative plane, [facet indices])
+    index: dict = {}  # grid cell -> group id
+    for i in range(len(hull.simplices)):
+        plane = hull.equations[i, :4]
+        key = np.floor(plane / cell).astype(np.int64)
+        gid = None
+        for candidate in (index.get(tuple(k)) for k in key + _NEIGHBOURS):
+            if candidate is None:
+                continue
+            delta = np.abs(groups[candidate][0] - plane)
+            if delta[:3].max() <= _NORMAL_ATOL and delta[3] <= atol:
+                gid = candidate
+                break
+        if gid is None:
+            gid = len(groups)
+            groups.append((plane, []))
+            index[tuple(key)] = gid
+        groups[gid][1].append(i)
+
+    for _, indices in groups:
+        # The mean plane of the group: for a mesh whose vertices are not exactly
+        # coplanar there is no exact face plane, and the mean minimises the residual.
+        planes = hull.equations[indices, :4]
+        n = planes[:, :3].mean(axis=0)
+        norm = np.linalg.norm(n)
+        if norm < 1e-12:
+            continue
+        yield np.append(n / norm, planes[:, 3].mean()), indices
 
 
-def _polygon_edge_dist_2d(p: np.ndarray, poly: np.ndarray) -> float:
-    """Min distance from point p to any edge of polygon poly (2D)."""
-    n = len(poly)
-    return min(_dist_point_to_segment_2d(p, poly[i], poly[(i + 1) % n]) for i in range(n))
+def _plane_basis(n: np.ndarray) -> np.ndarray:
+    """Orthonormal 3x2 basis of the plane with unit normal ``n``.
+
+    The face's in-plane distances must be measured in an **orthonormal** basis. Dropping
+    the normal's dominant axis instead -- the projection this replaces -- foreshortens
+    them by ``|n_max| >= 1/sqrt(3)``, so the reported tipping angle depended on how the
+    object frame happened to be oriented and was under-reported by up to 40% (#151).
+    """
+    seed = np.array([1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = seed - np.dot(seed, n) * n
+    u /= np.linalg.norm(u)
+    return np.stack([u, np.cross(n, u)], axis=-1)
+
+
+def _inward_distance(point: np.ndarray, polygon: np.ndarray) -> float:
+    """Signed distance from ``point`` to the boundary of a convex polygon, in metres.
+
+    Positive inside, negative outside, and it is a **length** rather than the twice-area
+    cross product the previous containment test compared against an absolute constant:
+    that made the verdict unit-dependent, and below ~1e-5 m every edge test was skipped
+    and the helper fell through to "inside", fabricating stable poses (#153).
+
+    ``polygon`` is given in counter-clockwise order.
+    """
+    edges = np.roll(polygon, -1, axis=0) - polygon
+    lengths = np.linalg.norm(edges, axis=1)
+    keep = lengths > 0.0
+    if not np.any(keep):
+        return -np.inf  # degenerate support polygon: fail closed
+    inward = np.stack([-edges[keep, 1], edges[keep, 0]], axis=-1) / lengths[keep, None]
+    return float(np.einsum("ij,ij->i", inward, point - polygon[keep]).min())
 
 
 def stable_poses_mesh(
@@ -90,9 +150,16 @@ def stable_poses_mesh(
           origin to the face plane). Placing the origin here makes the resting
           face sit at z=0 regardless of where the COM is. Equals the COM height
           only when the COM lies on the face normal through the origin.
-        - stability_margin (float): arctan(d_min / com_height) in radians, where
-          com_height is the perpendicular COM-to-face distance (the physically
-          relevant lever arm).
+        - stability_margin (float): the tipping angle ``arctan(d_min / com_height)`` in
+          radians, where ``d_min`` is the in-plane distance from the projected COM to
+          the nearest support-polygon edge and ``com_height`` the perpendicular
+          COM-to-face distance. That is the angle the body must rotate about the nearest
+          support edge before the COM passes over it, so it is a property of the object
+          and the pose: invariant under rigid motion and under a change of object frame.
+
+    A face is stable only when the projected COM is inside the support polygon by more
+    than the scale-aware length tolerance. A COM exactly on an edge is a critical
+    equilibrium, not a rest, and an indeterminate test rejects the face (#153).
     """
     vertices = np.asarray(vertices, dtype=float)
     com = np.asarray(com, dtype=float)
@@ -108,28 +175,17 @@ def stable_poses_mesh(
             "coplanar, collinear, or otherwise degenerate"
         ) from e
 
-    # Group triangles that share the same outward normal into one face.
-    face_groups: dict = defaultdict(list)
-    for i, simplex in enumerate(hull.simplices):
-        n_key = tuple(np.round(hull.equations[i, :3], 8))
-        face_groups[n_key].append(i)
-
     _neg_z = np.array([0.0, 0.0, -1.0])
+    atol = length_atol(float(np.ptp(vertices, axis=0).max()))
 
-    for n_key, simplex_indices in face_groups.items():
-        n = np.array(n_key, dtype=float)
-        norm = np.linalg.norm(n)
-        if norm < 1e-12:
-            continue
-        n /= norm
-
-        d = float(hull.equations[simplex_indices[0], 3])
+    for plane, simplex_indices in _group_coplanar_facets(hull, atol):
+        n, d = plane[:3], float(plane[3])
 
         # COM height above this face (positive = COM on the interior side).
         # Used for the stability lever arm (the margin), NOT for placement.
         com_height = -(np.dot(n, com) + d)
-        if com_height < 1e-10:
-            continue  # degenerate or COM outside hull
+        if com_height <= atol:
+            continue  # degenerate, or the COM lies on or outside this face
 
         # Height of the object-frame ORIGIN above this face. Placing the origin
         # here makes the resting face sit at table z=0 for any COM (see C2).
@@ -141,25 +197,24 @@ def stable_poses_mesh(
             verts_idx.update(hull.simplices[si])
         face_verts = vertices[sorted(verts_idx)]  # (M, 3)
 
-        # Project COM onto face plane.
+        # Express the face and the COM's projection in an orthonormal basis of the face
+        # plane, so in-plane distances are true distances.
+        basis = _plane_basis(n)
         v0 = face_verts[0]
-        p3 = com - np.dot(com - v0, n) * n  # 3D projection onto face
+        pts_2d = (face_verts - v0) @ basis  # (M, 2)
+        p_2d = (com - v0) @ basis  # the projection drops the normal component
 
-        # Project face and point onto the best 2D plane (drop dominant axis of n).
-        i0 = int(np.argmax(np.abs(n)))
-        ax = [i for i in range(3) if i != i0]
-        pts_2d = face_verts[:, ax]  # (M, 2)
-        p_2d = np.array([p3[ax[0]], p3[ax[1]]])
+        # The support polygon is the 2D hull of the contact points, which is what a
+        # non-convex object rests on. Taking the hull rather than sorting the points by
+        # angle also tolerates a merged face whose points are not exactly coplanar.
+        try:
+            poly = pts_2d[ConvexHull(pts_2d).vertices]  # counter-clockwise
+        except QhullError:
+            continue  # collinear contact: a line or point support cannot hold a rest
 
-        # Sort polygon vertices by angle from centroid (face is convex).
-        center_2d = pts_2d.mean(axis=0)
-        angles = np.arctan2(pts_2d[:, 1] - center_2d[1], pts_2d[:, 0] - center_2d[0])
-        poly = pts_2d[np.argsort(angles)]
-
-        if not _point_in_convex_polygon_2d(p_2d, poly):
-            continue
-
-        d_min = _polygon_edge_dist_2d(p_2d, poly)
+        d_min = _inward_distance(p_2d, poly)
+        if d_min <= atol:
+            continue  # outside the support polygon, or on its edge: a tipping case
         stability_margin = float(np.arctan2(d_min, com_height))
 
         R = _rotation_to_align(n, _neg_z)

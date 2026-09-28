@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from tsr.core.utils import length_atol
 from tsr.template import TSRTemplate
 
 logger = logging.getLogger(__name__)
@@ -765,12 +766,12 @@ class GripperBase(ABC):
     def _length_atol(scale: float) -> float:
         """Scale-aware length tolerance from the geometric contract (docs/ARCHITECTURE.md).
 
-        ``atol = 1e-9 + 1e-6 · scale``. This is the same documented formula the
-        analytic oracle uses; production code implements it independently so factory
-        feasibility agrees with the contract (#107). ``scale`` is the primitive's
-        characteristic dimension.
+        ``atol = 1e-9 + 1e-6 · scale``, defined once in :func:`tsr.core.utils.length_atol`
+        and shared with the placement factories. The analytic oracle implements the same
+        documented formula independently, so factory feasibility agrees with the
+        contract (#107). ``scale`` is the primitive's characteristic dimension.
         """
-        return 1e-9 + 1e-6 * scale
+        return length_atol(scale)
 
     def _edge_margin(self, clearance: float, scale: float) -> float:
         """Edge-facing band margin ``m = max(clearance, 2 * _length_atol(scale))`` (#121).

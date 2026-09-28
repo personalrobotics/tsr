@@ -301,10 +301,13 @@ def test_box_placements_rest_on_table(lx, ly, lz):
 @given(seed=st.integers(0, 2**32 - 1), com_off=st.floats(-0.1, 0.1, allow_nan=False))
 def test_mesh_placements_invariants(seed, com_off):
     rng = np.random.default_rng(seed)
-    pts = rng.normal(size=(12, 3))
-    com = pts.mean(0) + np.array([com_off, 0.0, com_off])
+    # Scaled to a tenth of the surface so the footprint inset (#150) leaves every face
+    # feasible and the invariants below are exercised rather than vacuous.
+    pts = rng.normal(size=(12, 3)) * 0.03
+    com = pts.mean(0) + np.array([com_off, 0.0, com_off]) * 0.03
     placer = StablePlacer(0.3, 0.3)
     templates = placer.place_mesh(pts, com)
+    assert templates
     margins = []
     for t in templates:
         assert _is_se3(t.Tw_e)

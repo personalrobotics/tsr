@@ -31,7 +31,8 @@ tsr = t.instantiate(table_pose)
 pose = tsr.sample()
 print(f"Cylinder ({len(templates)} template)")
 print(f"  variant  : {t.variant}")
-print(f"  COM z    : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.06:.3f} m)\n")
+print(f"  origin z : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.06:.3f} m)")
+print(f"  margin   : {np.degrees(t.stability_margin):.1f}°\n")
 
 
 # ── Box (cereal box, three distinct dimensions) ──────────────────────────────
@@ -39,7 +40,13 @@ templates = placer.place_box(lx=0.20, ly=0.08, lz=0.28, subject="box")
 print(f"Box ({len(templates)} templates, one per stable face)")
 for t in templates:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+
+# Every factory takes min_margin_deg, so a knife-edge rest can be rejected up front.
+needle = placer.place_box(lx=0.01, ly=0.01, lz=0.30, subject="needle")
+steady = placer.place_box(lx=0.01, ly=0.01, lz=0.30, subject="needle", min_margin_deg=5.0)
+print(f"  a 1x1x30 cm needle: {len(needle)} faces, {len(steady)} with margin >= 5°")
+print(f"  (standing on its end it rests at {np.degrees(min(t.stability_margin for t in needle)):.2f}°)")
 print()
 
 
@@ -48,7 +55,8 @@ templates = placer.place_sphere(radius=0.05, subject="ball")
 t = templates[0]
 print(f"Sphere ({len(templates)} template)")
 print(f"  variant        : {t.variant}")
-print(f"  roll/pitch Bw  : {t.Bw[3].tolist()}  (all orientations free)\n")
+print(f"  roll/pitch Bw  : {t.Bw[3].tolist()}  (all orientations free)")
+print(f"  margin         : {np.degrees(t.stability_margin):.1f}°  (neutral: a sphere rolls, it does not tip)\n")
 
 
 # ── Torus (ring) ─────────────────────────────────────────────────────────────
@@ -57,7 +65,8 @@ t = templates[0]
 pose = t.sample(table_pose)
 print(f"Torus ({len(templates)} template)")
 print(f"  variant  : {t.variant}")
-print(f"  COM z    : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.012:.3f} m)\n")
+print(f"  origin z : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.012:.3f} m)")
+print(f"  margin   : {np.degrees(t.stability_margin):.1f}°\n")
 
 
 # ── Mesh (cube approximated as 8 vertices) ───────────────────────────────────
@@ -79,7 +88,7 @@ templates = placer.place_mesh(cube_verts, cube_com, subject="cube")
 print(f"Mesh/cube ({len(templates)} stable faces, sorted by stability margin)")
 for t in templates:
     pose = t.sample(table_pose)
-    print(f"  [{t.variant:6s}]  COM z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
+    print(f"  [{t.variant:6s}]  origin z = {pose[2, 3]:.3f} m  margin = {np.degrees(t.stability_margin):.1f}°")
 
 
 # ── Visualization ────────────────────────────────────────────────────────────
