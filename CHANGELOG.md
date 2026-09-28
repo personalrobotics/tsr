@@ -4,7 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.1.0] — 2026-09
+
+Placement templates now mean what they say. 2.2.0 did this for grasps (#65); this does
+it for placement (#148), and it found the same class of defect — a region admitting
+poses that violate the property it claims — in every factory.
+
+The visible consequences: a sphere no longer sinks through the table, no admitted pose
+hangs off the surface, `stability_margin` is the physical tipping angle rather than a
+number that changed when you rotated the object, every factory reports that margin and
+takes `min_margin_deg`, and a mesh loaded from a file keeps its stable poses instead of
+losing them to float32 rounding.
+
+Two behaviour changes worth reading before upgrading: `Bw`'s xy extents are now
+narrower than `table_x`/`table_y` by the object's footprint, and factories return `[]`
+where they previously returned unusable templates. Both are listed under Fixed.
 
 ### Fixed
 - **Freeing roll or pitch no longer sinks the object** (#149). `StablePlacer` carried
