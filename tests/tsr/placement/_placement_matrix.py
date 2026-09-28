@@ -94,6 +94,12 @@ class PlacementCase:
     factory: str
     kwargs: Dict[str, Any]
     table: Tuple[float, float]
+    #: How many templates this call must return. Set for the deterministic corpus and
+    #: left ``None`` for generated cases. Without it a mutant that *empties* a result
+    #: passes every per-pose check vacuously -- which is exactly what the #152 facet
+    #: fragmentation does.
+    expected: Optional[int] = None
+    label: str = ""
 
     @property
     def prim(self):
@@ -106,7 +112,7 @@ class PlacementCase:
         return getattr(self.placer(), self.factory)(**self.kwargs)
 
     def __str__(self) -> str:  # pragma: no cover - diagnostics only
-        return f"{self.factory}({self.kwargs}) on table {self.table}"
+        return self.label or f"{self.factory}({self.kwargs}) on table {self.table}"
 
 
 def _mesh_vertices(kind: str, scale: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -275,3 +281,112 @@ def equivariance_failures(case: PlacementCase, templates, T: np.ndarray) -> List
                 failures.append(f"{case} [{t.variant}]: instantiate({T.round(3).tolist()}) is not rigid")
                 break
     return failures
+
+
+# --------------------------------------------------------------------------- #
+# The deterministic corpus, and the one definition of "the suite detects this"
+# --------------------------------------------------------------------------- #
+
+
+def octahedron(scale: float = 0.10) -> np.ndarray:
+    """Every face tilted with respect to the object frame, which is what makes a
+    foreshortened in-plane projection visible (#151)."""
+    return np.array([[s * scale if i == j else 0.0 for j in range(3)] for i in range(3) for s in (-1, 1)])
+
+
+def tessellated_cylinder(radius: float, height: float, n: int) -> np.ndarray:
+    """A curved surface cut into ``n`` flat sides, each a real resting face at
+    ``180/n`` degrees. Merging them would invent a face the caller never supplied."""
+    a = np.linspace(0.0, 2 * np.pi, n, endpoint=False)
+    rim = np.stack([radius * np.cos(a), radius * np.sin(a)], axis=-1)
+    return np.vstack([np.c_[rim, np.full(n, z)] for z in (-height / 2, height / 2)])
+
+
+def float32_box(lx: float, ly: float, lz: float, seed: int = 0) -> np.ndarray:
+    """A rotated box whose vertices round-tripped through float32 -- the ordinary
+    result of loading a mesh, since STL, OBJ, glTF and MuJoCo all store float32."""
+    from scipy.spatial.transform import Rotation
+
+    Q = Rotation.random(random_state=seed).as_matrix()
+    box = np.array([[sx * lx, sy * ly, sz * lz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) / 2.0
+    return (box.astype(np.float32) @ Q.T.astype(np.float32)).astype(np.float64)
+
+
+#: Its centroid projects outside the ``z = 0`` facet, so that facet is not a rest.
+_OBTUSE_TETRA = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.2, 0.15, 0.0], [0.9, 0.1, 1.0]])
+
+
+def corpus() -> List[PlacementCase]:
+    """A fixed case per factory plus the shapes that make a specific defect visible.
+
+    Deterministic on purpose: the gate has to attribute a detection to its mutation, so
+    it cannot depend on what Hypothesis happened to draw.
+    """
+    cube = _mesh_vertices("cube", 0.10)
+    corner = _mesh_vertices("corner-cube", 0.10)
+    tetra = _mesh_vertices("tetra", 0.10)
+    f32 = float32_box(0.20, 0.10, 0.30)
+    return [
+        PlacementCase(
+            "place_cylinder", {"cylinder_radius": 0.04, "cylinder_height": 0.12}, (0.30, 0.20), 2, "cylinder"
+        ),
+        # A disc far larger than the surface: a valid request with no feasible pose.
+        PlacementCase("place_cylinder", {"cylinder_radius": 2.0, "cylinder_height": 0.10}, (0.30, 0.20), 0, "4 m disc"),
+        PlacementCase("place_box", {"lx": 0.20, "ly": 0.10, "lz": 0.30}, (0.60, 0.60), 6, "box"),
+        PlacementCase("place_box", {"lx": 0.01, "ly": 0.01, "lz": 0.30}, (0.60, 0.60), 6, "needle"),
+        PlacementCase("place_sphere", {"radius": 0.05}, (0.30, 0.20), 1, "sphere"),
+        PlacementCase("place_torus", {"major_radius": 0.05, "minor_radius": 0.012}, (0.30, 0.20), 2, "torus"),
+        PlacementCase("place_mesh", {"vertices": cube[0], "com": cube[1]}, (0.60, 0.60), 6, "mesh cube"),
+        PlacementCase("place_mesh", {"vertices": corner[0], "com": corner[1]}, (0.60, 0.60), 6, "corner-origin cube"),
+        PlacementCase("place_mesh", {"vertices": tetra[0], "com": tetra[1]}, (0.60, 0.60), 4, "tetrahedron"),
+        PlacementCase("place_mesh", {"vertices": octahedron(), "com": np.zeros(3)}, (0.60, 0.60), 8, "octahedron"),
+        PlacementCase("place_mesh", {"vertices": f32, "com": f32.mean(axis=0)}, (1.0, 1.0), 6, "float32 box"),
+        PlacementCase(
+            "place_mesh",
+            {"vertices": tessellated_cylinder(0.04, 0.12, 24), "com": np.zeros(3)},
+            (0.60, 0.60),
+            26,  # two caps and twenty-four sides: the prism the caller supplied
+            "24-gon cylinder",
+        ),
+        # An obtuse tetrahedron whose centroid projects outside its bottom facet, at a
+        # scale where an absolute containment tolerance stops discriminating (#153).
+        PlacementCase(
+            "place_mesh",
+            {"vertices": _OBTUSE_TETRA * 1e-5, "com": (_OBTUSE_TETRA * 1e-5).mean(axis=0)},
+            (2e-5, 2e-5),
+            3,  # four facets, and the one the centroid overhangs is not a rest
+            "obtuse tetrahedron at 1e-5 m",
+        ),
+        # The centre of mass exactly above a support edge: a critical equilibrium, which
+        # leaves only the face it is squarely above (#153).
+        PlacementCase(
+            "place_mesh",
+            {"vertices": cube[0], "com": np.array([0.0, 0.05, 0.0])},
+            (0.60, 0.60),
+            1,
+            "cube with its COM on a support edge",
+        ),
+    ]
+
+
+def check_failures(case: PlacementCase, templates) -> List[str]:
+    """Every check the placement suite makes about one call, as failure strings.
+
+    The property matrix asserts this is empty; the mutation gate asserts a corrupted
+    generator makes it non-empty. Sharing the definition is what makes "the suite
+    detects this" mean the same thing in both places.
+    """
+    failures: List[str] = []
+    if case.expected is not None and len(templates) != case.expected:
+        failures.append(f"{case}: {len(templates)} templates, expected {case.expected}")
+    rng = np.random.default_rng(0)
+    failures += soundness_failures(case, templates, rng=rng)
+    failures += margin_failures(case, templates)
+    failures += face_label_failures(case, templates)
+    failures += ordering_failures(case, templates)
+    return failures
+
+
+def corpus_failures() -> List[str]:
+    """Run every check over the whole corpus."""
+    return [f for case in corpus() for f in check_failures(case, case.call())]
