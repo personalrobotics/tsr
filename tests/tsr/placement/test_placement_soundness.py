@@ -195,7 +195,7 @@ def test_partial_fit_keeps_only_the_faces_that_fit(caplog):
     with caplog.at_level(logging.DEBUG, logger="tsr.placement.stable_placer"):
         templates = placer.place_box(lx=0.05, ly=0.05, lz=0.40)
     assert sorted(t.variant for t in templates) == ["+z", "-z"]
-    assert any("faces dropped" in r.getMessage() for r in caplog.records)
+    assert any("variants dropped" in r.getMessage() for r in caplog.records)
     verts = np.array([[sx * 0.025, sy * 0.025, sz * 0.20] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
     for t in templates:
         tsr = t.instantiate(np.eye(4))

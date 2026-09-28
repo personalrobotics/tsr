@@ -11,6 +11,8 @@ from typing import Iterator, Tuple
 import numpy as np
 from scipy.spatial import ConvexHull, QhullError
 
+from ..core.utils import length_atol
+
 
 def _rotation_to_align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Return rotation matrix R such that R @ a = b (both unit vectors)."""
@@ -33,39 +35,37 @@ def _rotation_180_perp(a: np.ndarray) -> np.ndarray:
     return 2.0 * np.outer(perp, perp) - np.eye(3)
 
 
-def _dist_point_to_segment_2d(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
-    ab = b - a
-    denom = float(np.dot(ab, ab))
-    if denom < 1e-20:
-        return float(np.linalg.norm(p - a))
-    t = float(np.clip(np.dot(p - a, ab) / denom, 0.0, 1.0))
-    return float(np.linalg.norm(p - (a + t * ab)))
+def _plane_basis(n: np.ndarray) -> np.ndarray:
+    """Orthonormal 3x2 basis of the plane with unit normal ``n``.
 
-
-def _point_in_convex_polygon_2d(p: np.ndarray, poly: np.ndarray) -> bool:
-    """True if point p is inside or on the boundary of convex polygon poly.
-
-    poly: (M, 2) vertices in any consistent winding order.
+    The face's in-plane distances must be measured in an **orthonormal** basis. Dropping
+    the normal's dominant axis instead -- the projection this replaces -- foreshortens
+    them by ``|n_max| >= 1/sqrt(3)``, so the reported tipping angle depended on how the
+    object frame happened to be oriented and was under-reported by up to 40% (#151).
     """
-    n = len(poly)
-    sign = None
-    for i in range(n):
-        a = poly[i]
-        b = poly[(i + 1) % n]
-        cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
-        if abs(cross) < 1e-10:
-            continue  # point on this edge; check remaining edges
-        if sign is None:
-            sign = cross > 0
-        elif (cross > 0) != sign:
-            return False
-    return True
+    seed = np.array([1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = seed - np.dot(seed, n) * n
+    u /= np.linalg.norm(u)
+    return np.stack([u, np.cross(n, u)], axis=-1)
 
 
-def _polygon_edge_dist_2d(p: np.ndarray, poly: np.ndarray) -> float:
-    """Min distance from point p to any edge of polygon poly (2D)."""
-    n = len(poly)
-    return min(_dist_point_to_segment_2d(p, poly[i], poly[(i + 1) % n]) for i in range(n))
+def _inward_distance(point: np.ndarray, polygon: np.ndarray) -> float:
+    """Signed distance from ``point`` to the boundary of a convex polygon, in metres.
+
+    Positive inside, negative outside, and it is a **length** rather than the twice-area
+    cross product the previous containment test compared against an absolute constant:
+    that made the verdict unit-dependent, and below ~1e-5 m every edge test was skipped
+    and the helper fell through to "inside", fabricating stable poses (#153).
+
+    ``polygon`` is given in counter-clockwise order.
+    """
+    edges = np.roll(polygon, -1, axis=0) - polygon
+    lengths = np.linalg.norm(edges, axis=1)
+    keep = lengths > 0.0
+    if not np.any(keep):
+        return -np.inf  # degenerate support polygon: fail closed
+    inward = np.stack([-edges[keep, 1], edges[keep, 0]], axis=-1) / lengths[keep, None]
+    return float(np.einsum("ij,ij->i", inward, point - polygon[keep]).min())
 
 
 def stable_poses_mesh(
@@ -90,9 +90,16 @@ def stable_poses_mesh(
           origin to the face plane). Placing the origin here makes the resting
           face sit at z=0 regardless of where the COM is. Equals the COM height
           only when the COM lies on the face normal through the origin.
-        - stability_margin (float): arctan(d_min / com_height) in radians, where
-          com_height is the perpendicular COM-to-face distance (the physically
-          relevant lever arm).
+        - stability_margin (float): the tipping angle ``arctan(d_min / com_height)`` in
+          radians, where ``d_min`` is the in-plane distance from the projected COM to
+          the nearest support-polygon edge and ``com_height`` the perpendicular
+          COM-to-face distance. That is the angle the body must rotate about the nearest
+          support edge before the COM passes over it, so it is a property of the object
+          and the pose: invariant under rigid motion and under a change of object frame.
+
+    A face is stable only when the projected COM is inside the support polygon by more
+    than the scale-aware length tolerance. A COM exactly on an edge is a critical
+    equilibrium, not a rest, and an indeterminate test rejects the face (#153).
     """
     vertices = np.asarray(vertices, dtype=float)
     com = np.asarray(com, dtype=float)
@@ -115,6 +122,7 @@ def stable_poses_mesh(
         face_groups[n_key].append(i)
 
     _neg_z = np.array([0.0, 0.0, -1.0])
+    atol = length_atol(float(np.ptp(vertices, axis=0).max()))
 
     for n_key, simplex_indices in face_groups.items():
         n = np.array(n_key, dtype=float)
@@ -128,8 +136,8 @@ def stable_poses_mesh(
         # COM height above this face (positive = COM on the interior side).
         # Used for the stability lever arm (the margin), NOT for placement.
         com_height = -(np.dot(n, com) + d)
-        if com_height < 1e-10:
-            continue  # degenerate or COM outside hull
+        if com_height <= atol:
+            continue  # degenerate, or the COM lies on or outside this face
 
         # Height of the object-frame ORIGIN above this face. Placing the origin
         # here makes the resting face sit at table z=0 for any COM (see C2).
@@ -141,25 +149,20 @@ def stable_poses_mesh(
             verts_idx.update(hull.simplices[si])
         face_verts = vertices[sorted(verts_idx)]  # (M, 3)
 
-        # Project COM onto face plane.
+        # Express the face and the COM's projection in an orthonormal basis of the face
+        # plane, so in-plane distances are true distances.
+        basis = _plane_basis(n)
         v0 = face_verts[0]
-        p3 = com - np.dot(com - v0, n) * n  # 3D projection onto face
+        pts_2d = (face_verts - v0) @ basis  # (M, 2)
+        p_2d = (com - v0) @ basis  # the projection drops the normal component
 
-        # Project face and point onto the best 2D plane (drop dominant axis of n).
-        i0 = int(np.argmax(np.abs(n)))
-        ax = [i for i in range(3) if i != i0]
-        pts_2d = face_verts[:, ax]  # (M, 2)
-        p_2d = np.array([p3[ax[0]], p3[ax[1]]])
+        # Order the (convex) face counter-clockwise about its centroid.
+        centred = pts_2d - pts_2d.mean(axis=0)
+        poly = pts_2d[np.argsort(np.arctan2(centred[:, 1], centred[:, 0]))]
 
-        # Sort polygon vertices by angle from centroid (face is convex).
-        center_2d = pts_2d.mean(axis=0)
-        angles = np.arctan2(pts_2d[:, 1] - center_2d[1], pts_2d[:, 0] - center_2d[0])
-        poly = pts_2d[np.argsort(angles)]
-
-        if not _point_in_convex_polygon_2d(p_2d, poly):
-            continue
-
-        d_min = _polygon_edge_dist_2d(p_2d, poly)
+        d_min = _inward_distance(p_2d, poly)
+        if d_min <= atol:
+            continue  # outside the support polygon, or on its edge: a tipping case
         stability_margin = float(np.arctan2(d_min, com_height))
 
         R = _rotation_to_align(n, _neg_z)

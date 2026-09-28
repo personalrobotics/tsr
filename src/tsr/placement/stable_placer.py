@@ -12,7 +12,8 @@ the surface footprint.
 from __future__ import annotations
 
 import logging
-from typing import List
+from dataclasses import dataclass
+from typing import Callable, List
 
 import numpy as np
 
@@ -41,6 +42,30 @@ def _check_finite(name: str, value: float) -> float:
     if not np.isfinite(value):
         raise ValueError(f"{name} must be a finite number, got {value!r}")
     return float(value)
+
+
+@dataclass(frozen=True)
+class _Variant:
+    """One resting orientation of a primitive, with everything the contract needs.
+
+    ``margin`` is the analytic tipping angle in radians: the angle the object must
+    rotate about the nearest support edge before its centre of mass passes over it.
+    ``footprint`` is the largest horizontal distance from the object frame origin to any
+    point of the resting object, which is what the free yaw sweeps.
+    """
+
+    label: str
+    normal: np.ndarray  # outward object-frame normal of the resting face
+    origin_height: float
+    footprint: float
+    margin: float
+
+
+def _tipping_angle(lever: float, height: float) -> float:
+    """``arctan(lever / height)``: the tipping angle about a support edge ``lever``
+    metres from the centre of mass's projection, with the mass ``height`` above the
+    surface. The same quantity :mod:`_stable_poses` computes for a mesh face."""
+    return float(np.arctan2(lever, height))
 
 
 def _check_finite_array(name: str, values: np.ndarray) -> np.ndarray:
@@ -172,6 +197,65 @@ class StablePlacer:
             stability_margin=stability_margin,
         )
 
+    def _emit(
+        self,
+        method: str,
+        subject: str,
+        variants: List["_Variant"],
+        min_margin_deg: float,
+        scale: float,
+        name: Callable[[str], str],
+        description: Callable[[str], str],
+    ) -> List[TSRTemplate]:
+        """Filter a primitive's resting variants and build their templates (#156).
+
+        One policy for every primitive: drop the variants below the requested tipping
+        angle, then those whose footprint exceeds the surface, and report which of the
+        two emptied the result. Analytic margins make the primitives as self-describing
+        as :meth:`place_mesh`, so ``min_margin_deg`` means the same thing everywhere.
+        """
+        min_margin_rad = np.radians(_check_finite("min_margin_deg", min_margin_deg))
+        stable = [v for v in variants if v.margin >= min_margin_rad]
+        if not stable:
+            best = max(np.degrees(v.margin) for v in variants)
+            return self._log_empty(
+                method,
+                "below_min_margin",
+                f"most stable variant is {best:.4g}°, below the requested {min_margin_deg:.4g}°",
+            )
+
+        usable = [v for v in stable if self._fits(v.footprint, scale)]
+        if not usable:
+            smallest = min(v.footprint for v in stable)
+            return self._log_empty(
+                method,
+                "exceeds_surface",
+                f"smallest footprint radius {smallest:.4g} m exceeds surface half-extent "
+                f"min({self.table_x:.4g}, {self.table_y:.4g}) m",
+            )
+        if len(usable) < len(stable):
+            logger.debug(
+                "%s.%s: %d of %d variants dropped (exceeds_surface)",
+                type(self).__name__,
+                method,
+                len(stable) - len(usable),
+                len(stable),
+            )
+
+        return [
+            self._template(
+                name=name(v.label),
+                description=description(v.label),
+                variant=v.label,
+                R=_rotation_to_align(v.normal, _NEG_Z),
+                origin_height=v.origin_height,
+                Bw=self._bw(v.footprint),
+                subject=subject,
+                stability_margin=v.margin,
+            )
+            for v in usable
+        ]
+
     # ------------------------------------------------------------------
     # Primitive placement methods
     # ------------------------------------------------------------------
@@ -181,6 +265,7 @@ class StablePlacer:
         cylinder_radius: float,
         cylinder_height: float,
         subject: str = "object",
+        min_margin_deg: float = 0.0,
     ) -> List[TSRTemplate]:
         """Return 2 placement templates: cylinder on each circular face.
 
@@ -195,43 +280,36 @@ class StablePlacer:
             cylinder_radius: Cylinder radius (m).
             cylinder_height: Cylinder height (m).
             subject: Name of the object frame.
+            min_margin_deg: Discard variants whose tipping angle is below this
+                            threshold (degrees), as for :meth:`place_mesh`.
 
         Returns:
-            Two templates, or ``[]`` if the cylinder cannot fit on the surface.
+            Two templates, or ``[]`` if the cylinder cannot fit on the surface or is
+            less stable than requested.
         """
         radius = _check_positive_finite("cylinder_radius", cylinder_radius)
         height = _check_positive_finite("cylinder_height", cylinder_height)
 
-        # Resting on a cap the axis is vertical, so the footprint is the cap itself.
-        footprint = radius
-        scale = max(2.0 * radius, height)
-        if not self._fits(footprint, scale):
-            return self._log_empty(
-                "place_cylinder",
-                "exceeds_surface",
-                f"footprint radius {footprint:.4g} m exceeds surface half-extent "
-                f"min({self.table_x:.4g}, {self.table_y:.4g}) m",
-            )
-
-        candidates = [
-            (np.array([0.0, 0.0, -1.0]), "-z"),
-            (np.array([0.0, 0.0, +1.0]), "+z"),
+        # Resting on a cap the axis is vertical, so the footprint is the cap itself and
+        # the support polygon is that same disc: the cylinder tips about a tangent to the
+        # rim, one radius from its centre, with the mass half its height up.
+        margin = _tipping_angle(radius, height / 2.0)
+        variants = [
+            _Variant(label, np.array([0.0, 0.0, sign]), height / 2.0, radius, margin)
+            for sign, label in ((-1.0, "-z"), (+1.0, "+z"))
         ]
-        return [
-            self._template(
-                name=f"Place cylinder {label}-face down ({subject} on {self.reference})",
-                description=(
-                    f"Cylinder (r={radius:.3f} m, h={height:.3f} m) "
-                    f"resting on {label} face on {self.reference}. Yaw free."
-                ),
-                variant=label,
-                R=_rotation_to_align(n, _NEG_Z),
-                origin_height=height / 2.0,
-                Bw=self._bw(footprint),
-                subject=subject,
-            )
-            for n, label in candidates
-        ]
+        return self._emit(
+            "place_cylinder",
+            subject,
+            variants,
+            min_margin_deg,
+            scale=max(2.0 * radius, height),
+            name=lambda label: f"Place cylinder {label}-face down ({subject} on {self.reference})",
+            description=lambda label: (
+                f"Cylinder (r={radius:.3f} m, h={height:.3f} m) "
+                f"resting on {label} face on {self.reference}. Yaw free."
+            ),
+        )
 
     def place_box(
         self,
@@ -239,6 +317,7 @@ class StablePlacer:
         ly: float,
         lz: float,
         subject: str = "object",
+        min_margin_deg: float = 0.0,
     ) -> List[TSRTemplate]:
         """Return 6 placement templates: one for each face of the box.
 
@@ -251,64 +330,59 @@ class StablePlacer:
             ly: Box y-extent (m).
             lz: Box z-extent (m).
             subject: Name of the object frame.
+            min_margin_deg: Discard faces whose tipping angle is below this threshold
+                            (degrees), as for :meth:`place_mesh`. A needle standing on
+                            its end is in equilibrium but barely; this is how a caller
+                            rejects that.
 
         Returns:
-            Up to six templates: the faces whose footprint fits on the surface. ``[]``
-            if no face fits.
+            Up to six templates: the faces that fit on the surface and are at least as
+            stable as requested. ``[]`` if none is.
         """
         lx = _check_positive_finite("lx", lx)
         ly = _check_positive_finite("ly", ly)
         lz = _check_positive_finite("lz", lz)
-        scale = max(lx, ly, lz)
 
-        # (outward normal of the resting face, origin height, footprint radius, label).
         # Each face is listed with its outward normal pointing toward the surface. The
         # footprint radius is the half-diagonal of the resting face, which is what the
         # free yaw sweeps -- an axis-aligned half-extent would still overhang (#150).
-        candidates = [
-            (np.array([0.0, 0.0, -1.0]), lz / 2.0, np.hypot(lx, ly) / 2.0, "-z"),
-            (np.array([0.0, 0.0, +1.0]), lz / 2.0, np.hypot(lx, ly) / 2.0, "+z"),
-            (np.array([0.0, -1.0, 0.0]), ly / 2.0, np.hypot(lx, lz) / 2.0, "-y"),
-            (np.array([0.0, +1.0, 0.0]), ly / 2.0, np.hypot(lx, lz) / 2.0, "+y"),
-            (np.array([-1.0, 0.0, 0.0]), lx / 2.0, np.hypot(ly, lz) / 2.0, "-x"),
-            (np.array([+1.0, 0.0, 0.0]), lx / 2.0, np.hypot(ly, lz) / 2.0, "+x"),
+        # The box tips about the nearest edge of that face, so the lever is the smaller
+        # of its two half-extents and the mass sits half the third extent up.
+        faces = [
+            (np.array([0.0, 0.0, -1.0]), "-z", lz, lx, ly),
+            (np.array([0.0, 0.0, +1.0]), "+z", lz, lx, ly),
+            (np.array([0.0, -1.0, 0.0]), "-y", ly, lx, lz),
+            (np.array([0.0, +1.0, 0.0]), "+y", ly, lx, lz),
+            (np.array([-1.0, 0.0, 0.0]), "-x", lx, ly, lz),
+            (np.array([+1.0, 0.0, 0.0]), "+x", lx, ly, lz),
         ]
-        usable = [c for c in candidates if self._fits(c[2], scale)]
-        if not usable:
-            smallest = min(c[2] for c in candidates)
-            return self._log_empty(
-                "place_box",
-                "exceeds_surface",
-                f"smallest face footprint radius {smallest:.4g} m exceeds surface half-extent "
-                f"min({self.table_x:.4g}, {self.table_y:.4g}) m",
+        variants = [
+            _Variant(
+                label=label,
+                normal=normal,
+                origin_height=up / 2.0,
+                footprint=np.hypot(a, b) / 2.0,
+                margin=_tipping_angle(min(a, b) / 2.0, up / 2.0),
             )
-        if len(usable) < len(candidates):
-            logger.debug(
-                "%s.place_box: %d of %d faces dropped (exceeds_surface)",
-                type(self).__name__,
-                len(candidates) - len(usable),
-                len(candidates),
-            )
-
-        return [
-            self._template(
-                name=f"Place box {label}-face down ({subject} on {self.reference})",
-                description=(
-                    f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} face on {self.reference}. Yaw free."
-                ),
-                variant=label,
-                R=_rotation_to_align(n, _NEG_Z),
-                origin_height=origin_h,
-                Bw=self._bw(footprint),
-                subject=subject,
-            )
-            for n, origin_h, footprint, label in usable
+            for normal, label, up, a, b in faces
         ]
+        return self._emit(
+            "place_box",
+            subject,
+            variants,
+            min_margin_deg,
+            scale=max(lx, ly, lz),
+            name=lambda label: f"Place box {label}-face down ({subject} on {self.reference})",
+            description=lambda label: (
+                f"Box ({lx:.3f}×{ly:.3f}×{lz:.3f} m) resting on {label} face on {self.reference}. Yaw free."
+            ),
+        )
 
     def place_sphere(
         self,
         radius: float,
         subject: str = "object",
+        min_margin_deg: float = 0.0,
     ) -> List[TSRTemplate]:
         """Return one placement template: sphere on a flat surface.
 
@@ -317,14 +391,29 @@ class StablePlacer:
         in :meth:`_template` guarantees structurally rather than only at zero tilt
         (#149).
 
+        The reported ``stability_margin`` is ``0``: a sphere touches at one point
+        directly beneath its centre, so it is in *neutral* equilibrium — it never tips,
+        it rolls. That is a different thing from the knife-edge equilibrium a mesh face
+        with a zero margin describes, and it is why the sphere survives the default
+        ``min_margin_deg`` of 0 while any positive threshold rejects it.
+
         Args:
             radius: Sphere radius (m).
             subject: Name of the object frame.
+            min_margin_deg: Discard the template if this exceeds 0, since a sphere's
+                            tipping angle is 0.
 
         Returns:
-            One template, or ``[]`` if the sphere cannot fit on the surface.
+            One template, or ``[]`` if the sphere cannot fit on the surface or a positive
+            margin was required.
         """
         radius = _check_positive_finite("radius", radius)
+        if np.radians(_check_finite("min_margin_deg", min_margin_deg)) > 0.0:
+            return self._log_empty(
+                "place_sphere",
+                "below_min_margin",
+                f"a sphere is neutrally stable (tipping angle 0°), below the requested {min_margin_deg:.4g}°",
+            )
         if not self._fits(radius, 2.0 * radius):
             return self._log_empty(
                 "place_sphere",
@@ -346,6 +435,7 @@ class StablePlacer:
                     pitch_range=np.array([-np.pi, np.pi]),
                 ),
                 subject=subject,
+                stability_margin=0.0,
             )
         ]
 
@@ -354,6 +444,7 @@ class StablePlacer:
         major_radius: float,
         minor_radius: float,
         subject: str = "object",
+        min_margin_deg: float = 0.0,
     ) -> List[TSRTemplate]:
         """Return 2 placement templates: torus flat on surface, each side down.
 
@@ -369,43 +460,39 @@ class StablePlacer:
             major_radius: Distance from torus center to tube center (m).
             minor_radius: Tube radius (m).
             subject: Name of the object frame.
+            min_margin_deg: Discard variants whose tipping angle is below this
+                            threshold (degrees), as for :meth:`place_mesh`.
 
         Returns:
-            Two templates, or ``[]`` if the torus cannot fit on the surface.
+            Two templates, or ``[]`` if the torus cannot fit on the surface or is less
+            stable than requested.
         """
         major_radius = _check_positive_finite("major_radius", major_radius)
         minor_radius = _check_positive_finite("minor_radius", minor_radius)
         if minor_radius >= major_radius:
             raise ValueError("minor_radius must be less than major_radius")
 
-        footprint = major_radius + minor_radius  # the outer equator of the ring
-        if not self._fits(footprint, 2.0 * footprint):
-            return self._log_empty(
-                "place_torus",
-                "exceeds_surface",
-                f"footprint radius {footprint:.4g} m exceeds surface half-extent "
-                f"min({self.table_x:.4g}, {self.table_y:.4g}) m",
-            )
-
-        candidates = [
-            (np.array([0.0, 0.0, -1.0]), "-z"),
-            (np.array([0.0, 0.0, +1.0]), "+z"),
+        # Lying flat, the torus touches along a circle of radius ``major_radius``, whose
+        # convex hull is that disc: it tips about a tangent to that circle, with the mass
+        # one tube radius up. The footprint is the ring's outer equator.
+        footprint = major_radius + minor_radius
+        margin = _tipping_angle(major_radius, minor_radius)
+        variants = [
+            _Variant(label, np.array([0.0, 0.0, sign]), minor_radius, footprint, margin)
+            for sign, label in ((-1.0, "-z"), (+1.0, "+z"))
         ]
-        return [
-            self._template(
-                name=f"Place torus {label}-face down ({subject} on {self.reference})",
-                description=(
-                    f"Torus (R={major_radius:.3f} m, r={minor_radius:.3f} m) "
-                    f"flat, {label} face down on {self.reference}. Yaw free."
-                ),
-                variant=label,
-                R=_rotation_to_align(n, _NEG_Z),
-                origin_height=minor_radius,
-                Bw=self._bw(footprint),
-                subject=subject,
-            )
-            for n, label in candidates
-        ]
+        return self._emit(
+            "place_torus",
+            subject,
+            variants,
+            min_margin_deg,
+            scale=2.0 * footprint,
+            name=lambda label: f"Place torus {label}-face down ({subject} on {self.reference})",
+            description=lambda label: (
+                f"Torus (R={major_radius:.3f} m, r={minor_radius:.3f} m) "
+                f"flat, {label} face down on {self.reference}. Yaw free."
+            ),
+        )
 
     def place_mesh(
         self,

@@ -214,6 +214,30 @@ def _distance_inside(polygon: np.ndarray, point: np.ndarray) -> float:
     return float(-signed.max())
 
 
+def tipping_angle(prim, pose: np.ndarray) -> float:
+    """Clause 4: the angle the posed object must rotate before it falls, in radians.
+
+    Derived from the pose alone — the contact patch at the lowest ``z``, its convex hull,
+    and where the centre of mass projects into it — so it is independent of whatever
+    arithmetic produced the template's ``stability_margin``. Rotating about the nearest
+    support edge, the centre of mass sits ``d`` from that edge horizontally and ``h``
+    above the surface, and passes over it after ``arctan(d / h)``.
+
+    A sphere returns 0: point contact directly beneath the centre is neutral, not
+    critical. A contact patch with no area returns 0 for the same reason it fails
+    clause 2 — there is no edge to tip about.
+    """
+    R, t = pose[:3, :3], pose[:3, 3]
+    com = centre_of_mass(prim, R, t)
+    if isinstance(prim, Sphere):
+        return 0.0
+    patch = prim.contact(R, t, max(length_atol(prim.scale), 1e-9))[:, :2]
+    polygon = _hull_2d(patch)
+    if polygon is None:
+        return 0.0
+    return float(math.atan2(_distance_inside(polygon, com[:2]), com[2]))
+
+
 def certify(prim, pose: np.ndarray, *, table: Tuple[float, float], atol: Optional[float] = None) -> PlacementWitness:
     """Certify that ``pose`` places ``prim`` as a stable placement on the surface.
 

@@ -167,9 +167,12 @@ for t in templates:
 ```
 
 Stability is determined by the COM-projection criterion: a face is stable if the
-centre of mass projects inside the support polygon formed by that face's contact
-region. The stability margin is `arctan(d_min / h_com)` where `d_min` is the
-minimum distance from the COM projection to any edge of the polygon.
+centre of mass projects strictly inside the support polygon formed by that face's
+contact region. Every template reports a `stability_margin` — the physical tipping
+angle `arctan(d_min / h_com)`, where `d_min` is the in-plane distance from the COM
+projection to the nearest edge of the polygon — and every factory takes
+`min_margin_deg` to discard poses below a threshold. A sphere reports `0`: it is
+neutrally stable, so it rolls rather than tipping.
 
 ### Work directly with TSRs
 

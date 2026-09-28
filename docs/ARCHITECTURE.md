@@ -303,8 +303,24 @@ dynamics, friction, or that the object will survive being let go from above it.
   torus's two sides) because which face is down is caller-visible and semantically
   distinct for a labelled object — a mug's opening, a cereal box's front — even where
   the bare solid is invariant under the flip that separates them (`#155`).
+- **The tipping angle is measured in the face's own plane** (`#151`). `d_min` is the
+  distance from the projected centre of mass to the nearest support edge, in an
+  *orthonormal* basis of that plane. Projecting by dropping the normal's dominant axis
+  foreshortens it by `|n_max| ≥ 1/√3`, which made the reported angle depend on how the
+  object frame happened to be oriented — under-reported by up to 40%, and different for
+  the same rigid object in a rotated frame. Every primitive's margin is the same
+  quantity in closed form: `arctan(min(a,b)/l)` for a box face, `arctan(r/(h/2))` for a
+  cylinder cap, `arctan(R/r)` for a torus lying flat.
+- **A sphere reports `0`, and it means neutral, not critical.** Point contact directly
+  beneath the centre never tips; it rolls. A mesh face reporting `0` would instead be a
+  knife-edge equilibrium, which is why those are excluded rather than reported.
 - Length tolerance is the same scale-aware `atol = 1e-9 + 1e-6 · scale` as the grasp
-  contract, defined once in `tsr.core.utils.length_atol`.
+  contract, defined once in `tsr.core.utils.length_atol`. **Containment is decided on a
+  length and fails closed** (`#153`): the old test compared a cross product — an *area* —
+  against an absolute `1e-10`, so below ~1e-5 m every edge test was skipped and the
+  helper fell through to "inside", inventing stable poses at small scales. A face is
+  stable only when the projected centre of mass is inside by more than `atol`; a centre
+  of mass exactly on a support edge is a critical equilibrium, not a rest.
 
 ### Assurance
 
@@ -317,11 +333,15 @@ never reuses a construction formula and a template cannot certify itself.
 an arbitrary surface pose, and a guard test fails if a new factory is added without
 joining the matrix.
 
-**Open deviations.** Clause 4 is not yet met: `stability_margin` is measured in a
-squashed projection and is under-reported by up to 40% and not frame-invariant
-(`#151`). `place_mesh` results also depend on tessellation (`#152`), containment
-tolerance is unit-dependent below ~1e-5 m (`#153`), and the primitives report no margin
-at all (`#156`). Each is tracked under `#148`.
+The margin is checked the same way: `_placement_oracle.tipping_angle` reads the contact
+patch and the centre of mass off the *pose*, so it never sees the generator's
+arithmetic, and the primitives are additionally checked against closed forms and against
+routing the same solid through `place_mesh`.
+
+**Open deviation.** `place_mesh` still depends on tessellation (`#152`): co-planar
+facets are grouped by an 8-decimal rounding of the hull normal rather than merged with a
+tolerance, so a float32 mesh fragments a face and under-reports its margin, and a
+tessellated curved surface yields one template per facet. Tracked under `#148`.
 
 ## Verification matrix and release gate (#73)
 

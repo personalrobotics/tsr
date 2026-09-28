@@ -30,7 +30,7 @@ from hypothesis import strategies as st
 from tsr.placement import StablePlacer
 
 from ..hands._grasp_matrix import budget, bw_samples, matrix_settings  # noqa: F401  (re-exported)
-from ._placement_oracle import Box, Cylinder, Mesh, Sphere, Torus, certify
+from ._placement_oracle import Box, Cylinder, Mesh, Sphere, Torus, certify, tipping_angle
 
 # --------------------------------------------------------------------------- #
 # Factory table
@@ -193,6 +193,51 @@ def soundness_failures(case: PlacementCase, templates, *, table_pose=None, rng=N
             if not w.ok:
                 failures.append(f"{case} [{t.variant}] xi={np.round(xi, 6).tolist()}: {w.failed}")
     return failures
+
+
+def margin_failures(case: PlacementCase, templates) -> List[str]:
+    """Clause 4: a reported ``stability_margin`` is the pose's physical tipping angle.
+
+    Compared on ``tan`` of the angle, which is the ratio the quantity is built from, at
+    ``rtol = 2e-3``. The oracle samples a circular contact as a 72-gon, whose apothem is
+    ``cos(pi/72) = 0.99905`` of the true radius, so a curved primitive's tipping angle
+    carries a known conservative bias of 9.5e-4 -- an order of magnitude below the
+    tolerance, and four orders below the 40% error this check exists to catch (#151).
+    """
+    failures: List[str] = []
+    prim = case.prim
+    for t in templates:
+        if t.stability_margin is None:
+            failures.append(f"{case} [{t.variant}]: no stability_margin (#156)")
+            continue
+        for xi in bw_samples(t):
+            pose = t.instantiate(np.eye(4)).to_transform(xi)
+            expected = tipping_angle(prim, pose)
+            if not np.isclose(np.tan(t.stability_margin), np.tan(expected), rtol=2e-3, atol=1e-9):
+                failures.append(
+                    f"{case} [{t.variant}]: margin {np.degrees(t.stability_margin):.4f}° "
+                    f"but the posed object tips at {np.degrees(expected):.4f}°"
+                )
+                break
+    return failures
+
+
+#: Factories that promise an order. ``place_mesh`` documents most-stable-first; the
+#: primitives return their faces in a fixed labelled order instead, which is the more
+#: useful contract when the caller cares which face is down.
+ORDERED_FACTORIES = ("place_mesh",)
+
+
+def ordering_failures(case: PlacementCase, templates) -> List[str]:
+    """``place_mesh`` promises most-stable-first, judged by the reported angles."""
+    if case.factory not in ORDERED_FACTORIES:
+        return []
+    reported = [t.stability_margin for t in templates]
+    if any(m is None for m in reported):
+        return []
+    if reported != sorted(reported, reverse=True):
+        return [f"{case}: margins {np.degrees(reported).round(3).tolist()} are not descending"]
+    return []
 
 
 def face_label_failures(case: PlacementCase, templates) -> List[str]:

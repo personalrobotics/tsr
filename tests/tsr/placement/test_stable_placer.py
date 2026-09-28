@@ -314,15 +314,18 @@ class TestNewAPI(unittest.TestCase):
         margins = [t.stability_margin for t in tmpls]
         self.assertEqual(margins, sorted(margins, reverse=True))
 
-    def test_primitive_stability_margin_none(self):
-        for t in self.placer.place_cylinder(0.04, 0.12):
-            self.assertIsNone(t.stability_margin)
-        for t in self.placer.place_box(0.08, 0.06, 0.18):
-            self.assertIsNone(t.stability_margin)
-        for t in self.placer.place_sphere(0.04):
-            self.assertIsNone(t.stability_margin)
-        for t in self.placer.place_torus(0.05, 0.01):
-            self.assertIsNone(t.stability_margin)
+    def test_every_primitive_reports_a_margin(self):
+        # #156: primitives are as self-describing as place_mesh. The values themselves
+        # are checked against analytic tipping angles in test_placement_margin.py.
+        for call in (
+            lambda: self.placer.place_cylinder(0.04, 0.12),
+            lambda: self.placer.place_box(0.08, 0.06, 0.18),
+            lambda: self.placer.place_torus(0.05, 0.01),
+        ):
+            for t in call():
+                self.assertGreater(t.stability_margin, 0.0)
+        # A sphere is neutrally stable: it rolls rather than tips.
+        self.assertEqual(self.placer.place_sphere(0.04)[0].stability_margin, 0.0)
 
     # -- min_margin_deg ----------------------------------------------------
 
@@ -391,11 +394,6 @@ class TestNewAPI(unittest.TestCase):
         t = self.placer.place_mesh(self.cube_verts, self.cube_com)[0]
         t2 = TSRTemplate.from_json(t.to_json())
         self.assertAlmostEqual(t.stability_margin, t2.stability_margin)
-
-    def test_stability_margin_none_survives_json_roundtrip(self):
-        t = self.placer.place_cylinder(0.04, 0.12)[0]
-        t2 = TSRTemplate.from_json(t.to_json())
-        self.assertIsNone(t2.stability_margin)
 
 
 if __name__ == "__main__":

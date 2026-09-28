@@ -481,7 +481,9 @@ for t in templates:
     # TSRTemplate(task='place', subject='widget', variant='face-1', margin=31.9°)
 ```
 
-**Stability criterion**: a face is stable if the COM projects inside the support polygon. The margin is `arctan(d_min / h_com)` where `d_min` is the minimum distance from the COM projection to any edge of the support polygon.
+**Stability criterion**: a face is stable if the COM projects strictly inside the support polygon — a COM exactly on a support edge is a tipping case, not a rest. The margin is the tipping angle `arctan(d_min / h_com)`, with `d_min` measured *in the face's own plane*, so it is a property of the object and the pose: the same rigid object re-expressed in a rotated frame, or in different units, reports the same angles.
+
+Every factory takes `min_margin_deg`, not only `place_mesh`. It means the same thing everywhere, so a needle-thin box standing on its end (1.15°) is rejected by `min_margin_deg=5` whether you ask through `place_box` or `place_mesh`.
 
 ---
 
