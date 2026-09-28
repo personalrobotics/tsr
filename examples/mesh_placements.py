@@ -157,8 +157,9 @@ mug_com = _weighted_com(
     (np.array([MUG_R + HDL_LX / 2, 0.0, 0.0]), HDL_LX * HDL_LY * HDL_LZ),
 )
 
-# The cylinder discretisation creates many tiny hull facets on the curved side
-# (sub-5° margins).  Filter to physically meaningful poses for visualisation.
+# The mug's body is tessellated into 40 flat sides, each a real resting face of the
+# polyhedron supplied, at 180/40 = 4.5 deg. Filtering above that leaves the poses a
+# caller who meant a cylinder would want (see docs/ARCHITECTURE.md, issue #152).
 _MIN_MARGIN_DEG = 5.0
 mug_tmpls = placer.place_mesh(mug_verts, mug_com, subject="mug")
 print(f"Mug      → {len(mug_tmpls)} stable pose(s)  (COM in natural frame: {mug_com.round(4)})")

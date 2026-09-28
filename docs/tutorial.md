@@ -485,6 +485,14 @@ for t in templates:
 
 Every factory takes `min_margin_deg`, not only `place_mesh`. It means the same thing everywhere, so a needle-thin box standing on its end (1.15°) is rejected by `min_margin_deg=5` whether you ask through `place_box` or `place_mesh`.
 
+**Tessellated curved surfaces.** `place_mesh` describes the polyhedron you give it, so a cylinder tessellated into `n` flat sides really does have `n` resting poses on those sides — it cannot know you meant a cylinder. Their margin is exactly `180/n` degrees, which goes to zero as the tessellation refines, matching the ideal cylinder that contacts along a line and rolls rather than tipping. Pass `min_margin_deg` above `180/n` and you get back exactly what `place_cylinder` returns: the two caps.
+
+```python
+verts = tessellated_cylinder(r=0.04, h=0.12, n=48)   # 48 side facets
+placer.place_mesh(verts, com)                        # 50 poses: 2 caps + 48 sides at 3.75°
+placer.place_mesh(verts, com, min_margin_deg=4.2)    # 2 poses: the caps, as place_cylinder
+```
+
 ---
 
 ## Visualization

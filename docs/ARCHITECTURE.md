@@ -338,10 +338,32 @@ patch and the centre of mass off the *pose*, so it never sees the generator's
 arithmetic, and the primitives are additionally checked against closed forms and against
 routing the same solid through `place_mesh`.
 
-**Open deviation.** `place_mesh` still depends on tessellation (`#152`): co-planar
-facets are grouped by an 8-decimal rounding of the hull normal rather than merged with a
-tolerance, so a float32 mesh fragments a face and under-reports its margin, and a
-tessellated curved surface yields one template per facet. Tracked under `#148`.
+### What `place_mesh` takes a face to be (#152)
+
+Two rules that pull against each other, and the tolerance between them is where the
+tessellation question lives.
+
+- **A face is a face however it was triangulated.** Hull facets lying in one plane are
+  one resting face, grouped by *proximity* — normals within `1e-6` and offsets within
+  `atol` — because the facets of a single face agree only to floating point. Grouping on
+  a rounded normal instead, as this replaces, fragments a face whenever its facets
+  straddle a rounding boundary: a rotated box whose vertices came from float32 split into
+  twelve single-triangle faces, none able to support the centre of mass. That is the
+  ordinary case, not a corner one — STL, OBJ, glTF and MuJoCo all store float32.
+- **Nearly parallel is not the same plane.** A tessellated curved surface has genuinely
+  distinct facets, and merging them would invent a flat face the caller never supplied.
+  A cylinder cut into `n` sides separates neighbouring facets by `2π/n`, which stays
+  ~600× above the tolerance even at `n = 10000`.
+
+So `place_mesh` describes **the polyhedron it was given**, and a 48-gon prism is a
+48-gon prism: the library cannot know it was meant to be a cylinder. That is why it
+returns resting poses on a tessellated curved side while `place_cylinder` documents that
+sideways is not stable — and the two are reconciled by the margin, not by a special
+case. A cylinder tessellated into `n` sides rests on each at exactly `180/n` degrees,
+which tends to 0 as the tessellation refines: the ideal cylinder's true answer, since it
+contacts along a line and rolls rather than tipping. A caller says "this is a curved
+surface" with `min_margin_deg` above `180/n`, and then the two entry points agree
+exactly, which is a test rather than a claim.
 
 ## Verification matrix and release gate (#73)
 

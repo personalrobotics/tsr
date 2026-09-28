@@ -40,6 +40,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Containment is now decided on an in-plane *length* against the scale-aware `atol`, and
   an indeterminate test rejects the pose. A centre of mass exactly on a support edge is
   a critical equilibrium and is no longer returned as a rest.
+- **A mesh with float32 vertices no longer loses its stable poses** (#152). Co-planar
+  hull facets were grouped by an 8-decimal rounding of the face normal, which splits a
+  face whenever its facets straddle a rounding boundary. A rotated 0.20 × 0.10 × 0.30 box
+  whose vertices came from float32 fragmented into twelve single-triangle "faces", none
+  able to support the centre of mass: 3.0.0 answered with twelve templates all claiming
+  a 0° margin — each admitted by the default filter — and with containment now failing
+  closed it would answer with none at all. This is the ordinary path for a mesh loaded
+  from a file, since STL, OBJ, glTF and MuJoCo all store float32. Facets are now grouped
+  by plane *proximity*, and the float32 box reports the same six angles as its float64
+  twin. The tolerance is deliberately tight: a tessellated curved surface keeps its
+  facets, because `place_mesh` describes the polyhedron it was given and cannot know a
+  48-gon prism was meant to be a cylinder.
 - **Non-finite placement input is rejected at ingress** (#154). `nan` and `inf`
   dimensions passed `x <= 0` and produced entirely finite templates, leaving no trace
   of the invalid request; `place_mesh` reported a non-finite vertex as a degenerate
@@ -67,6 +79,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   positive threshold rejects it.
 
 ### Changed
+- **`place_mesh` and `place_cylinder` no longer appear to contradict each other** on a
+  tessellated cylinder, and the relationship is now documented and tested rather than
+  left to the reader. A cylinder cut into `n` sides rests on each at exactly `180/n`
+  degrees — a margin that tends to 0 as the tessellation refines, which is the ideal
+  cylinder's own answer, since it contacts along a line and rolls rather than tipping.
+  Passing `min_margin_deg` above `180/n` returns exactly what `place_cylinder` returns.
 - `place_torus`'s docstring said it returned one template while it returned two
   (#155). Both sides are returned, as for the box's faces and the cylinder's caps,
   because which side is down is caller-visible in `variant` and distinct for a labelled

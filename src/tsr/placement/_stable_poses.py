@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+import itertools
 from typing import Iterator, Tuple
 
 import numpy as np
@@ -33,6 +33,66 @@ def _rotation_180_perp(a: np.ndarray) -> np.ndarray:
     perp = perp - np.dot(perp, a) * a
     perp /= np.linalg.norm(perp)
     return 2.0 * np.outer(perp, perp) - np.eye(3)
+
+
+#: Tolerance on a unit face normal when deciding whether two facets are coplanar. For
+#: unit vectors this is the angle between them in radians. It has to absorb the error in
+#: normals computed from float32 vertices (~1e-7, and every common mesh format -- STL,
+#: OBJ, glTF, MuJoCo -- stores float32), while staying far below the angle between
+#: genuinely distinct faces: a cylinder tessellated into ``n`` sides separates its
+#: neighbours by ``2*pi/n``, which stays 600x above this tolerance even at n = 10000.
+_NORMAL_ATOL = 1e-6
+
+#: The 81 cells adjacent to a cell in the 4D plane grid, including the cell itself.
+_NEIGHBOURS = np.array(list(itertools.product((-1, 0, 1), repeat=4)))
+
+
+def _group_coplanar_facets(hull: ConvexHull, atol: float) -> Iterator[Tuple[np.ndarray, list]]:
+    """Group hull facets that lie in the same plane, and yield ``(plane, facet indices)``.
+
+    A convex solid's face is triangulated into several facets whose planes agree only to
+    floating-point precision, so they must be grouped by *proximity*. Rounding the normal
+    to a fixed number of decimals and bucketing on the result -- what this replaces --
+    fragments a face whenever its facets straddle a bucket boundary. On a rotated box
+    with float32 vertices that splits all six faces into twelve single-triangle "faces",
+    each too small to support the centre of mass, so the box has no stable placement at
+    all (#152).
+
+    Facets are indexed in a 4D grid over ``(n, d)`` whose cells are one tolerance wide,
+    and each facet joins a group whose *representative* plane is within tolerance,
+    searching the 81 surrounding cells. Matching against the representative rather than
+    any member bounds the group to one tolerance, so groups cannot drift by chaining, and
+    searching the neighbours removes the boundary sensitivity that caused the defect.
+    """
+    cell = np.array([_NORMAL_ATOL, _NORMAL_ATOL, _NORMAL_ATOL, atol])
+    groups: list = []  # (representative plane, [facet indices])
+    index: dict = {}  # grid cell -> group id
+    for i in range(len(hull.simplices)):
+        plane = hull.equations[i, :4]
+        key = np.floor(plane / cell).astype(np.int64)
+        gid = None
+        for candidate in (index.get(tuple(k)) for k in key + _NEIGHBOURS):
+            if candidate is None:
+                continue
+            delta = np.abs(groups[candidate][0] - plane)
+            if delta[:3].max() <= _NORMAL_ATOL and delta[3] <= atol:
+                gid = candidate
+                break
+        if gid is None:
+            gid = len(groups)
+            groups.append((plane, []))
+            index[tuple(key)] = gid
+        groups[gid][1].append(i)
+
+    for _, indices in groups:
+        # The mean plane of the group: for a mesh whose vertices are not exactly
+        # coplanar there is no exact face plane, and the mean minimises the residual.
+        planes = hull.equations[indices, :4]
+        n = planes[:, :3].mean(axis=0)
+        norm = np.linalg.norm(n)
+        if norm < 1e-12:
+            continue
+        yield np.append(n / norm, planes[:, 3].mean()), indices
 
 
 def _plane_basis(n: np.ndarray) -> np.ndarray:
@@ -115,23 +175,11 @@ def stable_poses_mesh(
             "coplanar, collinear, or otherwise degenerate"
         ) from e
 
-    # Group triangles that share the same outward normal into one face.
-    face_groups: dict = defaultdict(list)
-    for i, simplex in enumerate(hull.simplices):
-        n_key = tuple(np.round(hull.equations[i, :3], 8))
-        face_groups[n_key].append(i)
-
     _neg_z = np.array([0.0, 0.0, -1.0])
     atol = length_atol(float(np.ptp(vertices, axis=0).max()))
 
-    for n_key, simplex_indices in face_groups.items():
-        n = np.array(n_key, dtype=float)
-        norm = np.linalg.norm(n)
-        if norm < 1e-12:
-            continue
-        n /= norm
-
-        d = float(hull.equations[simplex_indices[0], 3])
+    for plane, simplex_indices in _group_coplanar_facets(hull, atol):
+        n, d = plane[:3], float(plane[3])
 
         # COM height above this face (positive = COM on the interior side).
         # Used for the stability lever arm (the margin), NOT for placement.
@@ -156,9 +204,13 @@ def stable_poses_mesh(
         pts_2d = (face_verts - v0) @ basis  # (M, 2)
         p_2d = (com - v0) @ basis  # the projection drops the normal component
 
-        # Order the (convex) face counter-clockwise about its centroid.
-        centred = pts_2d - pts_2d.mean(axis=0)
-        poly = pts_2d[np.argsort(np.arctan2(centred[:, 1], centred[:, 0]))]
+        # The support polygon is the 2D hull of the contact points, which is what a
+        # non-convex object rests on. Taking the hull rather than sorting the points by
+        # angle also tolerates a merged face whose points are not exactly coplanar.
+        try:
+            poly = pts_2d[ConvexHull(pts_2d).vertices]  # counter-clockwise
+        except QhullError:
+            continue  # collinear contact: a line or point support cannot hold a rest
 
         d_min = _inward_distance(p_2d, poly)
         if d_min <= atol:
