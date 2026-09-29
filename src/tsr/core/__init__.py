@@ -13,7 +13,7 @@ The public symbols are re-exported at the top level (``from tsr import TSR``);
 import them from here when you want only the kernel.
 """
 
-from .tsr import NANBW, TSR
+from .tsr import FRAME_ATOL, NANBW, TSR
 from .tsr_chain import ChainSample, ChainSolveResult, TSRChain
 from .utils import (
     EPSILON,
@@ -29,6 +29,7 @@ __all__ = [
     "ChainSample",
     "ChainSolveResult",
     "NANBW",
+    "FRAME_ATOL",
     "EPSILON",
     "wrap_to_interval",
     "rotation_angle",

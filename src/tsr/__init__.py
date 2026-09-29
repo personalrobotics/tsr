@@ -29,6 +29,7 @@ The spine: a factory produces recipes; a recipe instantiates to math::
 # --- Layer 0: core math -------------------------------------------------------
 from .core import (
     EPSILON,
+    FRAME_ATOL,
     TSR,
     ChainSample,
     ChainSolveResult,
@@ -90,6 +91,7 @@ __all__ = [
     "geodesic_error",
     "geodesic_distance",
     "EPSILON",
+    "FRAME_ATOL",
     # template
     "TSRTemplate",
     "GraspProvenance",

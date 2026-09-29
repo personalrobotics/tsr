@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`TSR.__init__` rejects a malformed region** (#162). A frame must be a finite 4×4
+  whose last row is `[0, 0, 0, 1]` and whose rotation block satisfies `R Rᵀ = I` and
+  `det R = +1`; `Bw` must be a finite 6×2; translation rows must be ordered. Previously
+  only the last of these was checked, so a non-finite frame, a scaled or reflected
+  rotation block, or a NaN in `Bw` was accepted and surfaced much later as a NaN
+  distance, an unusable sample, or a projection that never converged. A **rotational**
+  row with `hi < lo` remains valid — it is an outer interval wrapping through ±π.
+- **`tsr.FRAME_ATOL`**, the absolute tolerance those frame checks use (`1e-6`). It is
+  public because the contract is shared: pycbirrt's native TSR runtime is checked
+  differentially against this implementation and applies the same rules at the same
+  tolerance (personalrobotics/pycbirrt#87).
+
+Additive validation on inputs that were already unusable, so no working caller changes.
+
 ## [3.1.0] — 2026-09
 
 Placement templates now mean what they say. 2.2.0 did this for grasps (#65); this does
