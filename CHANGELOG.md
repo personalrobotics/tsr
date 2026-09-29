@@ -4,7 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.0] — 2026-09
+
+A TSR now rejects a malformed region at construction instead of letting it surface
+later as a NaN distance or a projection that never converges.
+
+The reason it matters beyond this package: pycbirrt is building a native C++ TSR
+runtime checked *differentially* against this implementation, so sstsr is now a
+reference implementation and its construction rules are a shared contract rather than
+an internal detail. That is why the tolerance is exported and why the rules are stated
+in `docs/ARCHITECTURE.md` as conditions on the inputs — which argument, which
+condition, which tolerance — so a second implementation can reproduce them without
+reading the Python. Pin `sstsr>=3.2` to rely on them.
 
 ### Added
 - **`TSR.__init__` rejects a malformed region** (#162). A frame must be a finite 4×4
@@ -18,6 +29,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   public because the contract is shared: pycbirrt's native TSR runtime is checked
   differentially against this implementation and applies the same rules at the same
   tolerance (personalrobotics/pycbirrt#87).
+
+- **A checked-in placement mutation gate** (#159). 3.1.0's claim that corrupting the
+  placement generator fails the suite was a measurement taken once, from a throwaway
+  plugin; nothing in the repository held it. Eleven mutants now run against a
+  deterministic corpus through the same check functions the property matrix uses, and
+  the weekly release gate covers the placement suites at `TSR_MATRIX_SCALE=10`
+  alongside the grasp ones. Writing it down caught an error in the original
+  verification: `TSRTemplate` is frozen, so the variant-relabelling mutant had been
+  *raising* rather than being detected.
 
 Additive validation on inputs that were already unusable, so no working caller changes.
 
