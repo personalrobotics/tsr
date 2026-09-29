@@ -6,6 +6,7 @@ from unittest import TestCase
 import numpy
 from numpy import pi
 
+from tsr import FRAME_ATOL
 from tsr.tsr import TSR
 
 
@@ -448,3 +449,135 @@ class TsrTest(TestCase):
             rpy2 = TSR.rot_to_rpy(R)
             R2 = TSR.rpy_to_rot(rpy2)
             numpy.testing.assert_allclose(R, R2, atol=1e-10, err_msg=f"RPY round-trip failed for rpy={rpy}")
+
+
+class ConstructionContractTest(TestCase):
+    """A malformed region is rejected at construction (#162).
+
+    This is a contract shared with another implementation: pycbirrt's native TSR
+    runtime is checked differentially against this one and applies the same rules at
+    the same ``FRAME_ATOL``, so what one accepts the other must accept. Everything here
+    is stated in terms a second implementation can reproduce -- which argument, which
+    condition, which tolerance -- rather than in terms of this code's internals.
+
+    Without it a non-finite frame, a rotation block that is not a rotation, or a NaN in
+    ``Bw`` is accepted and surfaces much later as a NaN distance, a sample nothing can
+    use, or a projection that never converges.
+    """
+
+    VALID = dict(T0_w=numpy.eye(4), Tw_e=numpy.eye(4), Bw=numpy.zeros((6, 2)))
+
+    def _rejects(self, argument, **override):
+        kwargs = dict(self.VALID)
+        kwargs.update(override)
+        with self.assertRaises(ValueError) as caught:
+            TSR(**kwargs)
+        self.assertIn(argument, str(caught.exception))
+
+    # -- frames --------------------------------------------------------------
+
+    def test_a_frame_must_be_finite(self):
+        for argument in ("T0_w", "Tw_e"):
+            for bad in (numpy.nan, numpy.inf, -numpy.inf):
+                frame = numpy.eye(4)
+                frame[0, 3] = bad
+                self._rejects(argument, **{argument: frame})
+
+    def test_a_frame_must_be_4x4(self):
+        for argument in ("T0_w", "Tw_e"):
+            self._rejects(argument, **{argument: numpy.eye(3)})
+            self._rejects(argument, **{argument: numpy.zeros((4, 3))})
+
+    def test_a_frame_must_be_homogeneous(self):
+        frame = numpy.eye(4)
+        frame[3] = [0.0, 0.0, 1.0, 1.0]
+        self._rejects("T0_w", T0_w=frame)
+
+    def test_a_frame_rotation_block_must_be_a_rotation(self):
+        scaled = numpy.eye(4)
+        scaled[:3, :3] *= 1.5  # orthogonal but not orthonormal
+        self._rejects("Tw_e", Tw_e=scaled)
+
+        sheared = numpy.eye(4)
+        sheared[0, 1] = 0.3
+        self._rejects("Tw_e", Tw_e=sheared)
+
+    def test_a_reflection_is_not_a_rotation(self):
+        reflected = numpy.eye(4)
+        reflected[0, 0] = -1.0  # orthonormal, but determinant -1
+        with self.assertRaises(ValueError) as caught:
+            TSR(Tw_e=reflected)
+        self.assertIn("determinant", str(caught.exception))
+
+    def test_the_tolerance_is_the_documented_one(self):
+        """The number both implementations must agree on, probed from either side.
+
+        A rotation block scaled by ``1 + d`` has ``max|R Rᵀ - I| ≈ 2d``, so the
+        boundary sits at ``d = FRAME_ATOL/2``.
+        """
+        inside, outside = numpy.eye(4), numpy.eye(4)
+        inside[:3, :3] *= 1.0 + FRAME_ATOL / 4.0
+        outside[:3, :3] *= 1.0 + FRAME_ATOL * 4.0
+        TSR(Tw_e=inside)  # must not raise
+        with self.assertRaises(ValueError):
+            TSR(Tw_e=outside)
+
+    # -- bounds --------------------------------------------------------------
+
+    def test_bounds_must_be_a_finite_6x2(self):
+        self._rejects("Bw", Bw=numpy.zeros((6, 3)))
+        self._rejects("Bw", Bw=numpy.zeros((5, 2)))
+        for bad in (numpy.nan, numpy.inf, -numpy.inf):
+            Bw = numpy.zeros((6, 2))
+            Bw[2, 1] = bad
+            self._rejects("Bw", Bw=Bw)
+
+    def test_translation_bounds_must_be_ordered(self):
+        Bw = numpy.zeros((6, 2))
+        Bw[1] = [1.0, -1.0]
+        self._rejects("Bw", Bw=Bw)
+
+    def test_an_outer_rotational_interval_is_valid(self):
+        """``hi < lo`` on a rotational row wraps through ±π and stays expressible."""
+        Bw = numpy.zeros((6, 2))
+        Bw[5] = [3 * pi / 4, -3 * pi / 4]
+        tsr = TSR(Bw=Bw)
+        for _ in range(64):
+            yaw = tsr.sample_xyzrpy()[5]
+            self.assertTrue(abs(yaw) >= 3 * pi / 4 - 1e-9, f"yaw {yaw} left the outer interval")
+
+    def test_a_free_dimension_is_still_requested_with_nan(self):
+        """The check is on ``Bw``; NaN in the *argument* still means "sample this"."""
+        Bw = numpy.zeros((6, 2))
+        Bw[0] = [-1.0, 1.0]
+        tsr = TSR(Bw=Bw)
+        request = numpy.zeros(6)
+        request[0] = numpy.nan
+        self.assertTrue(-1.0 <= tsr.sample_xyzrpy(request)[0] <= 1.0)
+
+    # -- no false rejection --------------------------------------------------
+
+    def test_the_frames_this_library_produces_are_accepted(self):
+        """The failure mode a too-tight tolerance would cause: every template the
+        factories emit, instantiated, must construct."""
+        from tsr.hands import ParallelJawGripper, Robotiq2F85
+        from tsr.placement import StablePlacer
+
+        gripper = ParallelJawGripper(finger_length=0.08, max_aperture=0.14)
+        placer = StablePlacer(table_x=0.60, table_y=0.60)
+        templates = (
+            gripper.grasp_cylinder(0.04, 0.12)
+            + gripper.grasp_box(0.06, 0.05, 0.10)
+            + gripper.grasp_sphere(0.05)
+            + gripper.grasp_torus(0.05, 0.012)
+            + Robotiq2F85().grasp_cylinder(0.03, 0.10)
+            + placer.place_cylinder(0.04, 0.12)
+            + placer.place_box(0.10, 0.08, 0.06)
+            + placer.place_sphere(0.05)
+            + placer.place_torus(0.05, 0.012)
+        )
+        self.assertGreater(len(templates), 20)
+        pose = numpy.eye(4)
+        pose[:3, :3] = TSR(Bw=numpy.zeros((6, 2))).to_transform(numpy.zeros(6))[:3, :3]
+        for template in templates:
+            template.instantiate(pose)  # must not raise

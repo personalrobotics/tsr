@@ -34,6 +34,24 @@ The heart's correctness *is* its mutual consistency. For any `TSR` and pose:
 
 These are exercised exhaustively by the Hypothesis property tests.
 
+### Construction rejects a malformed region (#162)
+
+`TSR.__init__` raises `ValueError` when a frame is not a finite 4×4 whose last row is
+`[0, 0, 0, 1]` and whose rotation block satisfies `R Rᵀ = I` and `det R = +1`, or when
+`Bw` is not a finite 6×2, or when a translation row has `lo > hi`. A **rotational** row
+with `hi < lo` is valid: it is an outer interval wrapping through ±π, which the
+continuous-bounds construction expands correctly.
+
+The tolerance is `tsr.FRAME_ATOL = 1e-6`, absolute, and it is public because the
+contract is shared. pycbirrt's native TSR runtime is checked differentially against
+this implementation and applies the same rules at the same tolerance, so what one
+accepts the other must accept; a second implementation is why the rules are stated as
+conditions on the inputs rather than as properties of this code.
+
+Rejecting here is what keeps a malformed region diagnosable. Accepted, it surfaces much
+later and in a misleading place — a NaN distance, a sample nothing can use, or a
+projection that never converges.
+
 ## Factory contract (Layer 2)
 
 Every `grasp_*` / `place_*` factory method obeys one uniform contract:

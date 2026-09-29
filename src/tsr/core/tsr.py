@@ -11,6 +11,71 @@ from .utils import EPSILON, geodesic_distance, wrap_to_interval
 
 NANBW = numpy.ones(6) * float("nan")
 
+#: Tolerance for the frame checks in :meth:`TSR.__init__` (#162).
+#:
+#: A frame is accepted when its last row is ``[0, 0, 0, 1]``, its rotation block
+#: satisfies ``R Rᵀ = I`` and ``det R = +1``, each within this absolute tolerance.
+#: Frames that come out of numerical pipelines -- composed transforms, IK solutions,
+#: quaternion round-trips -- carry error many orders below it, while a corrupted or
+#: reflected frame is far outside. It is a **public constant** because the contract is
+#: shared: pycbirrt's native TSR runtime is checked differentially against this
+#: implementation and applies the same rules at the same tolerance, so the two must not
+#: drift apart (personalrobotics/pycbirrt#87).
+FRAME_ATOL = 1e-6
+
+
+def _check_frame(name: str, value) -> numpy.ndarray:
+    """Validate a 4x4 homogeneous transform, or raise ``ValueError`` naming it (#162).
+
+    Rejecting a malformed frame here is the difference between a diagnosable error and
+    a NaN that surfaces much later as an unconverging projection or a silently empty
+    sample.
+    """
+    try:
+        T = numpy.asarray(value, dtype=float)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{name} must be a 4x4 array of numbers, got {value!r}") from e
+    if T.shape != (4, 4):
+        raise ValueError(f"{name} must be a 4x4 array, got shape {T.shape}")
+    if not numpy.all(numpy.isfinite(T)):
+        raise ValueError(f"{name} must be finite, got {numpy.count_nonzero(~numpy.isfinite(T))} non-finite entry(s)")
+    if not numpy.allclose(T[3], [0.0, 0.0, 0.0, 1.0], rtol=0.0, atol=FRAME_ATOL):
+        raise ValueError(f"{name} is not homogeneous: last row must be [0, 0, 0, 1], got {T[3]}")
+    R = T[:3, :3]
+    if not numpy.allclose(R @ R.T, numpy.eye(3), rtol=0.0, atol=FRAME_ATOL):
+        raise ValueError(
+            f"{name} rotation block is not orthonormal within {FRAME_ATOL:g}: "
+            f"max |R Rᵀ - I| = {numpy.abs(R @ R.T - numpy.eye(3)).max():.3g}"
+        )
+    det = float(numpy.linalg.det(R))
+    if not numpy.isclose(det, 1.0, rtol=0.0, atol=FRAME_ATOL):
+        raise ValueError(
+            f"{name} rotation block must have determinant +1, got {det:.6g}"
+            + (" (a reflection is not a rotation)" if det < 0 else "")
+        )
+    return T
+
+
+def _check_bounds(value) -> numpy.ndarray:
+    """Validate ``Bw``, or raise ``ValueError`` (#162).
+
+    A rotational row with ``hi < lo`` is **valid**: it is an outer interval wrapping
+    through ±π, which the continuous-bounds construction below expands correctly. Only
+    the translation rows are ordered intervals.
+    """
+    try:
+        Bw = numpy.asarray(value, dtype=float)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Bw must be a 6x2 array of numbers, got {value!r}") from e
+    if Bw.shape != (6, 2):
+        raise ValueError(f"Bw must be a 6x2 array, got shape {Bw.shape}")
+    if not numpy.all(numpy.isfinite(Bw)):
+        raise ValueError(f"Bw must be finite, got {numpy.count_nonzero(~numpy.isfinite(Bw))} non-finite entry(s)")
+    if numpy.any(Bw[0:3, 0] > Bw[0:3, 1]):
+        raise ValueError("Bw translation bounds must be [min, max]", Bw)
+    return Bw
+
+
 # Gimbal-lock detection threshold for RPY extraction. Only treat a rotation as a
 # true singularity when cos(pitch) is within this of zero (|rot[2,0]| ~ 1). Away
 # from the singularity cos(pitch) > 0 and arctan2 is scale-invariant, so the
@@ -36,12 +101,11 @@ class TSR:
         if Bw is None:
             Bw = numpy.zeros((6, 2))
 
-        self.T0_w = numpy.array(T0_w)
-        self.Tw_e = numpy.array(Tw_e)
-        self.Bw = numpy.array(Bw)
-
-        if numpy.any(self.Bw[0:3, 0] > self.Bw[0:3, 1]):
-            raise ValueError("Bw translation bounds must be [min, max]", Bw)
+        # Reject a malformed region at construction rather than letting it surface as a
+        # NaN distance, an unconverging projection, or a sample nothing can use (#162).
+        self.T0_w = _check_frame("T0_w", T0_w)
+        self.Tw_e = _check_frame("Tw_e", Tw_e)
+        self.Bw = _check_bounds(Bw)
 
         # We will now create a continuous version of the bound to maintain:
         # 1. Bw[i,1] > Bw[i,0] which is necessary for LBFGS-B
