@@ -32,4 +32,8 @@ jobs:
       - name: Property matrix and mutation gate (TSR_MATRIX_SCALE=10)
         env:
           TSR_MATRIX_SCALE: "10"
-        run: uv run pytest tests/tsr/hands/test_grasp_matrix.py tests/tsr/hands/test_grasp_mutation_gate.py -v
+        run: |
+          uv run pytest -v \
+            tests/tsr/hands/test_grasp_matrix.py \
+            tests/tsr/hands/test_grasp_mutation_gate.py \
+            tests/tsr/placement/

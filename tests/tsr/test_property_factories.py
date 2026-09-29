@@ -5,7 +5,7 @@
 
 Encodes the factory contract from docs/ARCHITECTURE.md: every returned template
 is a valid TSR recipe with an orthonormal frame; infeasible geometry yields [];
-placement seats the resting face at table z=0 (the C2 guarantee).
+placement seats the resting face at table z=0 (the placement contract's clause 1).
 """
 
 from __future__ import annotations
@@ -313,7 +313,7 @@ def test_mesh_placements_invariants(seed, com_off):
         assert _is_se3(t.Tw_e)
         assert t.stability_margin >= -1e-12
         margins.append(t.stability_margin)
-        # Resting face sits on the table for any COM (the C2 guarantee).
+        # Resting face sits on the table for any COM (placement contract, clause 1).
         pose = t.instantiate(np.eye(4)).to_transform(np.zeros(6))
         world = (pose[:3, :3] @ pts.T).T + pose[:3, 3]
         assert np.isclose(world[:, 2].min(), 0.0, atol=1e-6)
