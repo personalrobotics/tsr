@@ -174,6 +174,18 @@ projection to the nearest edge of the polygon — and every factory takes
 `min_margin_deg` to discard poses below a threshold. A sphere reports `0`: it is
 neutrally stable, so it rolls rather than tipping.
 
+Every template also carries a machine-readable `provenance` — the resting face's normal,
+the `support_margin` and `com_height` the angle is built from, the `footprint_radius`
+behind the sliding bounds — so you read the semantics structurally instead of parsing
+`name`:
+
+```python
+p = templates[0].provenance
+p.face_normal        # (0.0, 0.0, -1.0) in the object frame
+p.equilibrium        # 'stable', or 'neutral' for a sphere that rolls
+p.footprint_radius   # the inset applied to Bw's xy bounds
+```
+
 ### Work directly with TSRs
 
 ```python

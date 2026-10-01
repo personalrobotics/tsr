@@ -485,6 +485,15 @@ for t in templates:
 
 Every factory takes `min_margin_deg`, not only `place_mesh`. It means the same thing everywhere, so a needle-thin box standing on its end (1.15°) is rejected by `min_margin_deg=5` whether you ask through `place_box` or `place_mesh`.
 
+**Reading a template's semantics.** Every placement template carries a
+`PlacementProvenance` (`t.provenance`): the primitive, the resting face's outward normal
+in the object frame, `support_margin` and `com_height` — so
+`stability_margin == atan2(support_margin, com_height)` can be re-derived rather than
+taken on trust — `footprint_radius`, `equilibrium` (`'stable'`, or `'neutral'` for a
+sphere, which rolls rather than tipping), and for a mesh `face_index` / `face_count` /
+`facet_count`. `facet_count` is how many co-planar hull facets were merged into the
+face: more than two means you handed over a finely tessellated surface.
+
 **Tessellated curved surfaces.** `place_mesh` describes the polyhedron you give it, so a cylinder tessellated into `n` flat sides really does have `n` resting poses on those sides — it cannot know you meant a cylinder. Their margin is exactly `180/n` degrees, which goes to zero as the tessellation refines, matching the ideal cylinder that contacts along a line and rolls rather than tipping. Pass `min_margin_deg` above `180/n` and you get back exactly what `place_cylinder` returns: the two caps.
 
 ```python

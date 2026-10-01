@@ -292,6 +292,12 @@ template — not merely the midpoint of `Bw`:
    `com` passes over it. It is a property of the object and the pose, so it is
    invariant under rigid motion of the object and under a change of the object frame,
    and scale-free.
+5. **Declared** — the template declares its primitive, the resting face's outward
+   object-frame normal, the `support_margin` and `com_height` the tipping angle is built
+   from, the `footprint_radius` that set the `Bw` inset, whether the equilibrium is
+   stable or neutral, and for a mesh its face and merged-facet counters —
+   **structurally**, via `TSRTemplate.provenance` (`PlacementProvenance`). Tests and
+   oracles read that record; they never infer semantics by parsing `name`.
 
 This describes a *statically stable* resting pose. It is **not** a claim about
 dynamics, friction, or that the object will survive being let go from above it.
@@ -355,6 +361,46 @@ The margin is checked the same way: `_placement_oracle.tipping_angle` reads the 
 patch and the centre of mass off the *pose*, so it never sees the generator's
 arithmetic, and the primitives are additionally checked against closed forms and against
 routing the same solid through `place_mesh`.
+
+### Structured placement provenance — the same three layers (#160)
+
+The placement counterpart of clause 8's `GraspProvenance`, and the same separation:
+**provenance declares intent; the pose determines geometric truth.**
+
+1. `PlacementProvenance` (`tsr/placement_provenance.py`) validates *representation*
+   only — non-empty labels, finite non-negative lengths, a length-3 non-zero
+   `face_normal`, integer mesh counters present together. Labels stay free strings, so a
+   third-party placement generator can use its own vocabulary.
+2. `tsr.placement._conformance` owns the sstsr vocabulary and the relational checks:
+   only a sphere may omit a face normal; `equilibrium` is `"neutral"` **iff**
+   `support_margin` is exactly zero; and a template's `stability_margin` really is
+   `atan2(support_margin, com_height)` — recomputed with `math.atan2`, never with the
+   generator's own helper, so corrupting that helper cannot corrupt both sides.
+3. The oracle derives resting, support and containment from the pose and never treats
+   the record as evidence.
+
+Two fields exist to resolve things that were previously indistinguishable. `com_height`
+is the **lever arm**, not the origin height; they coincide only when the frame origin is
+the centre of mass, which is why an off-centre mesh is what exposes a confusion between
+them. `equilibrium` separates a sphere's *neutral* rest — point contact, it rolls rather
+than tips — from a knife-edge equilibrium about to fall, both of which otherwise read as
+`stability_margin ≈ 0`.
+
+**Wire format.** A serialized `provenance` block carries a `kind` (`"grasp"` or
+`"placement"`); **absent means `"grasp"`**, so every record sstsr wrote before #160
+still reads. An unrecognised `kind` raises `ProvenanceKindError`, which is deliberately
+*not* a `ValueError`/`KeyError`/`TypeError` — `tsr.io.load_templates_from_directory`
+skips those with a warning, which is right for a truncated file and wrong for a record
+from a newer version, since it would turn a version-skewed directory into a silently
+empty list. Both `from_dict`s use bracket access on their required keys, so neither
+record type can be misread as the other. This is a cross-implementation contract now
+that pycbirrt's native runtime is checked differentially against this implementation.
+
+**Scalars only.** No support polygon and no support area: area is 0 for a torus's line
+contact and a sphere's point contact although the torus is the most stable pose the
+library emits, so it is not comparable across factories, and the polygon is
+variable-width, chart-dependent, and reconstructible by a caller from their own vertices
+plus the pose.
 
 ### What `place_mesh` takes a face to be (#152)
 
