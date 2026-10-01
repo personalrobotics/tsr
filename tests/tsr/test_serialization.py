@@ -222,9 +222,10 @@ class TestTSRChainSerialization(unittest.TestCase):
             ),
         )
 
+        # A later link's T0_w must be the identity: the chain places it (#166).
         self.tsr2 = TSR(
-            T0_w=np.array([[1, 0, 0, 0.2], [0, 1, 0, 0.1], [0, 0, 1, 0.3], [0, 0, 0, 1]]),
-            Tw_e=np.eye(4),
+            T0_w=np.eye(4),
+            Tw_e=np.array([[1, 0, 0, 0.2], [0, 1, 0, 0.1], [0, 0, 1, 0.3], [0, 0, 0, 1]]),
             Bw=np.array(
                 [
                     [-0.02, 0.02],

@@ -28,6 +28,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skips those with a warning — right for a truncated file, wrong for a record from a
   newer version, which would otherwise make a directory load silently come back empty.
 
+### Fixed
+- **A `TSRChain` no longer accepts a frame it will not read** (#166). A chain places
+  every link after the first on the previous link's end frame, so a later link's own
+  `T0_w` never participates — but one could be passed, and was silently dropped. The
+  offset then disappeared while the chain still produced a plausible pose, wrong by
+  exactly that amount: the reported case was a door-handle grasp whose template
+  `T_ref_tsr` became the second link's `T0_w`, landing the grasp 8 cm low with nothing
+  logged and planning failing somewhere unrelated. `append` — which every constructor
+  and `from_dict` funnels through — now raises `ValueError` naming the offset it will not
+  use and where it belongs: post-multiplied into the **previous** link's `Tw_e`, which is
+  what moves the end frame the next link hangs off. The first link is unaffected; it is
+  placed by its own `T0_w`.
+
 ### Changed
 - `tsr.placement._stable_poses.stable_poses_mesh` yields a `StableFace` record instead
   of a 3-tuple (internal; it is not exported).

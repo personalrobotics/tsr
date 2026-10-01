@@ -52,6 +52,26 @@ Rejecting here is what keeps a malformed region diagnosable. Accepted, it surfac
 later and in a misleading place — a NaN distance, a sample nothing can use, or a
 projection that never converges.
 
+### Chain composition, and the frame a chain will not read (#166)
+
+A `TSRChain` composes serially (Berenson et al. 2011 §5.1). The **first** link is placed
+by its own `T0_w`. Every **later** link is placed *by the chain*: its frame **is** the
+previous link's end frame, `C_{i-1}.T0_w · Tw(ξ_{i-1}) · C_{i-1}.Tw_e`. So a later
+link's own `T0_w` never participates, and `TSRChain.append` — the single path every
+constructor and `from_dict` funnels through — raises `ValueError` when one is not the
+identity within `FRAME_ATOL`.
+
+Ignoring it instead is the worst of the options: the offset disappears and the chain
+still produces a plausible pose, wrong by exactly that offset. The reported case was a
+door-handle grasp whose template `T_ref_tsr` became the second link's `T0_w`; the grasp
+landed 8 cm low, nothing was logged, and planning failed somewhere unrelated.
+
+**Where an offset belongs.** To sit a later link's region a fixed distance `S` from the
+previous link's end frame, post-multiply it into the **previous** link's `Tw_e`
+(`Tw_e ← Tw_e · S`) — that is the transform which moves the end frame the next link
+hangs off, and it reproduces `… · Tw_e · S · Tw(ξ) · …` exactly. The order matters, so
+it is tested rather than only documented.
+
 ## Factory contract (Layer 2)
 
 Every `grasp_*` / `place_*` factory method obeys one uniform contract:

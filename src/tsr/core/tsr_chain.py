@@ -8,7 +8,7 @@ from functools import reduce
 
 import numpy
 
-from .tsr import NANBW, TSR
+from .tsr import FRAME_ATOL, NANBW, TSR
 from .utils import EPSILON, geodesic_distance, wrap_to_interval
 
 logger = logging.getLogger(__name__)
@@ -67,9 +67,19 @@ class TSRChain:
     """
     A sequence of composed TSRs.
 
-    TSRChain allows chaining multiple TSRs together where each TSR's frame
-    is relative to the previous one. This is useful for articulated constraints
-    like door handles attached to doors.
+    **Composition rule** (Berenson et al. 2011 §5.1). The first link is placed by its
+    own ``T0_w``. Every later link is placed *by the chain*: its frame **is** the
+    previous link's end frame, ``C_{i-1}.T0_w · Tw(ξ_{i-1}) · C_{i-1}.Tw_e``. So a later
+    link's own ``T0_w`` is never read, and :meth:`append` refuses a non-identity one
+    rather than ignoring it (#166) — a dropped offset is a pose that is quietly wrong by
+    exactly that offset, which is worse to debug than a rejected argument.
+
+    **Where an offset belongs.** To sit a later link's region a fixed distance from the
+    previous link's end frame, put that offset in the **previous** link's ``Tw_e``, which
+    is the thing that moves the end frame the next link hangs off.
+
+    Useful for articulated constraints: a door hinge with free yaw, then a handle a fixed
+    distance along the door.
     """
 
     def __init__(self, TSR=None, TSRs=None, tsr=None):
@@ -91,6 +101,19 @@ class TSRChain:
                 self.append(tsr_item)
 
     def append(self, tsr):
+        """Add a link to the end of the chain.
+
+        Raises ``ValueError`` if a link after the first carries a ``T0_w`` the chain will
+        not use. See the composition rule in the class docstring.
+        """
+        if self.TSRs and not numpy.allclose(tsr.T0_w, numpy.eye(4), rtol=0.0, atol=FRAME_ATOL):
+            raise ValueError(
+                "a TSR after the first in a chain is positioned by the chain: its frame "
+                "is the previous link's end frame, so its T0_w is never read and must be "
+                f"the identity (got a translation of {numpy.round(tsr.T0_w[:3, 3], 6).tolist()} m "
+                f"and rotation trace {numpy.trace(tsr.T0_w[:3, :3]):.6g}). Put the offset in the "
+                "PREVIOUS link's Tw_e, which is what moves the end frame this link hangs off."
+            )
         self.TSRs.append(tsr)
 
     def to_dict(self):
