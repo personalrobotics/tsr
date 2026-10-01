@@ -42,18 +42,10 @@ descriptive only and must never be used as geometric evidence.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-from types import MappingProxyType
-from typing import Any, Dict, Mapping, Union
+from typing import Any, Dict, Mapping
 
-JSONScalar = Union[str, int, float, bool]
-
-
-def _require_int(value: object, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{name} must be a non-boolean integer, got {value!r}")
-    return value
+from ._provenance_common import JSONScalar, freeze_metadata, require_finite_real, require_int
 
 
 @dataclass(frozen=True)
@@ -68,6 +60,11 @@ class GraspProvenance:
     conformance (``tsr.hands._conformance``), which can evolve with the built-in
     generators without closing this type to external use.
     """
+
+    #: Wire discriminator. Unannotated on purpose: a bare ``KIND: str = "grasp"`` would
+    #: become a dataclass field and change ``__init__`` and ``__eq__``. Absent from a
+    #: serialized block means "grasp", so every record sstsr has ever written still reads.
+    KIND = "grasp"
 
     primitive: str
     mode: str
@@ -87,34 +84,19 @@ class GraspProvenance:
         if not isinstance(self.symmetry, str):
             raise ValueError(f"symmetry must be a string, got {self.symmetry!r}")
 
-        _require_int(self.depth_index, "depth_index")
-        _require_int(self.depth_count, "depth_count")
+        require_int(self.depth_index, "depth_index")
+        require_int(self.depth_count, "depth_count")
         if self.depth_count < 1 or not (0 <= self.depth_index < self.depth_count):
             raise ValueError(f"depth_index {self.depth_index} out of range for depth_count {self.depth_count}")
 
-        if isinstance(self.depth, bool) or not isinstance(self.depth, (int, float)) or not math.isfinite(self.depth):
-            raise ValueError(f"depth must be a finite, non-boolean real number, got {self.depth!r}")
-        if float(self.depth) < 0.0:
-            raise ValueError(f"depth must be >= 0, got {self.depth!r}")
-        object.__setattr__(self, "depth", float(self.depth))  # canonicalize -> lossless round-trip
-
-        frozen: Dict[str, JSONScalar] = {}
-        for key, val in dict(self.metadata).items():
-            if not isinstance(key, str):
-                raise ValueError(f"metadata keys must be str, got {key!r}")
-            if isinstance(val, (str, bool, int)):
-                frozen[key] = val
-            elif isinstance(val, float):
-                if not math.isfinite(val):
-                    raise ValueError(f"metadata[{key!r}] must be a finite float, got {val!r}")
-                frozen[key] = val
-            else:
-                raise ValueError(f"metadata[{key!r}] must be a JSON scalar, got {type(val).__name__}")
-        object.__setattr__(self, "metadata", MappingProxyType(frozen))
+        # canonicalize -> lossless round-trip (see require_finite_real on NumPy scalars)
+        object.__setattr__(self, "depth", require_finite_real(self.depth, "depth", minimum=0.0))
+        object.__setattr__(self, "metadata", freeze_metadata(self.metadata))
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dict of JSON/YAML scalars (lossless)."""
         d: Dict[str, Any] = {
+            "kind": self.KIND,
             "primitive": self.primitive,
             "mode": self.mode,
             "approach": self.approach,
@@ -131,7 +113,14 @@ class GraspProvenance:
 
     @staticmethod
     def from_dict(x: Mapping[str, Any]) -> "GraspProvenance":
-        """Reconstruct from :meth:`to_dict` output, validating (not narrowing)."""
+        """Reconstruct from :meth:`to_dict` output, validating (not narrowing).
+
+        Bracket access on the required keys on purpose: a ``.get()`` with a default is
+        the one route by which a placement block could be misread as a grasp block.
+        """
+        kind = x.get("kind", GraspProvenance.KIND)
+        if kind != GraspProvenance.KIND:
+            raise ValueError(f"not a grasp provenance block: kind is {kind!r}")
         return GraspProvenance(
             primitive=x["primitive"],
             mode=x["mode"],
