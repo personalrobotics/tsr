@@ -4,12 +4,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 
+from ._provenance_common import ProvenanceKindError
 from .core import TSR
 from .grasp_provenance import GraspProvenance
+from .placement_provenance import PlacementProvenance
+
+#: A template's structured record of what its generator claimed. Two disjoint types
+#: rather than a shared base: their fields barely overlap, and a common abstraction
+#: would invite shared machinery neither wants. Consumers dispatch on the type.
+Provenance = Union[GraspProvenance, PlacementProvenance]
+
+#: Serialized ``provenance`` blocks carry a ``kind``; absent means ``"grasp"``, so every
+#: record sstsr wrote before #160 still reads.
+_PROVENANCE_READERS = {
+    GraspProvenance.KIND: GraspProvenance.from_dict,
+    PlacementProvenance.KIND: PlacementProvenance.from_dict,
+}
 
 
 @dataclass(frozen=True)
@@ -41,11 +55,14 @@ class TSRTemplate:
         preshape: Optional gripper configuration as DOF values.
         stability_margin: For placement templates, the stability margin in radians
             (arctan(d_min / h_com)). None for grasp templates or analytic primitives.
-        provenance: For grasp templates, a machine-readable :class:`GraspProvenance`
-            describing the primitive, mode, hand-occupied approach, object-frame
-            ``finger_orientation``, insertion depth, ``symmetry``, and descriptive
-            ``metadata``. Lets oracles/tests read the grasp mode structurally instead
-            of parsing ``name`` (contract clause 8). None for non-grasp templates.
+        provenance: The generator's machine-readable claim about this template — a
+            :class:`GraspProvenance` for a grasp (primitive, mode, hand-occupied
+            approach, object-frame ``finger_orientation``, insertion depth, ``symmetry``,
+            ``metadata``) or a :class:`PlacementProvenance` for a placement (primitive,
+            resting face normal, ``support_margin``, ``com_height``,
+            ``footprint_radius``, ``equilibrium``, mesh face counters). Lets oracles and
+            tests read the semantics structurally instead of parsing ``name`` (contract
+            clause 8). None for a hand-authored template.
     """
 
     T_ref_tsr: np.ndarray
@@ -59,7 +76,7 @@ class TSRTemplate:
     variant: str = ""
     preshape: Optional[np.ndarray] = None
     stability_margin: Optional[float] = None
-    provenance: Optional[GraspProvenance] = None
+    provenance: Optional[Provenance] = None
 
     def __repr__(self) -> str:
         parts = [f"task={self.task!r}", f"subject={self.subject!r}"]
@@ -125,8 +142,17 @@ class TSRTemplate:
             preshape = np.array(x["preshape"])
 
         provenance = None
-        if x.get("provenance") is not None:
-            provenance = GraspProvenance.from_dict(x["provenance"])
+        block = x.get("provenance")
+        if block is not None:
+            kind = block.get("kind", GraspProvenance.KIND)
+            reader = _PROVENANCE_READERS.get(kind)
+            if reader is None:
+                # Not a ValueError: tsr.io skips those with a warning, which would turn a
+                # record from a newer version into a silently missing template.
+                raise ProvenanceKindError(
+                    f"unknown provenance kind {kind!r}; this version reads " f"{sorted(_PROVENANCE_READERS)}"
+                )
+            provenance = reader(block)
 
         return TSRTemplate(
             name=x.get("name", ""),

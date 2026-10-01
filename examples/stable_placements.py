@@ -32,7 +32,13 @@ pose = tsr.sample()
 print(f"Cylinder ({len(templates)} template)")
 print(f"  variant  : {t.variant}")
 print(f"  origin z : {pose[2, 3]:.3f} m  (expected ≈ {0.75 + 0.06:.3f} m)")
-print(f"  margin   : {np.degrees(t.stability_margin):.1f}°\n")
+print(f"  margin   : {np.degrees(t.stability_margin):.1f}°")
+# The structured record: read the semantics instead of parsing the name.
+p = t.provenance
+print(
+    f"  record   : face {p.face_normal} down, d_min={p.support_margin:.3f} m, "
+    f"h_com={p.com_height:.3f} m, {p.equilibrium}\n"
+)
 
 
 # ── Box (cereal box, three distinct dimensions) ──────────────────────────────

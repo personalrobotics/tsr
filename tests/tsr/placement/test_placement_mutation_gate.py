@@ -62,7 +62,9 @@ def resting_height_in_tw_e() -> contextlib.AbstractContextManager:
     """#149: carry the resting height in ``Tw_e``'s translation, where the region's own
     roll and pitch rotate it."""
 
-    def _template(self, name, description, variant, R, origin_height, Bw, subject, stability_margin=None):
+    def _template(
+        self, name, description, variant, R, origin_height, Bw, subject, stability_margin=None, provenance=None
+    ):
         Tw_e = np.eye(4)
         Tw_e[:3, :3] = R
         Tw_e[2, 3] = float(origin_height)
@@ -77,6 +79,7 @@ def resting_height_in_tw_e() -> contextlib.AbstractContextManager:
             description=description,
             variant=variant,
             stability_margin=stability_margin,
+            provenance=provenance,
         )
 
     return _patch(StablePlacer, "_template", _template)
@@ -190,8 +193,8 @@ def complementary_margin() -> contextlib.AbstractContextManager:
     @contextlib.contextmanager
     def apply():
         def stable_poses_mesh(vertices, com):
-            for R, height, margin in original(vertices, com):
-                yield R, height, np.pi / 2 - margin
+            for face in original(vertices, com):
+                yield replace(face, stability_margin=np.pi / 2 - face.stability_margin)
 
         original = sp.stable_poses_mesh
         with _patch(spl, "stable_poses_mesh", stable_poses_mesh):
@@ -207,10 +210,10 @@ def shuffled_margins() -> contextlib.AbstractContextManager:
     @contextlib.contextmanager
     def apply():
         def stable_poses_mesh(vertices, com):
-            poses = list(original(vertices, com))
-            margins = [p[2] for p in poses]
-            for (R, height, _), margin in zip(poses, margins[1:] + margins[:1]):
-                yield R, height, margin
+            faces = list(original(vertices, com))
+            margins = [f.stability_margin for f in faces]
+            for face, margin in zip(faces, margins[1:] + margins[:1]):
+                yield replace(face, stability_margin=margin)
 
         original = sp.stable_poses_mesh
         with _patch(spl, "stable_poses_mesh", stable_poses_mesh):
@@ -251,6 +254,100 @@ def over_merged_facets() -> contextlib.AbstractContextManager:
 
 
 # --------------------------------------------------------------------------- #
+# Provenance mutants: the record drifts from the geometry it describes (#160)
+# --------------------------------------------------------------------------- #
+
+
+def stale_footprint_in_record() -> contextlib.AbstractContextManager:
+    """Record the *previous* variant's footprint while leaving ``Bw`` correct.
+
+    The footprint radius is the #150 inset, unrecoverable from a template before the
+    record existed. If the record may drift from the bound it claims to explain, the
+    field is decorative."""
+
+    @contextlib.contextmanager
+    def apply():
+        def _emit(self, method, primitive, subject, variants, min_margin_deg, scale, name, description):
+            templates = original(self, method, primitive, subject, variants, min_margin_deg, scale, name, description)
+            if len(templates) < 2:
+                return templates
+            shifted = [t.provenance.footprint_radius for t in templates]
+            return [
+                replace(t, provenance=replace(t.provenance, footprint_radius=r * 1.5))
+                for t, r in zip(templates, shifted[1:] + shifted[:1])
+            ]
+
+        original = StablePlacer._emit
+        with _patch(StablePlacer, "_emit", _emit):
+            yield
+
+    return apply()
+
+
+def com_height_aliased_to_origin_height() -> contextlib.AbstractContextManager:
+    """Record the mesh lever arm as the *origin* height.
+
+    They coincide whenever the frame origin is the centre of mass, so this is invisible
+    on a centred shape and only the ``corner-origin cube`` corpus case exposes it. That
+    is precisely why ``com_height`` is a real field rather than an alias."""
+
+    @contextlib.contextmanager
+    def apply():
+        def stable_poses_mesh(vertices, com):
+            for face in original(vertices, com):
+                yield replace(face, com_height=face.origin_height)
+
+        original = sp.stable_poses_mesh
+        with _patch(spl, "stable_poses_mesh", stable_poses_mesh):
+            yield
+
+    return apply()
+
+
+def sphere_claims_stable() -> contextlib.AbstractContextManager:
+    """Let the sphere call itself stably resting rather than neutrally balanced.
+
+    The entire reason ``equilibrium`` is recorded: a rolling sphere and a knife-edge face
+    both look like a zero tipping angle."""
+
+    @contextlib.contextmanager
+    def apply():
+        def place_sphere(self, radius, subject="object", min_margin_deg=0.0):
+            return [
+                replace(t, provenance=replace(t.provenance, equilibrium="stable"))
+                for t in original(self, radius, subject=subject, min_margin_deg=min_margin_deg)
+            ]
+
+        original = StablePlacer.place_sphere
+        with _patch(StablePlacer, "place_sphere", place_sphere):
+            yield
+
+    return apply()
+
+
+def wrong_face_normal_in_record() -> contextlib.AbstractContextManager:
+    """Give each mesh face the *next* face's normal, leaving ``R`` untouched.
+
+    ``R`` is built from the normal, so any check of the form ``R @ face_normal == -z``
+    would still pass -- this proves the mesh check reads the record as an input and the
+    pose as the truth."""
+
+    @contextlib.contextmanager
+    def apply():
+        def stable_poses_mesh(vertices, com):
+            faces = list(original(vertices, com))
+            normals = [f.face_normal for f in faces]
+            for face, normal in zip(faces, normals[1:] + normals[:1]):
+                yield replace(face, face_normal=normal)
+
+        original = sp.stable_poses_mesh
+        with _patch(spl, "stable_poses_mesh", stable_poses_mesh):
+            yield
+
+    return apply()
+
+
+# --------------------------------------------------------------------------- #
 # The gate
 # --------------------------------------------------------------------------- #
 
@@ -274,6 +371,14 @@ MUTANTS: List[Mutant] = [
     Mutant("unrelated_primitive_margin", unrelated_primitive_margin, "#156 a primitive margin nobody checks"),
     Mutant("rounded_normal_grouping", rounded_normal_grouping, "#152 a float32 face fragments"),
     Mutant("over_merged_facets", over_merged_facets, "#152 a tessellated curved surface collapses"),
+    Mutant("stale_footprint_in_record", stale_footprint_in_record, "#160 the record drifts from the Bw inset"),
+    Mutant(
+        "com_height_aliased_to_origin_height",
+        com_height_aliased_to_origin_height,
+        "#160 the lever arm is confused with the positioning height",
+    ),
+    Mutant("sphere_claims_stable", sphere_claims_stable, "#160 neutral and knife-edge equilibria conflated"),
+    Mutant("wrong_face_normal_in_record", wrong_face_normal_in_record, "#160 the recorded face normal is wrong"),
 ]
 
 

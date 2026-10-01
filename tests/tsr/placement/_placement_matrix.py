@@ -14,6 +14,11 @@ The placement counterpart of ``tests/tsr/hands/_grasp_matrix.py``: it drives all
   property matrix and the mutation gate share one definition of "the suite detects
   this".
 
+**A check may read a template's provenance as the subject under test; it may never use
+it as the expected value.** The record is the generator's claim, so comparing a claim
+against itself proves only internal consistency. Where a record is checked, the truth
+comes from the oracle or from the pose -- see ``provenance_failures``.
+
 Pose sampling comes from the grasp matrix (``bw_samples``): the midpoint, every free
 dimension's extrema, all corners and interior points. A placement claim is about the
 whole region, so checking the midpoint alone is what let #149 and #150 through.
@@ -28,9 +33,21 @@ import numpy as np
 from hypothesis import strategies as st
 
 from tsr.placement import StablePlacer
+from tsr.placement._conformance import validate_builtin_placement_template
+from tsr.placement_provenance import PlacementProvenance
 
 from ..hands._grasp_matrix import budget, bw_samples, matrix_settings  # noqa: F401  (re-exported)
-from ._placement_oracle import Box, Cylinder, Mesh, Sphere, Torus, certify, tipping_angle
+from ._placement_oracle import (
+    Box,
+    Cylinder,
+    Mesh,
+    Sphere,
+    Torus,
+    centre_of_mass,
+    certify,
+    length_atol,
+    tipping_angle,
+)
 
 # --------------------------------------------------------------------------- #
 # Factory table
@@ -42,8 +59,15 @@ class Factory:
     name: str
     #: Build the oracle primitive from the factory's keyword arguments.
     oracle: Callable[[Dict[str, Any]], Any]
+    #: The ``primitive`` label this factory's provenance records must claim (#160).
+    primitive: str = ""
     #: ``variant`` -> the outward object-frame normal of the face that must face down.
     #: Empty for factories whose variants are not face labels.
+    #:
+    #: Kept even though the template now *records* its face normal (#160), and
+    #: deliberately so: this table is the independent statement of what a label promises.
+    #: If ``face_label_failures`` read the record instead, nothing would connect the
+    #: label to the geometry and the ``rotated_variant_labels`` mutant would survive.
     face_normals: Dict[str, Tuple[float, float, float]] = field(default_factory=dict)
 
 
@@ -60,21 +84,24 @@ FACTORIES: Dict[str, Factory] = {
     "place_cylinder": Factory(
         "place_cylinder",
         lambda kw: Cylinder(kw["cylinder_radius"], kw["cylinder_height"]),
+        "cylinder",
         {k: _AXES[k] for k in ("-z", "+z")},
     ),
     "place_box": Factory(
         "place_box",
         lambda kw: Box(kw["lx"], kw["ly"], kw["lz"]),
+        "box",
         dict(_AXES),
     ),
-    "place_sphere": Factory("place_sphere", lambda kw: Sphere(kw["radius"])),
+    "place_sphere": Factory("place_sphere", lambda kw: Sphere(kw["radius"]), "sphere"),
     "place_torus": Factory(
         "place_torus",
         lambda kw: Torus(kw["major_radius"], kw["minor_radius"]),
+        "torus",
         {k: _AXES[k] for k in ("-z", "+z")},
     ),
     "place_mesh": Factory(
-        "place_mesh", lambda kw: Mesh(np.asarray(kw["vertices"], float), np.asarray(kw["com"], float))
+        "place_mesh", lambda kw: Mesh(np.asarray(kw["vertices"], float), np.asarray(kw["com"], float)), "mesh"
     ),
 }
 
@@ -198,6 +225,112 @@ def soundness_failures(case: PlacementCase, templates, *, table_pose=None, rng=N
             w = certify(prim, pose, table=case.table)
             if not w.ok:
                 failures.append(f"{case} [{t.variant}] xi={np.round(xi, 6).tolist()}: {w.failed}")
+    return failures
+
+
+def provenance_failures(case: PlacementCase, templates) -> List[str]:
+    """Clause 5: the record describes the template, and the geometry bears it out (#160).
+
+    Three kinds of check, in increasing strength:
+
+    1. the record exists, is a placement record, and conforms to the built-in vocabulary
+       (``tsr.placement._conformance``) -- a self-consistency check;
+    2. ``primitive`` matches the factory that produced it;
+    3. **oracle agreement**: ``com_height``, ``support_margin`` and ``footprint_radius``
+       against the independently posed geometry. This is what makes the record
+       falsifiable rather than decorative.
+
+    The lengths are compared at ``rtol=2e-3`` for the same reason ``margin_failures``
+    documents: the oracle samples a circular contact as a 72-gon and the footprint over a
+    180-direction fan, biases of 9.5e-4 and 1.5e-4 -- an order below the tolerance and
+    orders below the drift this exists to catch.
+    """
+    failures: List[str] = []
+    prim = case.prim
+    expected_primitive = FACTORIES[case.factory].primitive
+    for t in templates:
+        record = t.provenance
+        if record is None:
+            failures.append(f"{case} [{t.variant}]: no placement provenance (#160)")
+            continue
+        if not isinstance(record, PlacementProvenance):
+            failures.append(f"{case} [{t.variant}]: provenance is {type(record).__name__}")
+            continue
+        try:
+            validate_builtin_placement_template(t)
+        except ValueError as e:
+            failures.append(f"{case} [{t.variant}]: provenance {e}")
+            continue
+        if record.primitive != expected_primitive:
+            failures.append(f"{case} [{t.variant}]: primitive {record.primitive!r} != {expected_primitive!r}")
+
+        pose = t.instantiate(np.eye(4)).to_transform(np.zeros(6))
+        witness = certify(prim, pose, table=case.table)
+        com_z = centre_of_mass(prim, pose[:3, :3], pose[:3, 3])[2]
+        if not np.isclose(record.com_height, com_z, rtol=0.0, atol=length_atol(prim.scale)):
+            failures.append(f"{case} [{t.variant}]: com_height {record.com_height} but the COM rests at {com_z}")
+        if not np.isclose(record.support_margin, witness.support_margin, rtol=2e-3, atol=1e-9):
+            failures.append(
+                f"{case} [{t.variant}]: support_margin {record.support_margin} "
+                f"but the posed contact patch gives {witness.support_margin}"
+            )
+        if not np.isclose(record.footprint_radius, witness.footprint_radius, rtol=2e-3, atol=1e-9):
+            failures.append(
+                f"{case} [{t.variant}]: footprint_radius {record.footprint_radius} "
+                f"but the posed object reaches {witness.footprint_radius}"
+            )
+        if case.factory == "place_mesh":
+            failures += _mesh_face_normal_failures(case, t, record)
+    return failures
+
+
+def _mesh_face_normal_failures(case: PlacementCase, t, record) -> List[str]:
+    """The recorded normal must select the vertices the pose puts on the surface.
+
+    For a mesh there is no label table to compare against, and ``R`` is *built* from the
+    normal, so ``R @ face_normal == -z`` holds however wrong the normal is -- it proves
+    only that the generator was internally consistent. This instead feeds the record in
+    as an **input** and takes the pose as the truth: the vertices extremal along the
+    recorded normal in the object frame are exactly the vertices that end up on the
+    surface. A wrong normal selects the wrong set.
+    """
+    vertices = np.asarray(case.kwargs["vertices"], float)
+    atol = length_atol(float(np.ptp(vertices, axis=0).max()))
+    along = vertices @ np.asarray(record.face_normal, float)
+    claimed = set(np.flatnonzero(along >= along.max() - atol).tolist())
+
+    pose = t.instantiate(np.eye(4)).to_transform(np.zeros(6))
+    world_z = (vertices @ pose[:3, :3].T + pose[:3, 3])[:, 2]
+    resting = set(np.flatnonzero(world_z <= world_z.min() + atol).tolist())
+
+    if claimed != resting:
+        return [
+            f"{case} [{t.variant}]: face_normal {record.face_normal} selects vertices "
+            f"{sorted(claimed)} but the pose rests on {sorted(resting)}"
+        ]
+    return []
+
+
+def equilibrium_failures(cases_and_templates) -> List[str]:
+    """Corpus-wide: exactly the zero-margin templates are the neutral ones (#160).
+
+    Per-template this would be near-tautological -- the generator derives ``equilibrium``
+    from ``support_margin``, and knife-edge mesh faces are filtered out before they are
+    returned, so the sphere is the only neutral emitter. The biconditional over the whole
+    corpus is what actually catches the confusion the field exists to resolve: a sphere's
+    neutral rest and a vanishing tipping angle looking identical.
+    """
+    failures: List[str] = []
+    for case, templates in cases_and_templates:
+        for t in templates:
+            if t.provenance is None or not isinstance(t.provenance, PlacementProvenance):
+                continue
+            neutral = t.provenance.equilibrium == "neutral"
+            if neutral != (t.stability_margin == 0.0):
+                failures.append(
+                    f"{case} [{t.variant}]: equilibrium {t.provenance.equilibrium!r} "
+                    f"with stability_margin {t.stability_margin}"
+                )
     return failures
 
 
@@ -384,9 +517,12 @@ def check_failures(case: PlacementCase, templates) -> List[str]:
     failures += margin_failures(case, templates)
     failures += face_label_failures(case, templates)
     failures += ordering_failures(case, templates)
+    failures += provenance_failures(case, templates)
     return failures
 
 
 def corpus_failures() -> List[str]:
-    """Run every check over the whole corpus."""
-    return [f for case in corpus() for f in check_failures(case, case.call())]
+    """Run every check over the whole corpus, plus the corpus-wide ones."""
+    generated = [(case, case.call()) for case in corpus()]
+    failures = [f for case, templates in generated for f in check_failures(case, templates)]
+    return failures + equilibrium_failures(generated)

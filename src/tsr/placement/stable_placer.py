@@ -18,6 +18,7 @@ from typing import Callable, List
 import numpy as np
 
 from ..core.utils import length_atol
+from ..placement_provenance import PlacementProvenance
 from ..template import TSRTemplate
 from ._stable_poses import _rotation_to_align, stable_poses_mesh
 
@@ -48,8 +49,16 @@ def _check_finite(name: str, value: float) -> float:
 class _Variant:
     """One resting orientation of a primitive, with everything the contract needs.
 
-    ``margin`` is the analytic tipping angle in radians: the angle the object must
-    rotate about the nearest support edge before its centre of mass passes over it.
+    The tipping angle is *derived* from its two components rather than stored: the angle
+    the object must rotate about the nearest support edge before its centre of mass
+    passes over it is ``arctan(support_margin / com_height)``, so keeping the components
+    makes that identity structurally true for every primitive and lets the record report
+    all three consistently (#160).
+
+    ``support_margin`` is the in-plane distance from the projected centre of mass to the
+    nearest support edge; ``com_height`` is the lever arm, the perpendicular distance
+    from the centre of mass to the resting plane. It is **not** ``origin_height``, which
+    positions the object and coincides only when the origin is the centre of mass.
     ``footprint`` is the largest horizontal distance from the object frame origin to any
     point of the resting object, which is what the free yaw sweeps.
     """
@@ -58,7 +67,14 @@ class _Variant:
     normal: np.ndarray  # outward object-frame normal of the resting face
     origin_height: float
     footprint: float
-    margin: float
+    support_margin: float
+    com_height: float
+
+    @property
+    def margin(self) -> float:
+        """The tipping angle. Resolves ``_tipping_angle`` at call time on purpose, so a
+        corrupted helper is still visible through this property."""
+        return _tipping_angle(self.support_margin, self.com_height)
 
 
 def _tipping_angle(lever: float, height: float) -> float:
@@ -66,6 +82,43 @@ def _tipping_angle(lever: float, height: float) -> float:
     metres from the centre of mass's projection, with the mass ``height`` above the
     surface. The same quantity :mod:`_stable_poses` computes for a mesh face."""
     return float(np.arctan2(lever, height))
+
+
+def _placement_record(
+    primitive: str,
+    *,
+    face_normal,
+    support_margin: float,
+    com_height: float,
+    footprint_radius: float,
+    face_index=None,
+    face_count=None,
+    facet_count=None,
+) -> PlacementProvenance:
+    """Build one placement provenance record (#160).
+
+    The single conversion point on the generator side: every scalar here starts life as
+    a NumPy value, and a ``np.float64`` passes ``isinstance(x, float)`` while serializing
+    to a tag ``yaml.safe_load`` refuses -- so an un-canonicalised record round-trips
+    through a dict and then vanishes on disk. ``int()`` matters for the opposite reason:
+    ``np.int64`` is *not* an ``int``, so it would raise.
+
+    ``equilibrium`` is derived here, once. A zero support margin means the contact cannot
+    resist tipping at all -- which for a sphere is neutral (it rolls), and is why the
+    distinction is recorded rather than left to be guessed from a zero angle.
+    """
+    support_margin = float(support_margin)
+    return PlacementProvenance(
+        primitive=primitive,
+        support_margin=support_margin,
+        com_height=float(com_height),
+        footprint_radius=float(footprint_radius),
+        equilibrium="stable" if support_margin > 0.0 else "neutral",
+        face_normal=None if face_normal is None else tuple(float(c) for c in face_normal),
+        face_index=None if face_index is None else int(face_index),
+        face_count=None if face_count is None else int(face_count),
+        facet_count=None if facet_count is None else int(facet_count),
+    )
 
 
 def _check_finite_array(name: str, values: np.ndarray) -> np.ndarray:
@@ -170,6 +223,7 @@ class StablePlacer:
         Bw,
         subject,
         stability_margin=None,
+        provenance=None,
     ) -> TSRTemplate:
         """Assemble one template from a resting rotation and the origin's resting height.
 
@@ -195,11 +249,13 @@ class StablePlacer:
             description=description,
             variant=variant,
             stability_margin=stability_margin,
+            provenance=provenance,
         )
 
     def _emit(
         self,
         method: str,
+        primitive: str,
         subject: str,
         variants: List["_Variant"],
         min_margin_deg: float,
@@ -252,6 +308,13 @@ class StablePlacer:
                 Bw=self._bw(v.footprint),
                 subject=subject,
                 stability_margin=v.margin,
+                provenance=_placement_record(
+                    primitive,
+                    face_normal=v.normal,
+                    support_margin=v.support_margin,
+                    com_height=v.com_height,
+                    footprint_radius=v.footprint,
+                ),
             )
             for v in usable
         ]
@@ -293,13 +356,20 @@ class StablePlacer:
         # Resting on a cap the axis is vertical, so the footprint is the cap itself and
         # the support polygon is that same disc: the cylinder tips about a tangent to the
         # rim, one radius from its centre, with the mass half its height up.
-        margin = _tipping_angle(radius, height / 2.0)
         variants = [
-            _Variant(label, np.array([0.0, 0.0, sign]), height / 2.0, radius, margin)
+            _Variant(
+                label=label,
+                normal=np.array([0.0, 0.0, sign]),
+                origin_height=height / 2.0,
+                footprint=radius,
+                support_margin=radius,
+                com_height=height / 2.0,
+            )
             for sign, label in ((-1.0, "-z"), (+1.0, "+z"))
         ]
         return self._emit(
             "place_cylinder",
+            "cylinder",
             subject,
             variants,
             min_margin_deg,
@@ -362,12 +432,14 @@ class StablePlacer:
                 normal=normal,
                 origin_height=up / 2.0,
                 footprint=np.hypot(a, b) / 2.0,
-                margin=_tipping_angle(min(a, b) / 2.0, up / 2.0),
+                support_margin=min(a, b) / 2.0,
+                com_height=up / 2.0,
             )
             for normal, label, up, a, b in faces
         ]
         return self._emit(
             "place_box",
+            "box",
             subject,
             variants,
             min_margin_deg,
@@ -436,6 +508,13 @@ class StablePlacer:
                 ),
                 subject=subject,
                 stability_margin=0.0,
+                provenance=_placement_record(
+                    "sphere",
+                    face_normal=None,  # no distinguished face: every orientation rests alike
+                    support_margin=0.0,  # point contact -> neutral, it rolls rather than tips
+                    com_height=radius,
+                    footprint_radius=radius,
+                ),
             )
         ]
 
@@ -476,13 +555,20 @@ class StablePlacer:
         # convex hull is that disc: it tips about a tangent to that circle, with the mass
         # one tube radius up. The footprint is the ring's outer equator.
         footprint = major_radius + minor_radius
-        margin = _tipping_angle(major_radius, minor_radius)
         variants = [
-            _Variant(label, np.array([0.0, 0.0, sign]), minor_radius, footprint, margin)
+            _Variant(
+                label=label,
+                normal=np.array([0.0, 0.0, sign]),
+                origin_height=minor_radius,
+                footprint=footprint,
+                support_margin=major_radius,
+                com_height=minor_radius,
+            )
             for sign, label in ((-1.0, "-z"), (+1.0, "+z"))
         ]
         return self._emit(
             "place_torus",
+            "torus",
             subject,
             variants,
             min_margin_deg,
@@ -531,8 +617,9 @@ class StablePlacer:
 
         scale = float(np.ptp(vertices, axis=0).max()) if len(vertices) else 0.0
         min_margin_rad = float(np.radians(min_margin_deg))
-        stable = sorted(stable_poses_mesh(vertices, com), key=lambda x: -x[2])  # descending stability margin
-        poses = [p for p in stable if p[2] >= min_margin_rad]
+        # descending stability margin: place_mesh promises most-stable-first
+        stable = sorted(stable_poses_mesh(vertices, com), key=lambda f: -f.stability_margin)
+        poses = [f for f in stable if f.stability_margin >= min_margin_rad]
         if not poses:
             return self._log_empty(
                 "place_mesh",
@@ -543,10 +630,10 @@ class StablePlacer:
         # The footprint is measured from the object frame origin, which Bw slides, and
         # not from the centroid: place_mesh accepts an arbitrary origin (#150).
         usable = []
-        for R, origin_height, margin_rad in poses:
-            footprint = float(np.linalg.norm((vertices @ R.T)[:, :2], axis=1).max())
+        for face in poses:
+            footprint = float(np.linalg.norm((vertices @ face.R.T)[:, :2], axis=1).max())
             if self._fits(footprint, scale):
-                usable.append((R, origin_height, margin_rad, footprint))
+                usable.append((face, footprint))
         if not usable:
             return self._log_empty(
                 "place_mesh",
@@ -563,8 +650,8 @@ class StablePlacer:
             )
 
         templates = []
-        for idx, (R, origin_height, margin_rad, footprint) in enumerate(usable):
-            deg = float(np.degrees(margin_rad))
+        for idx, (face, footprint) in enumerate(usable):
+            deg = float(np.degrees(face.stability_margin))
             templates.append(
                 self._template(
                     name=(
@@ -575,11 +662,21 @@ class StablePlacer:
                         f"(stability margin {deg:.1f}°) on {self.reference}."
                     ),
                     variant=f"face-{idx + 1}",
-                    R=R,
-                    origin_height=origin_height,
+                    R=face.R,
+                    origin_height=face.origin_height,
                     Bw=self._bw(footprint),
                     subject=subject,
-                    stability_margin=float(margin_rad),
+                    stability_margin=float(face.stability_margin),
+                    provenance=_placement_record(
+                        "mesh",
+                        face_normal=face.face_normal,
+                        support_margin=face.support_margin,
+                        com_height=face.com_height,
+                        footprint_radius=footprint,
+                        face_index=idx,
+                        face_count=len(usable),
+                        facet_count=face.facet_count,
+                    ),
                 )
             )
         return templates

@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Every placement template carries a structured `PlacementProvenance`** (#160). Grasp
+  templates have declared their semantics structurally since 2.2.0, and clause 8 of the
+  geometric contract forbids inferring semantics by parsing `name` — but placement left
+  a caller no alternative, since the resting face's normal, the lever arm behind the
+  reported tipping angle, and the footprint radius that set the `Bw` inset lived only
+  inside a free-text name or nowhere at all. The record carries the primitive, the
+  object-frame face normal, `support_margin` and `com_height` (so
+  `stability_margin == atan2(support_margin, com_height)` is auditable rather than merely
+  asserted), `footprint_radius`, `equilibrium`, and for a mesh its face and merged-facet
+  counters. Same three layers as the grasp side: a representation-only value object that
+  stays open to third-party vocabularies, `tsr.placement._conformance` for the sstsr
+  vocabulary and the relational rules, and an oracle that never trusts either.
+- **`equilibrium` separates neutral from knife-edge.** A sphere contacts at a point and
+  *rolls*; a mesh face with a vanishing margin is about to tip. Both read as
+  `stability_margin ≈ 0`, and nothing distinguished them before.
+- **`tsr.ProvenanceKindError`.** A serialized `provenance` block now carries a `kind`;
+  absent means `"grasp"`, so every record sstsr has written still reads. An unrecognised
+  kind raises this rather than a `ValueError`, because `load_templates_from_directory`
+  skips those with a warning — right for a truncated file, wrong for a record from a
+  newer version, which would otherwise make a directory load silently come back empty.
+
+### Changed
+- `tsr.placement._stable_poses.stable_poses_mesh` yields a `StableFace` record instead
+  of a 3-tuple (internal; it is not exported).
+
 ## [3.2.0] — 2026-09
 
 A TSR now rejects a malformed region at construction instead of letting it surface

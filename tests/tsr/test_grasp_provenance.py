@@ -199,7 +199,14 @@ class TestNativeConformance(unittest.TestCase):
         self.assertEqual(len(boundary), 1)
         self.assertEqual(boundary[0].provenance.depth_count, 1)
 
-    def test_non_grasp_templates_have_no_provenance(self):
+    def test_a_hand_authored_template_has_no_provenance(self):
+        """A record is the *generator's* claim, so a template nobody generated has none.
+
+        This used to assert that placement templates have no provenance, which stopped
+        being a true statement about the library in #160: every ``place_*`` template now
+        carries a :class:`~tsr.placement_provenance.PlacementProvenance`, checked in
+        ``tests/tsr/test_placement_provenance.py``.
+        """
         t = TSRTemplate(
             T_ref_tsr=np.eye(4),
             Tw_e=np.eye(4),

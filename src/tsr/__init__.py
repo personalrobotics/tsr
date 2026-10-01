@@ -41,8 +41,10 @@ from .core import (
 )
 
 # --- Layer 1: the reusable recipe ---------------------------------------------
+from ._provenance_common import ProvenanceKindError
 from .grasp_provenance import GraspProvenance
-from .template import TSRTemplate
+from .placement_provenance import PlacementProvenance
+from .template import Provenance, TSRTemplate
 
 # --- Layer 2: factories (domain knowledge -> recipes) -------------------------
 from .hands import FrankaHand, GripperBase, ParallelJawGripper, Robotiq2F85, Robotiq2F140
@@ -95,6 +97,9 @@ __all__ = [
     # template
     "TSRTemplate",
     "GraspProvenance",
+    "PlacementProvenance",
+    "Provenance",
+    "ProvenanceKindError",
     # factories
     "GripperBase",
     "ParallelJawGripper",
