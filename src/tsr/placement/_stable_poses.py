@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass
 from typing import Iterator, Tuple
 
 import numpy as np
@@ -128,10 +129,34 @@ def _inward_distance(point: np.ndarray, polygon: np.ndarray) -> float:
     return float(np.einsum("ij,ij->i", inward, point - polygon[keep]).min())
 
 
+@dataclass(frozen=True)
+class StableFace:
+    """One stable resting face of a mesh, with everything the contract needs to describe it.
+
+    A record rather than a tuple so a caller unpacks by name: the quantities here feed
+    both the template's geometry and its :class:`~tsr.placement_provenance.PlacementProvenance`,
+    and the next field added should not have to touch every unpacking site.
+
+    ``com_height`` and ``support_margin`` are the two numbers the tipping angle is built
+    from -- ``stability_margin == arctan2(support_margin, com_height)`` -- so recording
+    them makes the reported angle auditable instead of merely asserted. ``face_normal``
+    is in the object frame, and ``facet_count`` is how many co-planar hull facets were
+    merged into this face (#152).
+    """
+
+    R: np.ndarray
+    origin_height: float
+    stability_margin: float
+    face_normal: np.ndarray
+    com_height: float
+    support_margin: float
+    facet_count: int
+
+
 def stable_poses_mesh(
     vertices: np.ndarray,
     com: np.ndarray,
-) -> Iterator[Tuple[np.ndarray, float, float]]:
+) -> Iterator[StableFace]:
     """Detect stable resting poses of a rigid body via convex hull + COM projection.
 
     Groups co-planar hull facets into faces, then for each face checks whether
@@ -143,19 +168,18 @@ def stable_poses_mesh(
         com:      (3,) center of mass in the same frame.
 
     Yields:
-        (R, origin_height, stability_margin) for each stable face:
-        - R (3×3): rotation s.t. face outward-normal → -z (face rests on table).
-        - origin_height (float): height of the OBJECT-FRAME ORIGIN above the
-          table when this face rests on it (= perpendicular distance from the
-          origin to the face plane). Placing the origin here makes the resting
-          face sit at z=0 regardless of where the COM is. Equals the COM height
-          only when the COM lies on the face normal through the origin.
-        - stability_margin (float): the tipping angle ``arctan(d_min / com_height)`` in
-          radians, where ``d_min`` is the in-plane distance from the projected COM to
-          the nearest support-polygon edge and ``com_height`` the perpendicular
-          COM-to-face distance. That is the angle the body must rotate about the nearest
-          support edge before the COM passes over it, so it is a property of the object
-          and the pose: invariant under rigid motion and under a change of object frame.
+        A :class:`StableFace` per stable face. ``origin_height`` is the height of the
+        OBJECT-FRAME ORIGIN above the table when this face rests on it (= the
+        perpendicular distance from the origin to the face plane). Placing the origin
+        there makes the resting face sit at z=0 regardless of where the COM is; it
+        equals the COM height only when the COM lies on the face normal through the
+        origin. ``stability_margin`` is the tipping angle
+        ``arctan(support_margin / com_height)`` in radians, where ``support_margin`` is
+        the in-plane distance from the projected COM to the nearest support-polygon edge
+        and ``com_height`` the perpendicular COM-to-face distance. That is the angle the
+        body must rotate about the nearest support edge before the COM passes over it,
+        so it is a property of the object and the pose: invariant under rigid motion and
+        under a change of object frame.
 
     A face is stable only when the projected COM is inside the support polygon by more
     than the scale-aware length tolerance. A COM exactly on an edge is a critical
@@ -217,5 +241,12 @@ def stable_poses_mesh(
             continue  # outside the support polygon, or on its edge: a tipping case
         stability_margin = float(np.arctan2(d_min, com_height))
 
-        R = _rotation_to_align(n, _neg_z)
-        yield R, origin_height, stability_margin
+        yield StableFace(
+            R=_rotation_to_align(n, _neg_z),
+            origin_height=origin_height,
+            stability_margin=stability_margin,
+            face_normal=n,
+            com_height=float(com_height),
+            support_margin=float(d_min),
+            facet_count=len(simplex_indices),
+        )
