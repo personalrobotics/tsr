@@ -165,6 +165,10 @@ def _compose_chain_independently(parts, coordinates):
 @settings(max_examples=40)
 @given(parts=st.lists(tsrs(), min_size=2, max_size=3))
 def test_multi_chain_sample_is_contained(parts):
+    # Only the first link carries a T0_w: a later link is positioned by the chain, and
+    # passing one it will not read is refused rather than ignored (#166). The strategy
+    # draws a frame for every link, so the later ones are reset here.
+    parts = [parts[0]] + [TSR(T0_w=np.eye(4), Tw_e=p.Tw_e, Bw=p.Bw) for p in parts[1:]]
     chain = TSRChain(TSRs=parts)
     sample = chain.sample_with_witness()
     assert sample.coordinates.shape == (len(parts), 6)

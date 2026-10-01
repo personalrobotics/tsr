@@ -24,7 +24,7 @@ class TestTSRChainMethods(unittest.TestCase):
         # Create test TSRs
         self.tsr1 = TSR(
             T0_w=np.eye(4),
-            Tw_e=np.array([[0, 0, 1, 0.1], [1, 0, 0, 0], [0, 1, 0, 0.05], [0, 0, 0, 1]]),
+            Tw_e=np.array([[0, 0, 1, 0.3], [1, 0, 0, 0.2], [0, 1, 0, 0.35], [0, 0, 0, 1]]),
             Bw=np.array(
                 [
                     [-0.01, 0.01],
@@ -37,8 +37,12 @@ class TestTSRChainMethods(unittest.TestCase):
             ),
         )
 
+        # A later link is positioned by the chain, so its own T0_w must be the identity
+        # (#166). The 0.2/0.1/0.3 offset this fixture used to put here -- where it was
+        # silently dropped -- now lives in tsr1's Tw_e, which is what actually moves the
+        # end frame tsr2 hangs off, so the composed geometry is what the fixture intended.
         self.tsr2 = TSR(
-            T0_w=np.array([[1, 0, 0, 0.2], [0, 1, 0, 0.1], [0, 0, 1, 0.3], [0, 0, 0, 1]]),
+            T0_w=np.eye(4),
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
@@ -422,7 +426,10 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
 
     def test_contains_consistent_with_distance(self):
         """contains() should agree with distance() < epsilon for all transforms."""
+        # The 0.1 m offset between the links sits in tsr1's Tw_e: a later link is placed
+        # by the chain, so its own T0_w must be the identity (#166).
         tsr1 = TSR(
+            Tw_e=np.array([[1, 0, 0, 0.1], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float),
             Bw=np.array(
                 [
                     [-0.05, 0.05],
@@ -432,10 +439,10 @@ class TestTSRChainContainsSemantics(unittest.TestCase):
                     [-pi / 6, pi / 6],
                     [-pi / 6, pi / 6],
                 ]
-            )
+            ),
         )
         tsr2 = TSR(
-            T0_w=np.array([[1, 0, 0, 0.1], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float),
+            T0_w=np.eye(4),
             Tw_e=np.eye(4),
             Bw=np.array(
                 [
@@ -900,3 +907,92 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChainRejectsAFrameItWouldIgnore(unittest.TestCase):
+    """A later link's ``T0_w`` is never read, so it is refused (#166).
+
+    The chain places every link after the first on the previous link's end frame
+    (Berenson et al. 2011 §5.1). Accepting a ``T0_w`` it then drops turns a caller's
+    offset into a pose that is quietly wrong by exactly that offset: the reported case
+    was a door-handle grasp landing 8 cm low, with nothing logged and planning failing
+    somewhere else entirely.
+    """
+
+    @staticmethod
+    def _link(T0_w=None, Tw_e=None):
+        return TSR(
+            T0_w=np.eye(4) if T0_w is None else T0_w,
+            Tw_e=np.eye(4) if Tw_e is None else Tw_e,
+            Bw=np.zeros((6, 2)),
+        )
+
+    def test_the_reported_case_is_refused_rather_than_dropped(self):
+        shift = np.eye(4)
+        shift[2, 3] = 0.08
+        with self.assertRaises(ValueError) as caught:
+            TSRChain(TSRs=[self._link(), self._link(T0_w=shift)])
+        message = str(caught.exception)
+        self.assertIn("0.08", message)  # names the offset it will not use
+        self.assertIn("Tw_e", message)  # and where it belongs instead
+
+    def test_append_refuses_it_too(self):
+        """``append`` is the single path every constructor and ``from_dict`` funnels
+        through, so the check belongs there rather than in ``__init__``."""
+        chain = TSRChain(TSR=self._link())
+        rotated = TSR.xyzrpy_to_trans(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.3]))
+        with self.assertRaises(ValueError):
+            chain.append(self._link(T0_w=rotated))
+        self.assertEqual(len(chain.TSRs), 1)  # and the chain is left intact
+
+    def test_a_deserialized_chain_is_checked_the_same_way(self):
+        shift = np.eye(4)
+        shift[0, 3] = 0.05
+        document = {"tsrs": [self._link().to_dict(), self._link(T0_w=shift).to_dict()]}
+        with self.assertRaises(ValueError):
+            TSRChain.from_dict(document)
+
+    def test_the_first_link_may_sit_anywhere(self):
+        """The failure mode of overreaching: the first link *is* placed by its own
+        ``T0_w``, so rejecting one there would break every chain."""
+        placed = np.eye(4)
+        placed[:3, 3] = [0.2, -0.1, 0.3]
+        chain = TSRChain(TSRs=[self._link(T0_w=placed), self._link()])
+        np.testing.assert_allclose(chain.sample()[:3, 3], [0.2, -0.1, 0.3], atol=1e-12)
+
+    def test_the_remedy_the_message_prescribes_is_correct(self):
+        """The error tells the caller to move the offset into the previous link's
+        ``Tw_e``. Nothing else would catch that advice being wrong.
+
+        The pose a caller intended by setting the second link's ``T0_w = S`` is
+        ``T0_w1 · Tw(x1) · Tw_e1 · S · Tw(x2) · Tw_e2``; the remedy has to reproduce it
+        exactly.
+        """
+        rng = np.random.default_rng(0)
+        T0_w1 = TSR.xyzrpy_to_trans(rng.uniform(-0.3, 0.3, 6))
+        Tw_e1 = TSR.xyzrpy_to_trans(rng.uniform(-0.3, 0.3, 6))
+        Tw_e2 = TSR.xyzrpy_to_trans(rng.uniform(-0.3, 0.3, 6))
+        S = TSR.xyzrpy_to_trans(np.array([0.0, 0.0, 0.08, 0.0, 0.2, 0.0]))
+        x1, x2 = rng.uniform(-0.05, 0.05, 6), rng.uniform(-0.05, 0.05, 6)
+        bounds = np.column_stack((np.full(6, -0.1), np.full(6, 0.1)))
+
+        intended = T0_w1 @ TSR.xyzrpy_to_trans(x1) @ Tw_e1 @ S @ TSR.xyzrpy_to_trans(x2) @ Tw_e2
+        remedied = TSRChain(
+            TSRs=[
+                TSR(T0_w=T0_w1, Tw_e=Tw_e1 @ S, Bw=bounds),
+                TSR(T0_w=np.eye(4), Tw_e=Tw_e2, Bw=bounds),
+            ]
+        )
+        np.testing.assert_allclose(remedied.to_transform([x1, x2]), intended, atol=1e-12)
+
+    def test_the_tolerance_is_the_one_the_rest_of_the_library_uses(self):
+        """``FRAME_ATOL`` (#162), so a frame composed numerically still counts as the
+        identity while a real offset does not."""
+        from tsr import FRAME_ATOL
+
+        inside, outside = np.eye(4), np.eye(4)
+        inside[0, 3] = FRAME_ATOL / 4.0
+        outside[0, 3] = FRAME_ATOL * 4.0
+        TSRChain(TSRs=[self._link(), self._link(T0_w=inside)])  # must not raise
+        with self.assertRaises(ValueError):
+            TSRChain(TSRs=[self._link(), self._link(T0_w=outside)])
