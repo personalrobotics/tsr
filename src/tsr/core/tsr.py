@@ -126,6 +126,34 @@ class TSR:
 
         self._Bw_cont = Bw_cont
 
+    @property
+    def continuous_bounds(self):
+        """``Bw`` rewritten so every row has ``upper > lower``: the chart the region works in.
+
+        A rotational row with ``hi < lo`` is an outer interval wrapping through ±π; here it
+        becomes an ordinary interval of width ``2π + (hi - lo)``, clamped to one turn, with
+        the lower bound wrapped into ``[-π, π)``. Coordinates are tested, clipped and
+        sampled in this chart, and :meth:`solve`'s returned coordinates live in it.
+
+        Read-only and a copy: the chart is derived from ``Bw`` at construction, so handing
+        out the array itself would let a caller desynchronise the two.
+        """
+        return self._Bw_cont.copy()
+
+    @property
+    def volume(self) -> float:
+        """The region's sampling measure: the sum of its interval widths [m and rad mixed].
+
+        Rotational widths are clamped to one turn and negative widths (outer intervals)
+        count as zero. Deliberately not a geometric volume — it mixes metres and radians —
+        but it is the quantity mixture weights over several regions are proportional to
+        (:func:`tsr.sampling.weights_from_tsrs`), and it is defined here so the C++ core
+        and the Python agree on one definition (docs/CPP.md).
+        """
+        widths = numpy.asarray(self.Bw[:, 1] - self.Bw[:, 0], dtype=float)
+        widths[3:6] = numpy.minimum(widths[3:6], 2.0 * pi)
+        return float(numpy.maximum(widths, 0.0).sum())
+
     def __repr__(self) -> str:
         _DOF = ("x", "y", "z", "roll", "pitch", "yaw")
         free = [_DOF[i] for i in range(6) if not numpy.isclose(self.Bw[i, 0], self.Bw[i, 1])]

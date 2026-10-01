@@ -30,10 +30,9 @@ def _interval_sum(Bw: np.ndarray) -> float:
     """
     if Bw.shape != (6, 2):
         raise ValueError(f"Bw must be shape (6,2), got {Bw.shape}")
-    widths = np.asarray(Bw[:, 1] - Bw[:, 0], dtype=float)
-    widths[3:6] = np.minimum(widths[3:6], 2.0 * pi)
-    widths = np.maximum(widths, 0.0)
-    return float(np.sum(widths))
+    # The measure itself is defined once, on TSR.volume, so the Python and the C++ core
+    # cannot drift on it (docs/CPP.md).
+    return TSR(Bw=Bw).volume
 
 
 def weights_from_tsrs(tsrs: Sequence[TSR]) -> np.ndarray:
