@@ -21,6 +21,24 @@ option(SSTSR_CPP_INSTALL "Install the headers and the CMake package" ON)
 
 include(GNUInstallDirs)
 
+# The warning set every target here is built with. -Werror is deliberate: this is a
+# reference implementation and a warning is a defect.
+#
+# The one exception is GCC's -Warray-bounds. GCC 12 and 13 report a false positive inside
+# std::vector's copy, inlined at -O2, when the element is a 48-byte std::array<double, 6> --
+# which is exactly `ChainCoords`, one XyzRpy per link. The diagnostic points at
+# __builtin_memmove in <bits/stl_algobase.h> rather than at any of our code, and names an
+# offset at the end of a correctly sized element. It is scoped to GCC rather than silenced
+# outright, so the macOS CI job still compiles every one of these files with -Warray-bounds
+# active and the check keeps its teeth on the project.
+set(SSTSR_CPP_WARNINGS -Wall -Wextra -Wpedantic -Werror)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  list(APPEND SSTSR_CPP_WARNINGS -Wno-array-bounds)
+endif()
+if(MSVC)
+  set(SSTSR_CPP_WARNINGS "")
+endif()
+
 add_library(sstsr_cpp
   src/transform.cpp
   src/tsr.cpp
@@ -33,9 +51,7 @@ target_include_directories(sstsr_cpp PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-if(NOT MSVC)
-  target_compile_options(sstsr_cpp PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
+target_compile_options(sstsr_cpp PRIVATE ${SSTSR_CPP_WARNINGS})
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -53,9 +69,7 @@ if(SSTSR_CPP_BUILD_TESTS)
     add_executable(test_${case_name} tests/test_${case_name}.cpp)
     target_link_libraries(test_${case_name} PRIVATE sstsr_cpp)
     target_include_directories(test_${case_name} PRIVATE tests)
-    if(NOT MSVC)
-      target_compile_options(test_${case_name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
+    target_compile_options(test_${case_name} PRIVATE ${SSTSR_CPP_WARNINGS})
     add_test(NAME ${case_name} COMMAND test_${case_name})
   endforeach()
 

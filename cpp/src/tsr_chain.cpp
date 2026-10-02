@@ -196,11 +196,15 @@ ChainSolveResult TSRChain::solve(const Transform& T, const SolveOptions& opt) co
   // Exact path: a single link reduces to the closed-form region check.
   if (n == 1) {
     if (tsrs_[0].contains(T)) {
-      const ChainCoords coords{tsrs_[0].to_xyzrpy(T)};
+      ChainCoords coords{tsrs_[0].to_xyzrpy(T)};
       // No tolerance re-check, matching the Python: contains grants kEpsilon of slack per
       // coordinate while to_transform clips to the chart, so this can report kSatisfied with a
       // residual at or above tolerance. Copied rather than corrected -- the corpus pins it.
-      return ChainSolveResult{ChainStatus::kSatisfied, coords, geodesic_distance(to_transform(coords), T), 0, 0};
+      //
+      // The residual is computed into a named value before the move, because the move leaves
+      // `coords` empty and a braced initialiser evaluates left to right.
+      const double residual = geodesic_distance(to_transform(coords), T);
+      return ChainSolveResult{ChainStatus::kSatisfied, std::move(coords), residual, 0, 0};
     }
     const auto [dist, bw] = tsrs_[0].distance_bwopt(T);
     // `dist` is the region's 6-vector displacement norm, NOT a geodesic. The two coincide for
@@ -228,21 +232,15 @@ ChainSolveResult TSRChain::solve(const Transform& T, const SolveOptions& opt) co
       if (b.hi(j) > b.lo(j)) ++free_count;
     }
   }
-  const ChainCoords midpoint = unflatten(x_full);
+  ChainCoords midpoint = unflatten(x_full);
 
-  // All-fixed chain: one candidate pose, no optimiser.
-  if (free_count == 0) {
+  // Two paths answer from the midpoint alone and spend nothing from the budget: an all-fixed
+  // chain, which has exactly one candidate pose, and max_starts == 0, which is what the
+  // Python's start schedule leaves in its best-point slot when it truncates to empty.
+  if (free_count == 0 || opt.max_starts == 0) {
     const double res = geodesic_distance(to_transform(midpoint), T);
     const ChainStatus status = res < opt.tolerance ? ChainStatus::kSatisfied : ChainStatus::kNotFound;
-    return ChainSolveResult{status, midpoint, res, 0, 0};
-  }
-
-  // max_starts == 0 runs no optimiser and reports the un-optimised midpoint, which is what the
-  // Python's empty start schedule leaves in its best-point slot.
-  if (opt.max_starts == 0) {
-    const double res = geodesic_distance(to_transform(midpoint), T);
-    const ChainStatus status = res < opt.tolerance ? ChainStatus::kSatisfied : ChainStatus::kNotFound;
-    return ChainSolveResult{status, midpoint, res, 0, 0};
+    return ChainSolveResult{status, std::move(midpoint), res, 0, 0};
   }
 
   throw std::logic_error(
