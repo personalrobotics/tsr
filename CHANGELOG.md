@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The viewer accepts placement templates** (#167). `tsr.viser` advertised them as supported
+  input while every site that read provenance assumed a `GraspProvenance`, so
+  `explore_templates(placer.place_box(...))` raised
+  `AttributeError: 'PlacementProvenance' object has no attribute 'mode'`. Five read sites now
+  dispatch on the `KIND` wire discriminator #160 introduced, rather than on the record's class,
+  so a third-party record is described generically instead of refused.
+
+  A placement is labelled from its own vocabulary — the resting face, the tipping angle, and
+  whether the equilibrium is stable or neutral — not a depth family it does not have. `mode_of`
+  groups it by **face normal**: an analytic box carries no `face_index`, so grouping on the
+  index would collapse all six faces into one entry. `filter_templates(..., depth_index=...)`
+  is a grasp idea, so no placement matches it, and it returns nothing rather than raising.
+
+  A **mixed** grasp/placement collection is refused, naming what it holds. The controls differ
+  per kind — a depth slider means nothing for a placement, a tipping angle nothing for a grasp
+  — so drawing one with half the controls inert would be the quietly-wrong behaviour this
+  library rejects elsewhere (#166). Grasp labels and grouping are unchanged.
+
+  The bug predates #160, which only changed the shape of the failure. `docs/VISER.md` gains a
+  placement section.
+
 ### Changed
 - **The chain's cold inverse is projected Levenberg–Marquardt with an analytic Jacobian**
   (#174), the same solver the C++ core uses, replacing L-BFGS-B over a finite-difference

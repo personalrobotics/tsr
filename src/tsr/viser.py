@@ -245,9 +245,56 @@ def free_coordinates(template: TSRTemplate) -> List[Tuple[int, str, float, float
     return out
 
 
+#: The wire discriminator each provenance record carries (#160). Dispatching on it rather
+#: than on the record's class keeps a third-party record working as long as it declares a
+#: kind, which is the whole reason the field exists.
+_GRASP, _PLACEMENT = "grasp", "placement"
+
+
+def provenance_kind(provenance) -> str:
+    """The ``KIND`` a provenance record declares, or ``""`` when it declares none.
+
+    A record with no ``KIND`` is not an error here: the viewer falls back to describing it
+    generically rather than refusing to draw a template some other generator produced.
+    """
+    return str(getattr(provenance, "KIND", "") or "")
+
+
+def collection_kind(templates: Sequence[TSRTemplate]) -> str:
+    """The one provenance kind a collection carries, or raise naming the mixture.
+
+    The viewer's controls are per-collection -- a depth slider means nothing for a
+    placement, a tipping angle means nothing for a grasp -- so a mixed collection cannot be
+    presented honestly. Refusing it names what it holds; drawing it with half the controls
+    inert would be the quietly-wrong behaviour this library rejects elsewhere (#166).
+    """
+    kinds = {provenance_kind(t.provenance) for t in templates}
+    kinds.discard("")
+    if len(kinds) > 1:
+        counts = ", ".join(
+            f"{sum(1 for t in templates if provenance_kind(t.provenance) == k)} {k}" for k in sorted(kinds)
+        )
+        raise ValueError(
+            f"a viewer collection must be all one kind of template, got {counts}. The controls differ "
+            "per kind -- a depth family is a grasp idea, a tipping angle a placement one -- so draw them "
+            "in separate calls."
+        )
+    return next(iter(kinds), "")
+
+
 def _template_label(index: int, template: TSRTemplate) -> str:
+    """One line describing a template, from whichever record it carries (#167)."""
     p = template.provenance
-    return f"{index}: {p.mode}/{p.approach} depth {p.depth * 1000:.0f}mm ({p.depth_index + 1}/{p.depth_count})"
+    kind = provenance_kind(p)
+    if kind == _PLACEMENT:
+        margin = template.stability_margin
+        angle = "" if margin is None else f" tips at {np.degrees(float(margin)):.1f} deg"
+        where = f" on face {p.face_index + 1}/{p.face_count}" if p.face_index is not None and p.face_count else ""
+        return f"{index}: {template.variant or p.primitive}{where}{angle} ({p.equilibrium})"
+    if kind == _GRASP:
+        return f"{index}: {p.mode}/{p.approach} depth {p.depth * 1000:.0f}mm ({p.depth_index + 1}/{p.depth_count})"
+    # A record from somewhere else: say what it is rather than guess at fields it may not have.
+    return f"{index}: {template.variant or template.name or type(p).__name__}"
 
 
 def explore_templates(
@@ -272,6 +319,7 @@ def explore_templates(
     The sampled cloud is available too, behind a checkbox, so a family's represented
     set and one concrete pose within it can be compared directly.
     """
+    collection_kind(templates)  # refuse a mixed collection before drawing anything (#167)
     reference = np.eye(4) if T_ref_world is None else np.asarray(T_ref_world, dtype=float)
     server = _viser.ViserServer(port=port) if server is None else server
     scene, gui = server.scene, server.gui
@@ -388,6 +436,7 @@ def show_templates(
     Returns:
         The server that was drawn into (created here when ``server`` is None).
     """
+    collection_kind(templates)  # refuse a mixed collection before drawing anything (#167)
     server = _viser.ViserServer(port=port) if server is None else server
     _draw_reference(server.scene, name, cylinder, axes_length=max(axes_length * 2, 0.04))
     _draw_pose_cloud(
@@ -516,8 +565,25 @@ def mode_of(provenance) -> str:
     for a viewer control -- one rarely wants to choose between ``roll0`` and ``rollpi``
     -- but it is not the partition ``depth_index``/``depth_count`` are defined over, so
     it does not reuse the word *family*.
+
+    For a **placement** record the grouping is the resting face -- its variant, and the
+    face index when the primitive is a mesh -- because that is what distinguishes one
+    placement from another the way mode/approach distinguishes grasps (#167).
     """
-    return f"{provenance.mode}/{provenance.approach}/{provenance.finger_orientation}"
+    kind = provenance_kind(provenance)
+    if kind == _PLACEMENT:
+        # The resting face is what separates one placement from another, and the face
+        # NORMAL names it for both kinds of primitive: an analytic box carries no
+        # face_index, so grouping on that alone would collapse all six faces into one
+        # entry. The index is appended when present, to keep distinct mesh facets that
+        # happen to share a normal apart.
+        normal = provenance.face_normal
+        face = "" if normal is None else "/" + ",".join(f"{v:+.2f}" for v in normal)
+        index = f"#{provenance.face_index}" if provenance.face_index is not None else ""
+        return f"{provenance.primitive}{face}{index}/{provenance.equilibrium}"
+    if kind == _GRASP:
+        return f"{provenance.mode}/{provenance.approach}/{provenance.finger_orientation}"
+    return type(provenance).__name__
 
 
 def filter_templates(templates: Sequence[TSRTemplate], *, depth_index=None, mode=None) -> List[TSRTemplate]:
@@ -529,10 +595,15 @@ def filter_templates(templates: Sequence[TSRTemplate], *, depth_index=None, mode
 
     ``depth_index`` is per depth family, so selecting an index keeps that level of every
     family rather than one distance: a cap grasp's first depth is not a side grasp's.
+
+    ``depth_index`` is a grasp idea -- a placement record has no depth family -- so a
+    template whose record does not carry one can never match a depth filter, and asking for
+    a depth of a placement collection correctly yields nothing (#167). ``mode`` works for
+    either kind; see :func:`mode_of`.
     """
     shown = list(templates)
     if depth_index is not None:
-        shown = [t for t in shown if t.provenance.depth_index == depth_index]
+        shown = [t for t in shown if getattr(t.provenance, "depth_index", None) == depth_index]
     if mode is not None:
         shown = [t for t in shown if mode_of(t.provenance) == mode]
     return shown
@@ -637,8 +708,14 @@ def studio(
         return kwargs
 
     def _sync_filters(templates) -> None:
-        """Offer only the depths and families this request produced."""
-        depths = sorted({t.provenance.depth_index for t in templates})
+        """Offer only the depths and families this request produced.
+
+        A record without a depth family contributes no depth option, so a placement
+        collection simply shows "all" there rather than raising on a field it never had
+        (#167). The studio's own factories are all grasps today, but `_selected` and these
+        controls are reachable with any collection.
+        """
+        depths = sorted({d for t in templates if (d := getattr(t.provenance, "depth_index", None)) is not None})
         depth_options = ("all",) + tuple(f"depth {i}" for i in depths)
         mode_options = ("all",) + tuple(sorted({mode_of(t.provenance) for t in templates}))
         state["syncing"] = True  # assigning options fires on_update; do not recurse
@@ -694,10 +771,15 @@ def studio(
         lines = [header]
         for mode in sorted(modes):
             members = [t for t in templates if mode_of(t.provenance) == mode]
-            depths = ", ".join(
-                f"{t.provenance.depth * 1000:.0f}" for t in sorted(members, key=lambda t: t.provenance.depth_index)
-            )
-            lines.append(f"- `{mode}` x{len(members)} at {depths} mm")
+            # Depths are a grasp idea; a record without them gets the count alone (#167).
+            with_depth = [t for t in members if getattr(t.provenance, "depth", None) is not None]
+            if len(with_depth) == len(members):
+                depths = ", ".join(
+                    f"{t.provenance.depth * 1000:.0f}" for t in sorted(members, key=lambda t: t.provenance.depth_index)
+                )
+                lines.append(f"- `{mode}` x{len(members)} at {depths} mm")
+            else:
+                lines.append(f"- `{mode}` x{len(members)}")
         for message in diagnostics:
             lines.append(f"- {message.split(': ', 1)[-1]}")
         if not templates and not diagnostics:
