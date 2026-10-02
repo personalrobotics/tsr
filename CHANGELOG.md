@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The chain's cold inverse is projected Levenberg–Marquardt with an analytic Jacobian**
+  (#174), the same solver the C++ core uses, replacing L-BFGS-B over a finite-difference
+  gradient. The objective is unchanged, and the least-squares form is exact rather than an
+  approximation of it: since `3 − tr(AᵀB) = ‖A − B‖²_F / 2` on SO(3), the scalar
+  `Δt·Δt + (3 − tr(RᵀR′))` *is* `‖r‖²` for the 12-vector `r = [Δt, (R − R′)/√2]`. One O(n)
+  prefix/suffix sweep builds all `6n` Jacobian columns, so a gradient costs no extra chain
+  composition where it used to cost `6n`.
+
+  Measured over 560 cold solves on 70 random chains at equal budget: **98.6% recall against
+  98.2%, with 7.8× fewer objective evaluations and 3.1× faster wall-clock**.
+  `tools/chain_solver_comparison.py --against-scipy` reproduces it and fails if recall ever
+  regresses.
+
+  **`ChainSolveResult` values move.** `status`, `coordinates`, `residual`, `nfev` and `starts`
+  all come from a different search, and `nfev` now counts this solver's residual evaluations
+  rather than SciPy's objective calls — the same unit (one forward composition) but not
+  comparable numbers. The documented contract is unchanged and still holds: `residual` is an
+  upper bound rather than a certified distance, `"not_found"` is no proof of non-membership
+  (#85), `nfev <= max_nfev` strictly and `starts <= max_starts`. Every exact path is untouched,
+  so the conformance corpus is byte-identical and `max_starts == 0` still reports the
+  un-optimised midpoint with `nfev == 0`.
+
+  Sharing the algorithm with the C++ deliberately does **not** make the cold inverse
+  recordable in the conformance corpus: two solvers that both succeed recover the same
+  coordinates about 1% of the time, because a redundant chain's solution set is a continuum
+  and both answers are correct. `docs/CPP.md` records why.
+
+  SciPy leaves `tsr.core.tsr_chain` entirely. It remains a package dependency — the placement
+  factories need `scipy.spatial.ConvexHull`, and `TSR.distance_optimize` still uses it.
+
+### Fixed
+- **A chain test no longer pins SciPy's trajectory.**
+  `test_deterministic_counterexample_witness_certifies_membership` asserted that the cold solve
+  **fails** on a pose that is provably a member — true of L-BFGS-B, and the reason that test
+  could never cross over to the C++ port. The new solver finds it, so the test now asserts the
+  property it was always protecting: a retained witness decides membership with no optimiser
+  involved. Its companion no longer patches `scipy.optimize.fmin_l_bfgs_b` to inspect the
+  optimiser's start, which tested SciPy's call signature rather than this library; it reads the
+  canonicalised first start off the public result instead.
+
 ## [3.3.0] — 2026-10
 
 TSR chains exist in C++. `sstsr` now ships a second implementation of both the pose region and

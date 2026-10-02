@@ -183,9 +183,28 @@ are worth changing, they are worth changing in the Python first.
 
 The interior start-schedule fill also differs. The Python fills from numpy's `default_rng(0)`
 (PCG64) and the C++ from its own `Rng` (`mt19937_64`), for the same reason sampling differs.
-Porting PCG64 would buy nothing, because a different optimiser takes a different trajectory from
-identical starts anyway. The starts that *are* specifiable — a canonicalised guess, the midpoint,
-the two opposite corners — are arithmetic on the chart and agree.
+The starts that *are* specifiable — a canonicalised guess, the midpoint, the two opposite
+corners — are arithmetic on the chart and agree.
+
+### Both implementations now run the same algorithm, and it changes nothing here (#174)
+
+The Python's cold inverse was L-BFGS-B over a finite-difference gradient; since #174 it is the
+same projected Levenberg–Marquardt with the same analytic Jacobian as `cpp/`, for its own
+reasons — measured over 560 cold solves on 70 random chains, 98.6% recall against 98.2% at
+7.8× fewer objective evaluations and 3.1× faster.
+
+**Sharing the algorithm does not make the cold inverse recordable in the corpus**, and it is
+worth being explicit because the opposite is the natural assumption. When two solvers both
+succeed they recover the *same coordinates* about 1% of the time — a redundant chain's solution
+set is a continuum, and both answers are correct, each recomposing to the target within
+tolerance. There is no single right answer to record. Nor would divergence be graceful: two
+implementations of one algorithm track each other until a near-tie accept/reject flips, and then
+land on different points in that continuum, which given the gaps between valid solutions
+(median 0.094 rad, up to 6.28) is a wholly different recorded answer rather than a small
+numerical difference. No comparison tolerance makes that meaningful.
+
+So the cold half stays property-checked whichever optimiser either side uses, and
+`tools/chain_solver_comparison.py` is how the recall claim is reproduced rather than asserted.
 
 One existing test cannot cross over:
 `test_deterministic_counterexample_witness_certifies_membership` asserts that the cold solve
