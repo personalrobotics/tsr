@@ -49,6 +49,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   change just because this solver is better: `not_found` is not a proof of non-membership in
   either implementation.
 
+### Documentation
+- **The README covers the C++ core**, which until now appeared nowhere a user would look:
+  `docs/CPP.md` was not linked from anything, and the README never mentioned `sstsr_cpp`,
+  `get_include()`, `get_cmake_dir()`, or that a chain has a C++ form. There is now a **From
+  C++** section with the `find_package` recipe and a compiling example, and the documentation
+  index lists the architecture, C++, viewer and releasing guides rather than only the tutorial.
+- **The chain section explains membership**, which is where a chain differs from a TSR: the
+  constructive witness (`sample_with_witness`, `validate_witness`), the composition rule that
+  makes a later link's `T0_w` unreadable, and the standing caveat that a bounded solve's
+  `False` is not a proof of non-membership and `distance` is an upper bound (#85).
+- **`docs/ARCHITECTURE.md` states the `to_xyzrpy` invariant** alongside the rest of the Layer 0
+  consistency contract, and records that those rules now have a second implementation in `cpp/`
+  which is held to them by the corpus — so changing a rule means changing two implementations
+  and the corpus between them, in that order.
+
 ### Added
 - **Every placement template carries a structured `PlacementProvenance`** (#160). Grasp
   templates have declared their semantics structurally since 2.2.0, and clause 8 of the

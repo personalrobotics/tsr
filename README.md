@@ -264,7 +264,11 @@ R_convert = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]])
 
 ## TSR Chains
 
-For coupled multi-body constraints (e.g., door opening, bimanual transport):
+For coupled multi-body constraints (e.g., door opening, bimanual transport). A chain composes
+its links serially: the first is placed by its own `T0_w`, and every later one is placed *by
+the chain*, on the previous link's end frame. A later link's `T0_w` is therefore never read,
+and `append` refuses a non-identity one rather than silently dropping the offset — put it in
+the **previous** link's `Tw_e`, which is what moves the end frame the next link hangs off.
 
 ```python
 from tsr import TSRChain
@@ -272,6 +276,21 @@ from tsr import TSRChain
 chain = TSRChain(TSRs=[hinge_tsr, handle_tsr])
 pose  = chain.sample()
 ```
+
+Membership is where a chain differs from a single TSR. A TSR has a closed-form `contains`; a
+chain has to invert a composition, which is a bounded non-convex problem. So sampling hands
+back the coordinates that built the pose, and those are a **constructive witness**:
+
+```python
+s = chain.sample_with_witness()
+chain.validate_witness(s.pose, s.coordinates)   # exact: one bounds check, one composition
+chain.contains(s.pose, initial_guess=s.coordinates)   # the same fast path
+```
+
+Without a witness, `contains` runs a bounded numerical solve. `True` means one was found;
+`False` means none was found **within the budget**, and is not a proof of non-membership —
+`distance` is likewise an upper bound rather than a certified distance. Keep the witness when
+you have one.
 
 ## Visualization
 
@@ -307,9 +326,61 @@ Open <http://localhost:8080>. `show_templates` draws a reproducibly sampled clou
 through the region. Over SSH, forward the port: `ssh -L 8080:localhost:8080 user@host`.
 Details in [docs/VISER.md](docs/VISER.md).
 
-## Documentation
+## From C++
 
+A planner that evaluates a TSR on every edge sample should not pay a Python call to do it.
+`cpp/` is a second implementation of the region **and** the chain — standard library only,
+C++20, no linear-algebra dependency to hold a pose — and the wheel carries its sources,
+headers and CMake package, so `pip install sstsr` is all a C++ consumer needs.
+
+Ask the installed package where the CMake package is:
+
+```cmake
+find_package(Python COMPONENTS Interpreter)
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -c "import tsr; print(tsr.get_cmake_dir(), end='')"
+  OUTPUT_VARIABLE TSR_CMAKE_DIR RESULT_VARIABLE rc ERROR_QUIET)
+if(rc EQUAL 0 AND TSR_CMAKE_DIR)
+  list(APPEND CMAKE_PREFIX_PATH "${TSR_CMAKE_DIR}")
+endif()
+find_package(sstsr_cpp CONFIG REQUIRED)
+target_link_libraries(my_planner PRIVATE sstsr::sstsr_cpp)
+```
+
+```cpp
+#include "sstsr/tsr_chain.hpp"
+
+// A door handle on a hinge: the first link turns, the second grasps the bar.
+const sstsr::TSRChain chain({hinge, handle});
+
+sstsr::Rng rng(7);
+const sstsr::ChainSample s = chain.sample_with_witness(rng);
+
+// Sampling hands back the coordinates that built the pose, so membership is one bounds
+// check and one composition -- no optimiser at all.
+assert(chain.validate_witness(s.pose, s.coordinates));
+
+// And the inverse, for a pose you were handed instead of one you sampled.
+const auto [residual, closest] = chain.closest_transform(pose);
+```
+
+`get_cmake_dir()` raises from an editable install, because only a built wheel carries a
+relocatable CMake package; point CMake at `cpp/` directly in that case, as
+`cpp/examples/consumer` does.
+
+**The Python is the source of truth for the rules.** The C++ is held to them by a checked-in
+corpus of the Python's own answers, and neither implementation reads the other. Two things
+are deliberately not shared: the sampling engine, so a seeded sample is reproducible *within*
+an implementation rather than across the two; and a chain's **cold** inverse, which reports
+the best point a bounded search found and so is specified by properties rather than by
+recorded numbers. [docs/CPP.md](docs/CPP.md) has the whole contract.
+
+## Documentation
 - **[Tutorial](docs/tutorial.md)** — TSR theory, math, and worked examples
+- **[Architecture](docs/ARCHITECTURE.md)** — the four layers, and the geometric contract every factory is held to
+- **[The C++ core](docs/CPP.md)** — using `sstsr_cpp`, and what the two implementations do and do not agree on
+- **[Interactive viewer](docs/VISER.md)** — inspecting templates with Viser
+- **[Releasing](docs/RELEASING.md)** — the tag-driven release pipeline
 - **[Examples](examples/)** — Runnable scripts (`uv run python examples/<script>.py`)
 
 ## Testing

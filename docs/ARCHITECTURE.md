@@ -29,10 +29,24 @@ The heart's correctness *is* its mutual consistency. For any `TSR` and pose:
 
 - `sample()` returns a pose that `is_valid()` accepts and `contains()` confirms.
 - `contains(T)` is true ⇔ `distance(T)[0] == 0`.
+- For a pose the region contains, `to_xyzrpy(T)` returns coordinates that `is_valid()`
+  accepts, and recomposing them returns `T`. This is a real constraint rather than a
+  restatement: RPY double-covers rotations — `(r, p, y)` and `(r ± π, −π − p, y ± π)` are
+  the same rotation — so "some representative is in bounds", which `contains` establishes,
+  and "the representative we return is in bounds" are different claims. Violating it made
+  `to_xyzrpy` contradict the same region's `is_valid` for a quarter of contained poses
+  (#171).
 - The RPY ↔ rotation ↔ transform conversions round-trip (including near gimbal
   lock — see `docs/REVIEW.md` C1).
 
 These are exercised exhaustively by the Hypothesis property tests.
+
+**These rules have a second implementation.** `cpp/` is a C++ port of Layer 0's region and
+chain, for a planner that cannot afford a Python call per edge sample. The Python stays the
+source of truth: the port is held to it by a checked-in corpus of the Python's own answers,
+and neither implementation reads the other. So a change to a rule here is a change to two
+implementations and to the corpus between them — in that order. See
+[CPP.md](CPP.md).
 
 ### Construction rejects a malformed region (#162)
 
