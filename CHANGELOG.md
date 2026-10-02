@@ -4,7 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.3.0] — 2026-10
+
+TSR chains exist in C++. `sstsr` now ships a second implementation of both the pose region and
+the chain, so a planner that evaluates a constraint on every edge sample no longer pays a Python
+call to do it. Measured end to end on `sscbirrt`'s door-opening example, which plans the same set
+twice: 18.52 s as a `TSRChain` against 1.01 s as the equivalent single native TSR.
+
+The chain is specified in two halves, because only one of them can be. The forward paths and
+every exact `solve` — an empty chain, a validating witness, a single link, an all-fixed chain,
+`max_starts == 0` — are held to the Python's recorded answers by a checked-in corpus. The cold
+inverse is held to **properties** instead: it reports the best point a bounded search found, and
+a different optimiser evaluates a different set of points, so `"not_found"` remains no proof of
+non-membership in either implementation. `docs/CPP.md` is the whole contract.
+
+The Python stays the source of truth, and writing the second implementation found a defect in
+the first: `TSR.to_xyzrpy` was checking rotation candidates against the *translation* bounds, so
+it returned coordinates the same region's `is_valid` rejected for a quarter of contained poses.
+
+Pin `sstsr>=3.3` for the C++ chain, and consume it from the installed wheel with
+`find_package(sstsr_cpp CONFIG REQUIRED)` — only the wheel states a version.
 
 ### Added
 - **`TSRChain` in the C++ core: the forward half and every exact solve path** (#165, stage 2a).
@@ -49,33 +68,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   change just because this solver is better: `not_found` is not a proof of non-membership in
   either implementation.
 
-### Fixed
-- **Only the wheel states an `sstsr_cpp` version now** (#175). The two packagings rendered the
-  CMake package version independently — a source install from a literal in
-  `cpp/CMakeLists.txt`, the wheel from the release version — so they drifted: 3.2.0 against
-  3.2.1. A consumer pinning `find_package(sstsr_cpp 3.3)` would have got different answers from
-  a checkout and from the wheel it installs, which passes in development and fails on install.
-  `project()` now declares no `VERSION` and a source install ships no `ConfigVersion` file, so
-  that call succeeds from the wheel and fails with `version: unknown` from a checkout rather
-  than answering staleley. This also removes the single exception to `docs/RELEASING.md`'s
-  invariant that there is no version number in the tree to edit.
-
-### Documentation
-- **The README covers the C++ core**, which until now appeared nowhere a user would look:
-  `docs/CPP.md` was not linked from anything, and the README never mentioned `sstsr_cpp`,
-  `get_include()`, `get_cmake_dir()`, or that a chain has a C++ form. There is now a **From
-  C++** section with the `find_package` recipe and a compiling example, and the documentation
-  index lists the architecture, C++, viewer and releasing guides rather than only the tutorial.
-- **The chain section explains membership**, which is where a chain differs from a TSR: the
-  constructive witness (`sample_with_witness`, `validate_witness`), the composition rule that
-  makes a later link's `T0_w` unreadable, and the standing caveat that a bounded solve's
-  `False` is not a proof of non-membership and `distance` is an upper bound (#85).
-- **`docs/ARCHITECTURE.md` states the `to_xyzrpy` invariant** alongside the rest of the Layer 0
-  consistency contract, and records that those rules now have a second implementation in `cpp/`
-  which is held to them by the corpus — so changing a rule means changing two implementations
-  and the corpus between them, in that order.
-
-### Added
 - **Every placement template carries a structured `PlacementProvenance`** (#160). Grasp
   templates have declared their semantics structurally since 2.2.0, and clause 8 of the
   geometric contract forbids inferring semantics by parsing `name` — but placement left
@@ -97,7 +89,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skips those with a warning — right for a truncated file, wrong for a record from a
   newer version, which would otherwise make a directory load silently come back empty.
 
-### Added
 - **A C++ core with a CMake package** (#165). `cpp/` is a second implementation of the
   pose region, for a planner that needs TSRs in C++ without a Python call per edge
   sample. It moved here from `sscbirrt`, which had been carrying it: a second
@@ -127,6 +118,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `TSR.volume`, so the measure has one definition for both implementations.
 
 ### Fixed
+- **Only the wheel states an `sstsr_cpp` version now** (#175). The two packagings rendered the
+  CMake package version independently — a source install from a literal in
+  `cpp/CMakeLists.txt`, the wheel from the release version — so they drifted: 3.2.0 against
+  3.2.1. A consumer pinning `find_package(sstsr_cpp 3.3)` would have got different answers from
+  a checkout and from the wheel it installs, which passes in development and fails on install.
+  `project()` now declares no `VERSION` and a source install ships no `ConfigVersion` file, so
+  that call succeeds from the wheel and fails with `version: unknown` from a checkout rather
+  than answering staleley. This also removes the single exception to `docs/RELEASING.md`'s
+  invariant that there is no version number in the tree to edit.
+
 - **`TSR.to_xyzrpy` no longer returns coordinates its own `TSR` rejects** (#171). It passed the
   full six-row `_Bw_cont` to `rot_within_rpy_bounds`, but that helper reads rows 0–2 of
   whatever bounds it is handed — so the roll/pitch/yaw candidates were being checked against
@@ -154,6 +155,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   use and where it belongs: post-multiplied into the **previous** link's `Tw_e`, which is
   what moves the end frame the next link hangs off. The first link is unaffected; it is
   placed by its own `T0_w`.
+
+### Documentation
+- **The README covers the C++ core**, which until now appeared nowhere a user would look:
+  `docs/CPP.md` was not linked from anything, and the README never mentioned `sstsr_cpp`,
+  `get_include()`, `get_cmake_dir()`, or that a chain has a C++ form. There is now a **From
+  C++** section with the `find_package` recipe and a compiling example, and the documentation
+  index lists the architecture, C++, viewer and releasing guides rather than only the tutorial.
+- **The chain section explains membership**, which is where a chain differs from a TSR: the
+  constructive witness (`sample_with_witness`, `validate_witness`), the composition rule that
+  makes a later link's `T0_w` unreadable, and the standing caveat that a bounded solve's
+  `False` is not a proof of non-membership and `distance` is an upper bound (#85).
+- **`docs/ARCHITECTURE.md` states the `to_xyzrpy` invariant** alongside the rest of the Layer 0
+  consistency contract, and records that those rules now have a second implementation in `cpp/`
+  which is held to them by the corpus — so changing a rule means changing two implementations
+  and the corpus between them, in that order.
 
 ### Changed
 - `tsr.placement._stable_poses.stable_poses_mesh` yields a `StableFace` record instead
