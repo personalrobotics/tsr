@@ -121,3 +121,47 @@ def test_the_geodesic_rotation_weight_is_still_one():
     Python's default ever moved, the omission would silently become a divergence instead of a
     simplification, and no corpus probe would show it."""
     assert inspect.signature(geodesic_distance).parameters["r"].default == 1.0
+
+
+def test_the_cpp_package_states_no_hand_maintained_version():
+    """#175: the version comes from the git tag, so a literal in CMake could only be stale.
+
+    ``docs/RELEASING.md`` states the invariant -- "Do not edit a version number anywhere; there
+    is none to edit" -- and ``project(sstsr_cpp VERSION ...)`` was the single exception to it.
+    The two packagings rendered the number independently, so they drifted: a source install said
+    3.2.0 while the wheel said 3.2.1, and a consumer pinning ``find_package(sstsr_cpp 3.3)``
+    would have got different answers from a checkout and from the wheel it installs.
+
+    Checked textually because the failure is a literal reappearing, which no behavioural test
+    sees until a consumer pins a version and gets the wrong answer.
+    """
+    cmakelists = Path(tsr.get_include()).parent / "CMakeLists.txt"
+    if not cmakelists.is_file():  # a wheel ships the sources, not the build file
+        cmakelists = Path(__file__).resolve().parents[2] / "cpp" / "CMakeLists.txt"
+    if not cmakelists.is_file():
+        pytest.skip("cpp/CMakeLists.txt is not in this install")
+    text = cmakelists.read_text()
+    assert re.search(
+        r"^project\(sstsr_cpp\s+LANGUAGES", text, re.MULTILINE
+    ), "project(sstsr_cpp ...) must declare no VERSION: the release version comes from the tag"
+    assert (
+        "write_basic_package_version_file" not in text
+    ), "a source install must not render a ConfigVersion file from a literal version"
+
+
+def test_the_wheels_cmake_version_is_the_release_version():
+    """The wheel is the one packaging that can state a version, and it must be *the* version.
+
+    ``hatch_build.py`` renders it from the package metadata, so this catches that renderer
+    drifting from what the tag produced.
+    """
+    try:
+        directory = Path(tsr.get_cmake_dir())
+    except FileNotFoundError:
+        pytest.skip("only a built wheel carries the CMake package")
+    version_file = directory / "sstsr_cppConfigVersion.cmake"
+    assert version_file.is_file()
+    match = re.search(r'set\(PACKAGE_VERSION "([^"]+)"\)', version_file.read_text())
+    assert match, "the rendered ConfigVersion file should set PACKAGE_VERSION"
+    expected = re.match(r"^(\d+(?:\.\d+)*)", tsr.__version__).group(1)
+    assert match.group(1) == expected, f"the wheel's CMake package says {match.group(1)} but sstsr is {tsr.__version__}"

@@ -65,16 +65,38 @@ The wheel stays `py3-none-any`. It carries the C++ **sources and headers**, not 
 compiled library, so a consumer compiles them into its own build. That keeps one
 artifact, one release pipeline and one install story.
 
-| | consumed how | targets file |
-|---|---|---|
-| `cmake --install` of `cpp/` | `find_package(sstsr_cpp)` on the install prefix | exported by CMake; a real static library |
-| the `sstsr` wheel | `find_package` on `tsr.get_cmake_dir()` | `cpp/cmake/sstsr_cppWheelTargets.cmake`, hand-written and relocatable; an `INTERFACE` target carrying the sources |
+| | consumed how | targets file | version |
+|---|---|---|---|
+| `cmake --install` of `cpp/` | `find_package(sstsr_cpp)` on the install prefix | exported by CMake; a real static library | **none** |
+| the `sstsr` wheel | `find_package` on `tsr.get_cmake_dir()` | `cpp/cmake/sstsr_cppWheelTargets.cmake`, hand-written and relocatable; an `INTERFACE` target carrying the sources | the release version |
 
 Both go through the one `cpp/cmake/sstsr_cppConfig.cmake.in`. The wheel needs its own
 targets file because an exported one holds absolute paths from the machine that built it,
 while a wheel lands wherever the virtualenv is. `hatch_build.py` renders it, and
 `cpp/examples/wheel_consumer` is the only thing that reads it — including the version
 file, which is why that example asks `find_package` for a version.
+
+### Only the wheel states a version (#175)
+
+`project()` in `cpp/CMakeLists.txt` declares no `VERSION`, and a source install ships no
+`ConfigVersion` file. That is deliberate. The version comes from the git tag through
+hatch-vcs — [RELEASING.md](RELEASING.md) puts it plainly, *"Do not edit a version number
+anywhere; there is none to edit"* — so a bare checkout has no version to state and a literal
+here could only be stale. It was, and it made this the one hand-maintained version in the
+repository: a source install said `3.2.0` while the wheel said `3.2.1`.
+
+So:
+
+```cmake
+find_package(sstsr_cpp CONFIG REQUIRED)        # works from either packaging
+find_package(sstsr_cpp 3.3 CONFIG REQUIRED)    # works from the wheel; from a source
+                                               # install, fails with "version: unknown"
+```
+
+Failing is the point. A consumer that needs the chain pins a version, and answering it with a
+stale number from a checkout while the installed wheel answers differently is the one outcome
+worth preventing — it passes in development and fails on install. If you need to pin, consume
+the wheel; `tests/tsr/test_cpp_package.py` holds both halves of this in place.
 
 `get_cmake_dir()` raises from an editable install: only a built wheel carries the CMake
 package. Configure `cpp/` directly in that case, as `cpp/examples/consumer` does.
