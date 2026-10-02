@@ -81,8 +81,31 @@ local_scheme = "no-local-version"
 [tool.hatch.build.hooks.vcs]
 version-file = "src/tsr/_version.py"
 
+# Renders the C++ core's CMake package into tsr/cpp/ inside the wheel. The wheel stays
+# py3-none-any: it carries the C++ sources and headers, not a compiled library, so a
+# planner that links sstsr::sstsr_cpp compiles them into its own build. See docs/CPP.md.
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsr"]
+
+# cpp/ is the source of truth for the C++ core, and tools/ + tests/reference/ hold the
+# conformance corpus, so an sdist has to be able to rebuild and recheck both.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/cpp",
+    "/tools",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/scripts",
+    "/hatch_build.py",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

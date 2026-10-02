@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# Authors: Siddhartha Srinivasa and contributors to TSR
+#
+# One config for both packagings of the C++ core, which must stay in step:
+#   * `cmake --install` of cpp/ (CMakeLists.txt), which exports a real built target;
+#   * the sstsr wheel (hatch_build.py), where sstsr_cppWheelTargets.cmake is installed
+#     as sstsr_cppTargets.cmake and declares a relocatable INTERFACE target.
+#
+# There is deliberately no find_dependency here: the core is standard library only, so a
+# consumer inherits nothing from us. If that ever stops being true, this file is the
+# first thing that has to change.
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/sstsr_cppTargets.cmake")
+check_required_components(sstsr_cpp)

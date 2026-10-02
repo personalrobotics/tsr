@@ -51,6 +51,9 @@ from .hands import FrankaHand, GripperBase, ParallelJawGripper, Robotiq2F85, Rob
 from .placement import StablePlacer
 
 # --- Layer 3: services --------------------------------------------------------
+# Where the C++ core's headers and CMake package live, for a C++ consumer to find them
+# by asking the interpreter (docs/CPP.md). Imports nothing but pathlib.
+from .cpp import get_cmake_dir, get_include
 from .io import (
     get_package_templates,
     list_available_templates,
@@ -117,6 +120,8 @@ __all__ = [
     "sample_haar_xyzrpy",
     "weights_from_tsrs",
     # template I/O
+    "get_cmake_dir",
+    "get_include",
     "save_template",
     "save_template_collection",
     "load_template",

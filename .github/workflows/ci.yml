@@ -39,8 +39,48 @@ jobs:
       - name: Pytest
         run: uv run pytest tests/ -v
 
+  # The C++ core (#165). Separate from `test` because it needs a compiler rather than a
+  # Python matrix, and because what it proves is different: that the second
+  # implementation still answers what the Python answers, and that both packagings of the
+  # CMake package are usable from outside the build tree.
+  cpp:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both toolchains a consumer builds with: libstdc++ and libc++. The region is
+        # standard-library only, so the standard library is the variable that matters.
+        os: [ubuntu-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Configure and build
+        run: cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+
+      # Includes the conformance corpus: the C++ against the Python's recorded answers.
+      - name: ctest
+        run: ctest --test-dir build --output-on-failure
+
+      # The corpus has to be current, or the C++ is being checked against stale answers.
+      - name: The corpus matches what the Python answers today
+        run: |
+          uv sync --all-extras --dev
+          uv run python tools/tsr_conformance.py --check
+
+      - name: A consumer can use the installed CMake package
+        run: ./cpp/examples/consumer/smoke.sh
+
+      - name: A consumer can use the CMake package inside a wheel
+        run: ./cpp/examples/wheel_consumer/smoke.sh
+
   notify-robot-code:
-    needs: test
+    needs: [test, cpp]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Surface the token to step-level `if` (the `secrets` context isn't available

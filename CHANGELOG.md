@@ -28,6 +28,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skips those with a warning — right for a truncated file, wrong for a record from a
   newer version, which would otherwise make a directory load silently come back empty.
 
+### Added
+- **A C++ core with a CMake package** (#165). `cpp/` is a second implementation of the
+  pose region, for a planner that needs TSRs in C++ without a Python call per edge
+  sample. It moved here from `sscbirrt`, which had been carrying it: a second
+  implementation of sstsr's contract was living outside sstsr, so every rule change here
+  had to be followed there — 3.1 → 3.2's construction validation was one.
+
+  Standard library only, C++20; a transform is `std::array<double, 16>` and the generator
+  is `std::mt19937_64`, so a consumer inherits no linear-algebra dependency and the
+  exported config needs no `find_dependency`. The wheel stays `py3-none-any` and carries
+  the sources and headers rather than a binary, so the release pipeline and install story
+  are unchanged. `tsr.get_cmake_dir()` and `tsr.get_include()` are how a C++ consumer
+  finds it; `docs/CPP.md` has the `find_package` recipe, and `cpp/examples/` has working
+  consumers for both the installed package and the one inside a wheel.
+
+  The Python stays the source of truth for the rules. The C++ is held to them by a
+  checked-in corpus of the Python's answers — 162 probes across 9 regions, `contains`
+  exactly, lengths to 1e-9 — and the constants it restates are checked against the
+  Python's, since a drifting tolerance fails much later than it is introduced.
+
+  Chains are still Python. `docs/CPP.md` records why, and what a port can and cannot
+  promise: the forward and witness paths are exactly specifiable, the cold inverse is not,
+  because "best found" is taken over an optimiser's trajectory including its
+  finite-difference probes.
+- **`TSR.volume`** and **`TSR.continuous_bounds`**, which make the measure and the
+  continuous chart part of the region's public surface rather than a private attribute the
+  conformance generator reached into. `tsr.sampling._interval_sum` now delegates to
+  `TSR.volume`, so the measure has one definition for both implementations.
+
 ### Fixed
 - **A `TSRChain` no longer accepts a frame it will not read** (#166). A chain places
   every link after the first on the previous link's end frame, so a later link's own
