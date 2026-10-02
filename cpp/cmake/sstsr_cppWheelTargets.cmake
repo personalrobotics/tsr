@@ -26,6 +26,6 @@ endif()
 add_library(sstsr::sstsr_cpp INTERFACE IMPORTED)
 set_target_properties(sstsr::sstsr_cpp PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES "${_sstsr_cpp_include}"
-  INTERFACE_SOURCES "${_sstsr_cpp_src}/transform.cpp;${_sstsr_cpp_src}/tsr.cpp"
+  INTERFACE_SOURCES "${_sstsr_cpp_src}/transform.cpp;${_sstsr_cpp_src}/tsr.cpp;${_sstsr_cpp_src}/tsr_chain.cpp"
   INTERFACE_COMPILE_FEATURES "cxx_std_20"
 )
