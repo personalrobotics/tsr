@@ -49,6 +49,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   change just because this solver is better: `not_found` is not a proof of non-membership in
   either implementation.
 
+### Fixed
+- **Only the wheel states an `sstsr_cpp` version now** (#175). The two packagings rendered the
+  CMake package version independently — a source install from a literal in
+  `cpp/CMakeLists.txt`, the wheel from the release version — so they drifted: 3.2.0 against
+  3.2.1. A consumer pinning `find_package(sstsr_cpp 3.3)` would have got different answers from
+  a checkout and from the wheel it installs, which passes in development and fails on install.
+  `project()` now declares no `VERSION` and a source install ships no `ConfigVersion` file, so
+  that call succeeds from the wheel and fails with `version: unknown` from a checkout rather
+  than answering staleley. This also removes the single exception to `docs/RELEASING.md`'s
+  invariant that there is no version number in the tree to edit.
+
 ### Documentation
 - **The README covers the C++ core**, which until now appeared nowhere a user would look:
   `docs/CPP.md` was not linked from anything, and the README never mentioned `sstsr_cpp`,

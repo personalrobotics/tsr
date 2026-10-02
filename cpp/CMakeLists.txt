@@ -7,12 +7,17 @@
 # linear-algebra dependency to hold a 4x4. That is also what lets the exported package
 # config carry no find_dependency at all.
 cmake_minimum_required(VERSION 3.16)
-# Deliberately NOT bumped by hand for a new header. The two packagings take this number from
-# different places -- a source install from here, the wheel from the Python package version via
-# hatch_build.py -- so a hand bump makes them disagree, and `find_package(sstsr_cpp 3.3)` would
-# then succeed against a checkout and fail against the wheel a consumer actually installs. The
-# release version is what should reach both; see issue #175.
-project(sstsr_cpp VERSION 3.2.0 LANGUAGES CXX)
+# No VERSION here, on purpose (#175). The project's version comes from the git tag via
+# hatch-vcs -- docs/RELEASING.md puts it plainly: "Do not edit a version number anywhere; there
+# is none to edit." A bare checkout therefore has no version to state, so a literal here could
+# only be stale. It was, and it made this the one hand-maintained version in the repository.
+#
+# The consequence is deliberate: the wheel carries a ConfigVersion file rendered from the
+# release version (hatch_build.py), so `find_package(sstsr_cpp 3.3)` works there. A source
+# install carries none, so the same call fails loudly instead of answering with a stale number.
+# Failing in development is the honest outcome and it tells you what to do; answering 3.2.0 to a
+# consumer that needs 3.3 does not.
+project(sstsr_cpp LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -115,14 +120,10 @@ if(SSTSR_CPP_INSTALL)
     ${CMAKE_CURRENT_BINARY_DIR}/sstsr_cppConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sstsr_cpp
   )
-  write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/sstsr_cppConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-  )
+  # No ConfigVersion file: see the note on project() above. The wheel's package has one,
+  # rendered from the release version, and cpp/examples/wheel_consumer exercises it.
   install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/sstsr_cppConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/sstsr_cppConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sstsr_cpp
   )
 endif()
