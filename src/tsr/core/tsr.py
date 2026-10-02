@@ -371,7 +371,7 @@ class TSR:
         """
         Tw = reduce(numpy.dot, [numpy.linalg.inv(self.T0_w), trans, numpy.linalg.inv(self.Tw_e)])
         xyz, rot = Tw[0:3, 3], Tw[0:3, 0:3]
-        rpycheck, rpy = TSR.rot_within_rpy_bounds(rot, self._Bw_cont)
+        rpycheck, rpy = TSR.rot_within_rpy_bounds(rot, self._Bw_cont[3:6, :])
         if not all(rpycheck):
             rpy = TSR.rot_to_rpy(rot)
         return numpy.hstack((xyz, rpy))

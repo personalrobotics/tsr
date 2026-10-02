@@ -124,6 +124,24 @@ def test_contains_iff_distance_zero(tsr, T):
 
 
 @given(tsr=tsrs())
+def test_to_xyzrpy_of_a_contained_pose_is_itself_in_bounds(tsr):
+    # A region must not contradict itself: whatever to_xyzrpy names as the coordinates of a
+    # pose the region contains has to be coordinates the region accepts, and recomposing them
+    # has to give the pose back. RPY double-covers rotations -- (r, p, y) and
+    # (r ± π, −π − p, y ± π) are the same rotation -- so "some representative is in bounds" and
+    # "the one we return is in bounds" are different claims, and contains() only establishes
+    # the first. rot_to_rpy always reports |pitch| <= π/2, so a region whose pitch bounds lie
+    # outside that range is named by the other representative (#171).
+    #
+    # The pose comes from the region rather than from transforms(), because a random transform
+    # is essentially never inside a random region.
+    pose = tsr.sample()
+    xyzrpy = tsr.to_xyzrpy(pose)
+    assert all(tsr.is_valid(xyzrpy)), f"to_xyzrpy returned {xyzrpy}, which this TSR's is_valid rejects"
+    assert geodesic_distance(tsr.to_transform(xyzrpy), pose) < EPSILON
+
+
+@given(tsr=tsrs())
 def test_tsr_dict_json_yaml_roundtrip(tsr):
     for revived in (
         TSR.from_dict(tsr.to_dict()),

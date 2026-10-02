@@ -58,6 +58,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `TSR.volume`, so the measure has one definition for both implementations.
 
 ### Fixed
+- **`TSR.to_xyzrpy` no longer returns coordinates its own `TSR` rejects** (#171). It passed the
+  full six-row `_Bw_cont` to `rot_within_rpy_bounds`, but that helper reads rows 0–2 of
+  whatever bounds it is handed — so the roll/pitch/yaw candidates were being checked against
+  the **x/y/z translation** bounds. The check then almost always failed and the method fell
+  back to the raw `rot_to_rpy` extraction. RPY double-covers rotations, and `rot_to_rpy`
+  always reports `|pitch| <= π/2`, so for any region whose pitch bounds lie outside that range
+  the returned triple was the *other* representative of the same rotation — out of bounds.
+  `to_xyzrpy` therefore contradicted `contains` and `is_valid` for **25.9%** of contained poses
+  (measured over 4000 random regions). It propagated to `TSRChain.solve`'s single-link path and
+  from there to `TSRChain.distance`, `to_xyzrpy` and `closest_transform`. The two other call
+  sites, `is_valid` and `contains`, always sliced correctly; now all three do.
+
+  It hid because the conformance corpus records `contains`, `distance` and `closest_transform`
+  but never `to_xyzrpy` directly, so #170's 162 probes could not see it. It surfaced while
+  building the chain corpus for #165, when the C++ port — which reads the rotation rows, as
+  `contains` does — disagreed on a single-link exact solve.
 - **A `TSRChain` no longer accepts a frame it will not read** (#166). A chain places
   every link after the first on the previous link's end frame, so a later link's own
   `T0_w` never participates — but one could be passed, and was silently dropped. The
