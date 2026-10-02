@@ -82,12 +82,12 @@ struct SolveOptions {
 // Not here, and deliberately, mirroring what TSR already omits: serialization, masked (NaN)
 // sampling, the TSR=/TSRs=/tsr= keyword alias triple, and a rotation weight other than 1.
 //
-// STAGE 2a: the cold inverse is not implemented yet. A solve that reaches the bounded
-// numerical search -- two or more links, at least one free coordinate, and no initial_guess
-// that already validates -- throws std::logic_error. Every exact path works: an empty chain,
-// a validating witness, a single link, an all-fixed chain, and max_starts == 0. distance,
-// closest_transform, contains and to_xyzrpy inherit the throw for those chains, because they
-// all delegate to solve. See docs/CPP.md.
+// The inverse comes in two kinds, and they carry different guarantees. The exact paths -- an
+// empty chain, a validating witness, a single link, an all-fixed chain, max_starts == 0 -- are
+// specified to the last bit and checked against the Python's recorded answers. The cold path
+// reports the best point a bounded search found, so it is specified by properties instead: a
+// different optimiser evaluates a different set of points, and nothing relates the two beyond
+// "both are >= the true minimum". See docs/CPP.md.
 class TSRChain {
  public:
   TSRChain() = default;

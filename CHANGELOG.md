@@ -30,13 +30,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   agreeing probes. Recording it, with whether the result satisfies the region's own `is_valid`,
   closes that blind spot for both implementations.
 
-### Known limitations
-- **The C++ chain's cold inverse is not implemented yet** (#165, stage 2b). A `solve` that would
-  need the bounded numerical search — two or more links, at least one free coordinate, and no
-  `initial_guess` that already validates — throws `std::logic_error` naming the stage, and
-  `distance`, `closest_transform`, `contains` and `to_xyzrpy` inherit that for those chains. It
-  throws rather than returning `not_found` because a plausible-looking `not_found` would be
-  indistinguishable from a real one. The Python `TSRChain` is unaffected and remains complete.
+- **The C++ chain's cold inverse** (#165, stage 2b), so a planner no longer needs a witness to
+  hand. It is **projected Levenberg–Marquardt with an analytic Jacobian**, and the least-squares
+  form is exact rather than an approximation of the Python's objective: since
+  `3 − tr(AᵀB) = ‖A − B‖²_F / 2` on SO(3), the Python's scalar `Δt·Δt + (3 − tr(RᵀR′))` *is*
+  `‖r‖²` for the 12-vector `r = [Δt, (R − R′)/√2]`. One O(n) prefix/suffix sweep builds all `6n`
+  Jacobian columns, so a gradient costs no extra composition — where the Python pays `6n` of them
+  to finite-difference one.
+
+  Two details are load-bearing, each shown by ablation rather than asserted: the Jacobian must be
+  analytic, and the step needs gradient projection (a coordinate pinned at a bound whose gradient
+  pushes further out is held fixed). Removing the projection takes the SO(3)-ball fixture from
+  40/40 to 17/40 and quadruples the evaluations elsewhere. The solver finds the deterministic
+  counterexample of issue #85 — a provable member the Python's cold solve reports as
+  `not_found` — on its first start, at a residual of `1.4e-17`.
+
+  The cold path stays specified by **properties**, not by recorded numbers, and that does not
+  change just because this solver is better: `not_found` is not a proof of non-membership in
+  either implementation.
 
 ### Added
 - **Every placement template carries a structured `PlacementProvenance`** (#160). Grasp
@@ -80,9 +91,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exactly, lengths to 1e-9 — and the constants it restates are checked against the
   Python's, since a drifting tolerance fails much later than it is introduced.
 
-  Chains are still Python. `docs/CPP.md` records why, and what a port can and cannot
-  promise: the forward and witness paths are exactly specifiable, the cold inverse is not,
-  because "best found" is taken over an optimiser's trajectory including its
+  Chains arrived in the two entries above. `docs/CPP.md` records what a port can and cannot
+  promise, which is what split them: the forward and witness paths are exactly specifiable, the
+  cold inverse is not, because "best found" is taken over an optimiser's trajectory including its
   finite-difference probes.
 - **`TSR.volume`** and **`TSR.continuous_bounds`**, which make the measure and the
   continuous chart part of the region's public surface rather than a private attribute the

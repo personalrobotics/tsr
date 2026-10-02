@@ -171,18 +171,51 @@ One existing test cannot cross over:
 projected Levenberg–Marquardt *solves* that pose — so a port would fail that test while being
 more correct. It stays Python-only.
 
-### Stage 2a: what is implemented
+### The cold inverse
 
-`cpp/include/sstsr/tsr_chain.hpp` carries the forward half and every exact `solve` path. The
-cold inverse — two or more links, at least one free coordinate, no validating `initial_guess` —
-throws `std::logic_error` until stage 2b, and `distance`, `closest_transform`, `contains` and
-`to_xyzrpy` inherit that throw for those chains because they all delegate to `solve`. A
-plausible-looking `not_found` would be indistinguishable from a real one, which is the objection
-of #166 applied to ourselves.
+`cpp/src/chain_solver.hpp` is **projected Levenberg–Marquardt with an analytic Jacobian**. It is
+internal — under `src/`, not `include/` — because a consumer calls `TSRChain::solve`; it is a
+header so the test can check the Jacobian against central differences.
 
-This is already the useful half for a planner: a chain used as a path constraint along an edge
-has the neighbouring state's coordinates to hand, and that is a witness, so the solve takes the
-exact warm path.
+Why least squares, and not an approximation of the Python's objective but the same one:
+`3 − tr(AᵀB) = ‖A − B‖²_F / 2` for `A, B ∈ SO(3)`, so the Python's scalar
+`Δt·Δt + (3 − tr(RᵀR′))` **is** `‖r‖²` for the 12-vector `r = [Δt, (R − R′)/√2]`.
+
+Two details are load-bearing, each established by ablation rather than assumed:
+
+| removed | `rotation_rich` recall | mean evaluations |
+|---|---|---|
+| nothing (as implemented) | **40/40** | 95.7 |
+| the analytic Jacobian, finite differences instead | 18/40 *(measured in the Python prototype)* | — |
+| the gradient projection | **17/40** | 1206, i.e. budget-bound |
+
+The gradient projection holds a coordinate pinned at a bound whose gradient pushes further out,
+which is what keeps a rank-deficient direction at RPY gimbal lock from stalling the whole solve.
+Dropping it also costs `two_yaws_and_a_slide` 4× the evaluations (191.5 against 44.4) while still
+finding every pose, so recall alone does not show how much it does.
+
+It finds the pose the Python's cold solve cannot — the deterministic counterexample of issue #85,
+solved on the first start in 21 evaluations at a residual of `1.4e-17`. That is the concrete
+reason `test_deterministic_counterexample_witness_certifies_membership` cannot cross over: it
+asserts the cold solve **fails** on a provable member, so it pins SciPy's trajectory rather than
+any rule. Being better is still not a licence to record cold results in the corpus — `not_found`
+is not a proof of non-membership in either implementation.
+
+What the properties do **not** cover, and why that is the honest state rather than an omission:
+the projected step's clamp is not load-bearing for correctness. `coords_of` runs every point
+through the chart map, so the returned coordinates cannot leave the chart whether or not the step
+was clamped; the clamp keeps `x` and the evaluated point the same point, which costs convergence
+when removed, not correctness.
+
+One property that looks true and is not: **the reported residual is not monotone in the budget.**
+The search minimises the chordal objective because it is smooth, and reports the geodesic at
+whichever point won. Those are different orderings, so a later evaluation can lower `‖r‖²` and
+raise the geodesic. The objective *is* monotone, and that is what the test asserts — the Python
+has the same property for the same reason.
+
+The recall floor (≥90% aggregate, ≥85% per chain, against a measured 160/160) writes
+`chain_properties_report.txt` into the build directory as its inspectable artifact. Reproduce it
+with `ctest --test-dir build -R tsr_chain`.
 
 ## Working on it
 

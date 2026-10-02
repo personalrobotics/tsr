@@ -7,6 +7,11 @@
 # linear-algebra dependency to hold a 4x4. That is also what lets the exported package
 # config carry no find_dependency at all.
 cmake_minimum_required(VERSION 3.16)
+# Deliberately NOT bumped by hand for a new header. The two packagings take this number from
+# different places -- a source install from here, the wheel from the Python package version via
+# hatch_build.py -- so a hand bump makes them disagree, and `find_package(sstsr_cpp 3.3)` would
+# then succeed against a checkout and fail against the wheel a consumer actually installs. The
+# release version is what should reach both; see issue #175.
 project(sstsr_cpp VERSION 3.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -70,6 +75,10 @@ if(SSTSR_CPP_BUILD_TESTS)
     target_link_libraries(test_${case_name} PRIVATE sstsr_cpp)
     target_include_directories(test_${case_name} PRIVATE tests)
     target_compile_options(test_${case_name} PRIVATE ${SSTSR_CPP_WARNINGS})
+    # The chain test checks the analytic Jacobian against central differences, which needs the
+    # internal solver header under src/. That is the one failure a behavioural test can only
+    # report as "fewer poses solved", so it is worth reaching past the public surface for.
+    target_include_directories(test_${case_name} PRIVATE src)
     add_test(NAME ${case_name} COMMAND test_${case_name})
   endforeach()
 

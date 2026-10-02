@@ -82,6 +82,19 @@ int main() {
     return 1;
   }
 
+  // And the cold inverse: no guess at all, so the bounded search runs. This is what lets a
+  // planner use a chain as a path constraint without a witness to hand.
+  const ChainSolveResult cold = chain.solve(s.pose);
+  if (cold.status != ChainStatus::kSatisfied) {
+    std::fprintf(stderr, "a cold chain solve did not recover a pose sampled from the chain (%s, residual %.3e)\n",
+                 to_string(cold.status), cold.residual);
+    return 1;
+  }
+  if (cold.nfev > kDefaultMaxNfev || cold.starts > kDefaultMaxStarts) {
+    std::fprintf(stderr, "a cold chain solve exceeded its budget (nfev %d, starts %d)\n", cold.nfev, cold.starts);
+    return 1;
+  }
+
   // The composition rule is part of the package's behaviour too: a later link cannot carry a
   // frame the chain would ignore.
   bool chain_rejected = false;
@@ -97,7 +110,8 @@ int main() {
     return 1;
   }
 
-  std::printf("sstsr_cpp consumer ok: volume %.6f, distance to a far pose %.6f, chain witness residual %.3e\n",
-              region.volume(), region.distance(far), warm.residual);
+  std::printf("sstsr_cpp consumer ok: volume %.6f, distance to a far pose %.6f, warm residual %.3e, "
+              "cold residual %.3e in %d evaluations\n",
+              region.volume(), region.distance(far), warm.residual, cold.residual, cold.nfev);
   return 0;
 }
