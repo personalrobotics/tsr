@@ -4,7 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.4.0] — 2026-10
+
+Two changes to how a chain's inverse behaves and how the viewer reads a template, neither of
+which moves a rule.
+
+The chain's cold inverse is now the **same projected Levenberg–Marquardt** the C++ core runs,
+replacing L-BFGS-B over a finite-difference gradient. The objective is unchanged — it was
+always `‖r‖²` for a 12-vector in disguise — so the switch buys recall and cost rather than new
+semantics: 98.6% against 98.2% at 7.8× fewer objective evaluations and 3.1× faster, measured by
+`tools/chain_solver_comparison.py`, which is checked in so the claim stays re-runnable.
+`ChainSolveResult` values move, and its documented contract does not: `residual` is still an
+upper bound, `"not_found"` still no proof of non-membership (#85). Every exact path is
+untouched, so the conformance corpus is byte-identical.
+
+Both implementations sharing one algorithm still does **not** make the cold inverse recordable
+in that corpus — a redundant chain's solution set is a continuum, so two solvers that both
+succeed agree on the coordinates about 1% of the time, and both are right. `docs/CPP.md` says
+so plainly, because the opposite is the natural assumption.
+
+And the viewer no longer raises on placement templates, which it had advertised as supported
+input since the placement factories arrived.
 
 ### Fixed
 - **The viewer accepts placement templates** (#167). `tsr.viser` advertised them as supported
@@ -27,6 +47,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   The bug predates #160, which only changed the shape of the failure. `docs/VISER.md` gains a
   placement section.
+
+- **A chain test no longer pins SciPy's trajectory.**
+  `test_deterministic_counterexample_witness_certifies_membership` asserted that the cold solve
+  **fails** on a pose that is provably a member — true of L-BFGS-B, and the reason that test
+  could never cross over to the C++ port. The new solver finds it, so the test now asserts the
+  property it was always protecting: a retained witness decides membership with no optimiser
+  involved. Its companion no longer patches `scipy.optimize.fmin_l_bfgs_b` to inspect the
+  optimiser's start, which tested SciPy's call signature rather than this library; it reads the
+  canonicalised first start off the public result instead.
 
 ### Changed
 - **The chain's cold inverse is projected Levenberg–Marquardt with an analytic Jacobian**
@@ -58,16 +87,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   SciPy leaves `tsr.core.tsr_chain` entirely. It remains a package dependency — the placement
   factories need `scipy.spatial.ConvexHull`, and `TSR.distance_optimize` still uses it.
-
-### Fixed
-- **A chain test no longer pins SciPy's trajectory.**
-  `test_deterministic_counterexample_witness_certifies_membership` asserted that the cold solve
-  **fails** on a pose that is provably a member — true of L-BFGS-B, and the reason that test
-  could never cross over to the C++ port. The new solver finds it, so the test now asserts the
-  property it was always protecting: a retained witness decides membership with no optimiser
-  involved. Its companion no longer patches `scipy.optimize.fmin_l_bfgs_b` to inspect the
-  optimiser's start, which tested SciPy's call signature rather than this library; it reads the
-  canonicalised first start off the public result instead.
 
 ## [3.3.0] — 2026-10
 
