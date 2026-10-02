@@ -7,6 +7,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`TSRChain` in the C++ core: the forward half and every exact solve path** (#165, stage 2a).
+  `sstsr/tsr_chain.hpp` adds `TSRChain`, `ChainSample`, `ChainSolveResult` and `SolveOptions`
+  beside the pose region from stage 1, so a planner can compose regions, sample a chain, and
+  check membership natively. Sampling returns the coordinates that built the pose, and those are
+  a *constructive witness*: `validate_witness` certifies membership with one bounds check and one
+  composition, no optimiser. A `solve` handed a validating witness takes the exact warm path —
+  `nfev == 0`, `starts == 0` — which is the case a planner actually hits, since a chain used as a
+  path constraint along an edge has the neighbouring state's coordinates to hand. The empty,
+  single-link, all-fixed and `max_starts == 0` paths are exact too. `geodesic_distance` joins
+  `sstsr/transform.hpp`.
+- **The conformance corpus covers chains** (#165). `tests/reference/tsr_conformance.json` gains 8
+  chains with 72 coordinate probes, 48 witness probes and 18 exact solves, and
+  `tools/tsr_conformance.py --check` now walks them — it previously walked only the regions, so a
+  chain regression would have passed silently. Residual comparisons use a `1e-7` floor rather
+  than `1e-9`, because the geodesic's rotation term is `acos` of a value near 1 and a 1-ulp trace
+  error there is reported as `2.1e-08` of angle; the old floor would have failed on a different
+  libm while nothing was wrong.
+- **The corpus also records `to_xyzrpy` for every region probe.** `to_xyzrpy` picks between the
+  two RPY representatives of the same rotation, and that choice is invisible in `contains`,
+  `distance` and `closest_transform` — which is exactly how #171 stayed hidden behind 162
+  agreeing probes. Recording it, with whether the result satisfies the region's own `is_valid`,
+  closes that blind spot for both implementations.
+
+### Known limitations
+- **The C++ chain's cold inverse is not implemented yet** (#165, stage 2b). A `solve` that would
+  need the bounded numerical search — two or more links, at least one free coordinate, and no
+  `initial_guess` that already validates — throws `std::logic_error` naming the stage, and
+  `distance`, `closest_transform`, `contains` and `to_xyzrpy` inherit that for those chains. It
+  throws rather than returning `not_found` because a plausible-looking `not_found` would be
+  indistinguishable from a real one. The Python `TSRChain` is unaffected and remains complete.
+
+### Added
 - **Every placement template carries a structured `PlacementProvenance`** (#160). Grasp
   templates have declared their semantics structurally since 2.2.0, and clause 8 of the
   geometric contract forbids inferring semantics by parsing `name` — but placement left

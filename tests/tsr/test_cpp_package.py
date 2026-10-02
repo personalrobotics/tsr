@@ -18,13 +18,15 @@ a C++ test cannot see:
 
 from __future__ import annotations
 
+import inspect
 import re
 from pathlib import Path
 
 import pytest
 
 import tsr
-from tsr import EPSILON, FRAME_ATOL
+from tsr import EPSILON, FRAME_ATOL, TSRChain
+from tsr.core.utils import geodesic_distance
 
 
 def _cpp_source(name: str) -> str:
@@ -46,6 +48,7 @@ def _literal(source: str, declaration: str) -> float:
 def test_the_headers_are_findable():
     include = Path(tsr.get_include())
     assert (include / "sstsr" / "tsr.hpp").is_file()
+    assert (include / "sstsr" / "tsr_chain.hpp").is_file()
     assert (include / "sstsr" / "transform.hpp").is_file()
     assert (include / "sstsr" / "rng.hpp").is_file()
 
@@ -90,3 +93,31 @@ def test_the_gimbal_threshold_is_the_same_number_in_both():
 
     for name in ("transform.cpp", "tsr.cpp"):
         assert _literal(_cpp_source(name), "constexpr double kGimbalEpsilon") == _GIMBAL_EPSILON, name
+
+
+def test_the_default_solve_budget_is_the_same_in_both():
+    """The chain's inverse-solve budget (#165 stage 2). It is caller-visible -- a result reports
+    the starts and evaluations it spent against it -- so a drift would make the two
+    implementations disagree about how hard they tried before answering ``not_found``."""
+    source = _cpp_source("tsr_chain.hpp")
+    assert _literal(source, "constexpr int kDefaultMaxStarts") == TSRChain._DEFAULT_MAX_STARTS
+    assert _literal(source, "constexpr int kDefaultMaxNfev") == TSRChain._DEFAULT_MAX_NFEV
+
+
+def test_the_chain_solve_tolerance_is_the_librarys_epsilon_in_both():
+    """Both sides must take the default tolerance from the one containment constant rather than
+    restate it. ``kEpsilon`` is already drift-checked against ``EPSILON`` above, so spelling the
+    C++ default as ``kEpsilon`` keeps a single literal in play instead of a third copy."""
+    source = _cpp_source("tsr_chain.hpp")
+    assert re.search(
+        r"double tolerance\s*=\s*kEpsilon\s*;", source
+    ), "SolveOptions::tolerance should default to kEpsilon, not a restated number"
+    assert inspect.signature(TSRChain.solve).parameters["tolerance"].default == EPSILON
+
+
+def test_the_geodesic_rotation_weight_is_still_one():
+    """The C++ ``geodesic_distance`` takes no rotation weight, because nothing in the library
+    passes anything but 1.0 -- the same reason the C++ TSR omits ``rotation_weight``. If the
+    Python's default ever moved, the omission would silently become a divergence instead of a
+    simplification, and no corpus probe would show it."""
+    assert inspect.signature(geodesic_distance).parameters["r"].default == 1.0

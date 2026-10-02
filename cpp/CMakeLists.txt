@@ -24,6 +24,7 @@ include(GNUInstallDirs)
 add_library(sstsr_cpp
   src/transform.cpp
   src/tsr.cpp
+  src/tsr_chain.cpp
 )
 add_library(sstsr::sstsr_cpp ALIAS sstsr_cpp)
 set_target_properties(sstsr_cpp PROPERTIES EXPORT_NAME sstsr_cpp POSITION_INDEPENDENT_CODE ON)
@@ -48,7 +49,7 @@ if(SSTSR_CPP_BUILD_TESTS)
   set(SSTSR_CONFORMANCE_CORPUS "${CMAKE_CURRENT_SOURCE_DIR}/../tests/reference/tsr_conformance.json"
       CACHE FILEPATH "The conformance corpus the C++ is checked against")
 
-  foreach(case_name tsr conformance)
+  foreach(case_name tsr tsr_chain conformance)
     add_executable(test_${case_name} tests/test_${case_name}.cpp)
     target_link_libraries(test_${case_name} PRIVATE sstsr_cpp)
     target_include_directories(test_${case_name} PRIVATE tests)

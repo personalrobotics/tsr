@@ -40,6 +40,13 @@ XyzRpy trans_to_xyzrpy(const Transform& T);
 // out of the half-open interval.
 double wrap_to_interval(double angle, double lower);
 
+// core/utils.py's geodesic_distance: || [t2 - t1, angle(R1^T R2)] ||, mixing metres and
+// radians as Berenson et al. 2011 Sec. 4.2 does. The Python's rotation weight r is omitted
+// for the same reason TSR omits a rotation_weight other than 1: nothing in the library uses
+// anything else, and test_cpp_package.py pins the Python's default at 1.0 so a change there
+// cannot silently diverge from this.
+double geodesic_distance(const Transform& t1, const Transform& t2);
+
 // The construction contract of docs/ARCHITECTURE.md (3.2.0, issue #162): finite, last row
 // 0 0 0 1, R R^T = I and det R = +1 within FRAME_ATOL. Returns the violation, or nullopt.
 //

@@ -104,6 +104,27 @@ double wrap_to_interval(double angle, double lower) {
   return frac + lower;
 }
 
+double geodesic_distance(const Transform& t1, const Transform& t2) {
+  // core/utils.py's geodesic_error then its norm: the translation difference, and the angle
+  // of the relative rotation R1^T R2 from trace(R) = 1 + 2 cos(theta).
+  double s = 0.0;
+  for (int r = 0; r < 3; ++r) {
+    const double d = t2.at(r, 3) - t1.at(r, 3);
+    s += d * d;
+  }
+  double trace = 0.0;  // trace(R1^T R2) without forming the product
+  for (int k = 0; k < 3; ++k) {
+    for (int j = 0; j < 3; ++j) trace += t1.at(j, k) * t2.at(j, k);
+  }
+  double cos_angle = (trace - 1.0) / 2.0;
+  // The clamp is load-bearing, not defensive: for two nearly equal rotations the trace can
+  // land a rounding step above 3, and acos of 1 + 1e-16 is NaN, which would poison every
+  // residual computed from it.
+  cos_angle = cos_angle < -1.0 ? -1.0 : (cos_angle > 1.0 ? 1.0 : cos_angle);
+  const double angle = std::acos(cos_angle);
+  return std::sqrt(s + angle * angle);
+}
+
 std::optional<std::string> why_not_frame(const Transform& T, const std::string& name) {
   for (double v : T.m) {
     if (!std::isfinite(v)) return name + " must be a finite 4x4 transform";
