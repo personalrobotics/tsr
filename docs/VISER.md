@@ -183,6 +183,36 @@ rather than N, which is why this scales linearly rather than collapsing at a few
 hundred poses. Browser-side frame rate has to be judged interactively; these numbers
 only bound the Python side.
 
+## Placement templates
+
+`show_templates` and `explore_templates` take a placement collection as readily as a grasp
+one, and label it from its own record — the resting face, the tipping angle and whether the
+equilibrium is stable or neutral, rather than a depth family a placement does not have:
+
+```python
+from tsr.placement import StablePlacer
+from tsr.viser import explore_templates, mode_of
+
+templates = StablePlacer(table_x=0.6, table_y=0.4).place_box(lx=0.1, ly=0.08, lz=0.06)
+server = explore_templates(templates)          # a slider per free Bw coordinate
+sorted({mode_of(t.provenance) for t in templates})
+# ['box/+0.00,+0.00,-1.00/stable', 'box/+0.00,+0.00,+1.00/stable', ...] one per face
+```
+
+To draw the object itself alongside the poses, add the primitive to the returned server's
+scene with `add_primitive(..., centered=True)` — a placement gives the pose of the object's
+**centre**, where the grasp factories put a box or cylinder at `z ∈ [0, height]`.
+
+`mode_of` groups a placement by its **resting face normal**, so a box offers six entries
+rather than one; an analytic box carries no `face_index`, which is why the normal names the
+face and not the index. `filter_templates(..., depth_index=...)` is a grasp idea, so no
+placement matches it — it returns nothing rather than raising.
+
+A collection must be all one kind. The controls differ per kind, so a mixed grasp/placement
+collection is **refused** with a message naming what it holds; draw them in separate calls.
+Dispatch is on the record's `KIND` discriminator, so a third-party record is described
+generically rather than refused.
+
 ## Image capture
 
 Viser captures images through a **connected browser client** — there is no browser-free

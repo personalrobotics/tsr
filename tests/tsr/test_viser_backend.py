@@ -267,3 +267,103 @@ class TestGeometry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPlacementTemplatesInTheViewer(unittest.TestCase):
+    """A placement collection goes through the viewer's provenance-reading paths (#167).
+
+    The module advertised placement templates as supported input while every site that read
+    provenance assumed a ``GraspProvenance``, so ``explore_templates(placer.place_box(...))``
+    raised ``AttributeError``. These cover each of those paths with a placement collection,
+    and keep the grasp labels unchanged.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from tsr.placement import StablePlacer
+
+        placer = StablePlacer(table_x=0.6, table_y=0.4)
+        cls.placements = placer.place_box(lx=0.1, ly=0.08, lz=0.06)
+        cls.mesh_placements = placer.place_mesh(
+            vertices=np.array([[0, 0, 0], [0.1, 0, 0], [0, 0.1, 0], [0, 0, 0.1]], dtype=float),
+            com=np.array([0.025, 0.025, 0.025]),
+        )
+        cls.grasps = ParallelJawGripper(finger_length=0.08, max_aperture=0.14).grasp_cylinder_side(0.015, 0.12)
+
+    def test_a_placement_is_labelled_from_its_own_record(self):
+        from tsr.viser import _template_label
+
+        for index, template in enumerate(self.placements):
+            label = _template_label(index, template)
+            # its own vocabulary: the resting face and the tipping angle, not a depth family
+            self.assertIn(template.variant, label)
+            self.assertIn(template.provenance.equilibrium, label)
+            self.assertNotIn("depth", label)
+
+    def test_a_grasp_label_is_unchanged(self):
+        from tsr.viser import _template_label
+
+        label = _template_label(0, self.grasps[0])
+        self.assertIn("depth", label)
+        self.assertIn(self.grasps[0].provenance.mode, label)
+
+    def test_placements_group_by_resting_face(self):
+        """An analytic box carries no ``face_index``, so grouping on that alone would
+        collapse all six faces into one entry; the face normal names them."""
+        from tsr.viser import mode_of
+
+        groups = {mode_of(t.provenance) for t in self.placements}
+        self.assertEqual(len(groups), len(self.placements))
+        mesh_groups = {mode_of(t.provenance) for t in self.mesh_placements}
+        self.assertEqual(len(mesh_groups), len(self.mesh_placements))
+
+    def test_filtering_a_placement_collection(self):
+        from tsr.viser import filter_templates, mode_of
+
+        one = mode_of(self.placements[0].provenance)
+        self.assertEqual(len(filter_templates(self.placements, mode=one)), 1)
+        # depth_index is a grasp idea, so no placement can match it -- and it must not raise
+        self.assertEqual(filter_templates(self.placements, depth_index=0), [])
+        self.assertEqual(len(filter_templates(self.placements)), len(self.placements))
+
+    def test_sampling_and_free_coordinates_work_on_a_placement(self):
+        from tsr.viser import free_coordinates, sample_poses
+
+        poses = sample_poses(self.placements, 2, rng=np.random.default_rng(0))
+        self.assertEqual(len(poses), 2 * len(self.placements))
+        for template in self.placements:
+            free_coordinates(template)  # must not raise on a record with no depth family
+
+    def test_a_mixed_collection_is_refused_naming_the_mixture(self):
+        """The controls differ per kind, so a mixed collection cannot be drawn honestly.
+        Refusing it names what it holds, rather than showing half the controls inert."""
+        from tsr.viser import collection_kind
+
+        self.assertEqual(collection_kind(self.placements), "placement")
+        self.assertEqual(collection_kind(self.grasps), "grasp")
+        with self.assertRaises(ValueError) as caught:
+            collection_kind(list(self.placements) + list(self.grasps))
+        message = str(caught.exception)
+        self.assertIn("grasp", message)
+        self.assertIn("placement", message)
+        self.assertIn(str(len(self.placements)), message)
+
+    def test_an_empty_collection_has_no_kind_and_does_not_raise(self):
+        from tsr.viser import collection_kind
+
+        self.assertEqual(collection_kind([]), "")
+
+    def test_a_record_declaring_no_kind_is_described_rather_than_refused(self):
+        """A third-party generator's record should still draw. Dispatching on the wire
+        discriminator rather than on the class is what makes that possible (#160)."""
+        import dataclasses
+
+        from tsr.viser import _template_label, collection_kind, mode_of
+
+        class ThirdParty:
+            pass
+
+        template = dataclasses.replace(self.placements[0], provenance=ThirdParty())
+        self.assertEqual(collection_kind([template]), "")
+        self.assertIn("ThirdParty", mode_of(template.provenance))
+        _template_label(0, template)  # must not raise
