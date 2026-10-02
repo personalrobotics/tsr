@@ -218,3 +218,7 @@ Desktop.ini
 
 # Written at build time by hatch-vcs
 src/tsr/_version.py
+
+# The chain property test writes its recall report to the working directory. Under ctest that is
+# the build tree; running the binary directly from the repo root would otherwise leave it here.
+chain_properties_report.txt

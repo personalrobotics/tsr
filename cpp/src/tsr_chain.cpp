@@ -2,6 +2,8 @@
 // Authors: Siddhartha Srinivasa and contributors to TSR
 #include "sstsr/tsr_chain.hpp"
 
+#include "chain_solver.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -243,11 +245,216 @@ ChainSolveResult TSRChain::solve(const Transform& T, const SolveOptions& opt) co
     return ChainSolveResult{status, std::move(midpoint), res, 0, 0};
   }
 
-  throw std::logic_error(
-      "the cold chain inverse is stage 2b of issue #165 and is not implemented yet. Every exact path works: an "
-      "empty chain, a single link, an all-fixed chain, max_starts == 0, and an initial_guess that already "
-      "validates. Pass a retained witness as SolveOptions::initial_guess -- along a planner edge a neighbouring "
-      "state's coordinates are exactly that -- or call the Python TSRChain.solve. See docs/CPP.md.");
+  // --- The bounded multi-start cold inverse ----------------------------------------------
+  //
+  // Everything above answered without searching. From here the result is the best point an
+  // optimiser found, which is why it is specified by properties rather than recorded in the
+  // corpus: a different optimiser evaluates a different set of points, and nothing relates the
+  // two beyond "both are >= the true minimum" (issue #85, docs/CPP.md).
+
+  std::vector<std::size_t> free_index;  // flat coordinate indices the optimiser may move
+  free_index.reserve(free_count);
+  for (std::size_t k = 0; k < n * 6; ++k) {
+    if (upper[k] > lower[k]) free_index.push_back(k);
+  }
+  const std::size_t m = free_index.size();
+  std::vector<double> lo_f(m), hi_f(m);
+  for (std::size_t a = 0; a < m; ++a) {
+    lo_f[a] = lower[free_index[a]];
+    hi_f[a] = upper[free_index[a]];
+  }
+
+  // Point-bound coordinates are held at their single value and never handed to the optimiser;
+  // a zero-width interval has no descent direction and would only add a rank-deficient column.
+  std::vector<double> x_base = x_full;
+
+  int nfev = 0;
+  std::vector<double> best_x(m);
+  double best_sq = std::numeric_limits<double>::infinity();
+  for (std::size_t a = 0; a < m; ++a) best_x[a] = x_full[free_index[a]];
+
+  const auto coords_of = [&](const std::vector<double>& xf) {
+    std::vector<double> flat = x_base;
+    for (std::size_t a = 0; a < m; ++a) flat[free_index[a]] = xf[a];
+    // Through the same chart map the forward path uses, so the objective the optimiser
+    // descends is the one to_transform will evaluate at the end.
+    return continuous_coordinates(unflatten(flat));
+  };
+
+  // One residual evaluation is one forward composition of the chain -- the same unit the
+  // Python's counted objective uses. The budget is checked BEFORE the increment, so
+  // nfev <= max_nfev holds strictly. The Jacobian rides along on the same sweep and is not
+  // counted separately, because it costs no extra composition.
+  const auto evaluate = [&](const std::vector<double>& xf, bool jacobian,
+                            detail::ChainResidual& out) -> bool {
+    if (nfev >= opt.max_nfev) return false;
+    ++nfev;
+    out = detail::chain_residual(tsrs_, coords_of(xf), T, jacobian);
+    double sq = 0.0;
+    for (double v : out.r) sq += v * v;
+    if (sq < best_sq) {
+      best_sq = sq;
+      best_x = xf;
+    }
+    return true;
+  };
+
+  const auto geodesic_at = [&](const std::vector<double>& xf) {
+    return geodesic_distance(to_transform(coords_of(xf)), T);
+  };
+
+  // The deterministic start schedule, in priority order and truncated to max_starts: a guess
+  // that did not validate refines first (canonicalised through the same chart map, so a valid
+  // wrapping coordinate is preserved rather than clipped to a boundary), then the midpoint, the
+  // two opposite corners, then interior points.
+  //
+  // The interior points come from this implementation's own generator, so they are NOT the
+  // Python's. That is the documented divergence of sstsr/rng.hpp applied here: porting numpy's
+  // PCG64 would buy nothing, because a different optimiser takes a different trajectory from
+  // identical starts anyway. The first starts, which are arithmetic on the chart, do agree.
+  std::vector<std::vector<double>> schedule;
+  if (guess != nullptr) {
+    const ChainCoords canonical = continuous_coordinates(*guess);
+    std::vector<double> start(m);
+    for (std::size_t a = 0; a < m; ++a) {
+      start[a] = canonical[free_index[a] / 6][free_index[a] % 6];
+    }
+    schedule.push_back(std::move(start));
+  }
+  {
+    std::vector<double> mid(m);
+    for (std::size_t a = 0; a < m; ++a) mid[a] = x_full[free_index[a]];
+    schedule.push_back(std::move(mid));
+  }
+  schedule.push_back(lo_f);
+  schedule.push_back(hi_f);
+  Rng rng(0);
+  while (schedule.size() < static_cast<std::size_t>(opt.max_starts)) {
+    std::vector<double> point(m);
+    for (std::size_t a = 0; a < m; ++a) point[a] = lo_f[a] + (hi_f[a] - lo_f[a]) * unit(rng);
+    schedule.push_back(std::move(point));
+  }
+  if (schedule.size() > static_cast<std::size_t>(opt.max_starts)) {
+    schedule.resize(static_cast<std::size_t>(opt.max_starts));
+  }
+
+  constexpr int kMaxIterations = 100;  // a hard cap, so the worst case is bounded and repeatable
+  constexpr double kLambda0 = 1e-3, kLambdaMin = 1e-12, kLambdaMax = 1e14;
+
+  int starts = 0;
+  std::vector<double> M, rhs;
+  for (const std::vector<double>& x0 : schedule) {
+    if (nfev >= opt.max_nfev) break;  // before the increment, so a start that cannot afford a
+    ++starts;                         // single evaluation is not counted as having run
+
+    std::vector<double> x(m);
+    for (std::size_t a = 0; a < m; ++a) x[a] = std::clamp(x0[a], lo_f[a], hi_f[a]);
+
+    detail::ChainResidual cur;
+    if (!evaluate(x, true, cur)) break;
+    double f0 = 0.0;
+    for (double v : cur.r) f0 += v * v;
+    double lambda = kLambda0;
+
+    for (int iteration = 0; iteration < kMaxIterations; ++iteration) {
+      if (f0 <= 0.0) break;
+
+      // g = J^T r and H = J^T J over the free columns.
+      const std::size_t cols = 6 * n;
+      std::vector<double> g(m, 0.0);
+      M.assign(m * m, 0.0);
+      for (std::size_t a = 0; a < m; ++a) {
+        const std::size_t ca = free_index[a];
+        for (std::size_t row = 0; row < 12; ++row) g[a] += cur.J[row * cols + ca] * cur.r[row];
+        for (std::size_t b = 0; b <= a; ++b) {
+          const std::size_t cb = free_index[b];
+          double s = 0.0;
+          for (std::size_t row = 0; row < 12; ++row) s += cur.J[row * cols + ca] * cur.J[row * cols + cb];
+          M[a * m + b] = s;
+          M[b * m + a] = s;
+        }
+      }
+
+      // Gradient projection: a coordinate sitting on a bound whose gradient pushes it further
+      // out cannot move, so hold it fixed for this step instead of letting a rank-deficient or
+      // outward direction stall the whole solve.
+      std::vector<char> active(m, 0);
+      std::size_t free_now = 0;
+      for (std::size_t a = 0; a < m; ++a) {
+        const bool at_lo = x[a] <= lo_f[a] && g[a] > 0.0;
+        const bool at_hi = x[a] >= hi_f[a] && g[a] < 0.0;
+        active[a] = (at_lo || at_hi) ? 1 : 0;
+        if (!active[a]) ++free_now;
+      }
+      if (free_now == 0) break;  // every direction points out of the box: this start is done
+
+      std::vector<double> diagonal(m);
+      for (std::size_t a = 0; a < m; ++a) diagonal[a] = std::max(M[a * m + a], 1e-10);
+
+      bool stepped = false;
+      double step_inf = 0.0;
+      for (int trial = 0; trial < 20 && lambda <= kLambdaMax; ++trial) {
+        std::vector<double> system = M;
+        rhs.assign(m, 0.0);
+        for (std::size_t a = 0; a < m; ++a) {
+          if (active[a]) {
+            for (std::size_t b = 0; b < m; ++b) {
+              system[a * m + b] = 0.0;
+              system[b * m + a] = 0.0;
+            }
+            system[a * m + a] = 1.0;
+            rhs[a] = 0.0;
+          } else {
+            system[a * m + a] += lambda * diagonal[a];
+            rhs[a] = -g[a];
+          }
+        }
+        if (!detail::cholesky_solve(system, rhs, m)) {
+          lambda *= 10.0;  // not positive definite: a larger lambda restores dominance
+          continue;
+        }
+
+        // The projected step. Note where the *guarantee* about the returned coordinates comes
+        // from: not this clamp, but coords_of, which runs every point through the chart map. So
+        // dropping the clamp would not let an out-of-chart coordinate escape -- it would only
+        // desynchronise x from the point actually evaluated, costing convergence rather than
+        // correctness. The clamp is here to keep those two the same point.
+        std::vector<double> candidate(m);
+        step_inf = 0.0;
+        for (std::size_t a = 0; a < m; ++a) {
+          candidate[a] = std::clamp(x[a] + rhs[a], lo_f[a], hi_f[a]);
+          step_inf = std::max(step_inf, std::fabs(candidate[a] - x[a]));
+        }
+
+        detail::ChainResidual trial_residual;
+        if (!evaluate(candidate, true, trial_residual)) {
+          stepped = false;
+          break;
+        }
+        double f1 = 0.0;
+        for (double v : trial_residual.r) f1 += v * v;
+        if (f1 < f0) {
+          x = std::move(candidate);
+          cur = std::move(trial_residual);
+          f0 = f1;
+          lambda = std::max(lambda * 0.3, kLambdaMin);
+          stepped = true;
+          break;
+        }
+        lambda *= 10.0;
+      }
+
+      if (!stepped) break;
+      if (step_inf <= 1e-14) break;
+      if (nfev >= opt.max_nfev) break;
+    }
+
+    if (geodesic_at(best_x) < opt.tolerance) break;
+  }
+
+  const double residual = geodesic_at(best_x);
+  const ChainStatus status = residual < opt.tolerance ? ChainStatus::kSatisfied : ChainStatus::kNotFound;
+  return ChainSolveResult{status, coords_of(best_x), residual, nfev, starts};
 }
 
 std::pair<double, ChainCoords> TSRChain::distance(const Transform& T) const {

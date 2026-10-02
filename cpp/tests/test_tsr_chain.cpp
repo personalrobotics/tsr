@@ -6,13 +6,19 @@
 // the properties a corpus of recorded answers cannot express -- sampling (which draws from a
 // different engine by design, see sstsr/rng.hpp) and the construction rule.
 //
-// Stage 2a: the cold inverse is not implemented, so the cases here that would need it assert
-// the throw instead. Stage 2b replaces those with the real properties.
+// The cold inverse is held to properties here rather than to recorded numbers, because it
+// reports the best point an optimiser found -- see the section below.
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
+#include "chain_solver.hpp"
 #include "harness.hpp"
 #include "sstsr/transform.hpp"
 #include "sstsr/tsr.hpp"
@@ -60,6 +66,21 @@ Transform compose_independently(const TSRChain& chain, const ChainCoords& canoni
     acc = acc * step;
   }
   return acc;
+}
+
+// The four chains the cold inverse is measured on, spanning what makes the inverse hard: a
+// single free hinge, two free yaws with a slide, three links, and a full SO(3) ball whose RPY
+// runs through gimbal lock.
+std::vector<TSRChain> cold_fixtures() {
+  const Bounds6 free_yaw = bounds({{{-0.1, 0.1}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {-kPi, kPi}}});
+  const TSR a(frame(0.3, 0.1, 0.5), frame(0.2, 0, 0), free_yaw);
+  const TSR b(Transform::identity(), frame(0.15, 0, 0),
+              bounds({{{0, 0}, {0, 0}, {0, 0}, {-0.3, 0.3}, {0, 0}, {-kPi, kPi}}}));
+  const TSR c(Transform::identity(), Transform::identity(),
+              bounds({{{0, 0}, {0, 0}, {0, 0}, {0, 0}, {-0.4, 0.4}, {0, 0}}}));
+  const TSR ball(Transform::identity(), frame(0, 0, 0.1),
+                 bounds({{{-0.02, 0.02}, {-0.02, 0.02}, {0, 0}, {-kPi, kPi}, {-kPi, kPi}, {-kPi, kPi}}}));
+  return {door(), TSRChain({a, b}), TSRChain({a, b, c}), TSRChain({a, ball})};
 }
 
 double max_abs_diff(const Transform& a, const Transform& b) {
@@ -138,7 +159,7 @@ TEST(a_wrong_coordinate_count_throws_from_the_chart_but_is_merely_not_a_witness)
   const ChainSample s = chain.sample_with_witness(rng);
   SolveOptions opt{};
   opt.initial_guess = too_few;
-  opt.max_starts = 0;  // stay on an exact path; the cold inverse is stage 2b
+  opt.max_starts = 0;  // stay on an exact path, so this checks the guess handling alone
   const ChainSolveResult result = chain.solve(s.pose, opt);
   CHECK(result.starts == 0 && result.nfev == 0);
 }
@@ -315,10 +336,12 @@ TEST(a_chain_whose_only_freedom_is_an_outer_interval_is_not_mistaken_for_all_fix
   CHECK(chart.hi(5) > chart.lo(5));
   CHECK_NEAR(chart.hi(5) - chart.lo(5), kPi / 2, 1e-12);
 
-  // Therefore solve must reach the bounded search rather than the all-fixed shortcut. In stage
-  // 2a that is the throw; in 2b it becomes a real solve, and either way it is NOT a one-pose
-  // answer. A chain misread as all-fixed would return a result here instead.
-  CHECK_THROWS(chain.solve(Transform::identity()), std::logic_error);
+  // Therefore solve must reach the bounded search rather than the all-fixed shortcut. A chain
+  // misread as all-fixed answers from a single pose without running the optimiser at all, so
+  // `starts` is the observable that separates the two.
+  const ChainSolveResult result = chain.solve(Transform::identity());
+  CHECK(result.starts >= 1);
+  CHECK(result.nfev >= 1);
 }
 
 TEST(a_residual_exactly_at_the_tolerance_is_not_satisfied) {
@@ -387,32 +410,371 @@ TEST(a_non_finite_guess_is_ignored_rather_than_rejected) {
 
   SolveOptions opt{};
   opt.initial_guess = nan_guess;
-  opt.max_starts = 0;  // stay on an exact path, since the cold inverse is stage 2b
+  opt.max_starts = 0;  // stay on an exact path, so this checks the guess handling alone
   const ChainSolveResult result = chain.solve(s.pose, opt);
   CHECK(result.starts == 0 && result.nfev == 0);
   // The guess was dropped, so the answer is the midpoint rather than the (unusable) guess.
   for (std::size_t j = 0; j < 6; ++j) CHECK(std::isfinite(result.coordinates[0][j]));
 }
 
-TEST(the_cold_inverse_says_it_is_not_here_yet_rather_than_guessing) {
-  // Stage 2a. A chain of two or more links with a free coordinate and no validating guess needs
-  // the bounded numerical search, which lands in stage 2b. Until then it must fail loudly: a
-  // plausible-looking not_found would be indistinguishable from a real one.
-  const TSRChain chain = door();
-  CHECK_THROWS(chain.solve(Transform::identity()), std::logic_error);
-  CHECK_THROWS(chain.distance(Transform::identity()), std::logic_error);
-  CHECK_THROWS(chain.closest_transform(Transform::identity()), std::logic_error);
-  CHECK_THROWS(chain.to_xyzrpy(Transform::identity()), std::logic_error);
-  CHECK_THROWS(chain.contains(Transform::identity()), std::logic_error);
+// --- the cold inverse ---------------------------------------------------------------------
+//
+// The cold path reports the best point an optimiser found, so it is held to properties rather
+// than to recorded numbers -- a different optimiser evaluates a different set of points and
+// nothing relates the two beyond "both are >= the true minimum" (#85, docs/CPP.md).
+//
+// Three of the properties carry a documented exception, each because the Python genuinely
+// behaves that way and the corpus pins it. They are scoped here, and the cases that establish
+// them live above: a_single_link_may_report_satisfied_with_a_residual_at_or_above_the_tolerance
+// and an_out_of_chart_guess_within_the_containment_slack_is_still_accepted_verbatim.
 
-  // Everything exact still works on the same chain.
-  Rng rng(13);
-  const ChainSample s = chain.sample_with_witness(rng);
-  CHECK(chain.validate_witness(s.pose, s.coordinates));
-  CHECK(chain.contains(s.pose, s.coordinates));
-  SolveOptions zero{};
-  zero.max_starts = 0;
-  CHECK(chain.solve(s.pose, zero).nfev == 0);
+TEST(the_cold_inverse_respects_its_budget_and_reports_what_it_spent) {
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(99);
+    for (int k = 0; k < 10; ++k) {
+      const Transform T = chain.sample_with_witness(rng).pose;
+      for (const int budget : {1, 5, 40, 2200}) {
+        SolveOptions opt{};
+        opt.max_nfev = budget;
+        const ChainSolveResult result = chain.solve(T, opt);
+        // Strictly within, not "about": the Python enforces this with its own counter rather
+        // than trusting SciPy's maxfun, and a planner budgets against it.
+        CHECK(result.nfev <= budget);
+        CHECK(result.starts <= kDefaultMaxStarts);
+        CHECK(result.nfev >= 0 && result.starts >= 0);
+      }
+      SolveOptions few{};
+      few.max_starts = 2;
+      CHECK(chain.solve(T, few).starts <= 2);
+    }
+  }
+}
+
+TEST(the_cold_inverses_residual_is_the_geodesic_at_the_coordinates_it_returns) {
+  // The reported residual has to be measured at the coordinates handed back, or a caller
+  // cannot act on either. This is what makes `residual` an upper bound rather than a number.
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(7);
+    for (int k = 0; k < 15; ++k) {
+      const Transform T = chain.sample_with_witness(rng).pose;
+      const ChainSolveResult result = chain.solve(T);
+      CHECK(result.coordinates.size() == chain.size());
+      const double measured = geodesic_distance(chain.to_transform(result.coordinates), T);
+      CHECK_NEAR(result.residual, measured, 1e-12);
+      // And a satisfied verdict means that residual really is inside the tolerance.
+      if (result.status == ChainStatus::kSatisfied) CHECK(result.residual < kEpsilon);
+    }
+  }
+}
+
+TEST(the_cold_inverse_returns_coordinates_inside_the_chart) {
+  // The optimiser projects every step back into the box, so unlike the warm path -- which
+  // returns the caller's guess verbatim -- these coordinates must lie in the chart exactly.
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(21);
+    for (int k = 0; k < 15; ++k) {
+      const Transform T = chain.sample_with_witness(rng).pose;
+      const ChainSolveResult result = chain.solve(T);
+      for (std::size_t i = 0; i < chain.size(); ++i) {
+        const Bounds6& b = chain.tsrs()[i].continuous_bounds();
+        for (int j = 0; j < 6; ++j) {
+          const double v = result.coordinates[i][static_cast<std::size_t>(j)];
+          CHECK(v >= b.lo(j) && v <= b.hi(j));
+        }
+      }
+    }
+  }
+}
+
+TEST(the_cold_inverse_never_returns_a_worse_point_than_it_started_from) {
+  // `residual` is documented as an upper bound on the true minimum, and the search reports the
+  // best point it actually evaluated. The midpoint is always the first or second start, and
+  // max_starts == 0 reports exactly that point without optimising -- so the full search must
+  // never come back worse than it. A solver that reported its last iterate, or a rejected trial
+  // step, would violate this while still looking plausible.
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(31);
+    for (int k = 0; k < 15; ++k) {
+      const Transform T = chain.sample_with_witness(rng).pose;
+      SolveOptions none{};
+      none.max_starts = 0;
+      const double unoptimised = chain.solve(T, none).residual;
+      const double searched = chain.solve(T).residual;
+      CHECK(searched <= unoptimised + 1e-12);
+    }
+  }
+}
+
+TEST(spending_more_of_the_budget_never_makes_the_objective_worse) {
+  // The schedule and trajectory are deterministic, so a smaller budget evaluates a strict
+  // prefix of what a larger one evaluates. The search keeps the best point it has seen, and the
+  // best over a prefix cannot beat the best over the whole -- so the objective at the returned
+  // coordinates must be non-increasing in max_nfev.
+  //
+  // Measured on the OBJECTIVE, ||r||^2, not on `residual`. Those are different orderings: the
+  // search minimises the chordal objective because it is smooth, while `residual` reports the
+  // geodesic at whatever point won. A later evaluation can therefore lower ||r||^2 and raise the
+  // geodesic, so the geodesic genuinely is NOT monotone in the budget -- in either
+  // implementation, since the Python minimises the same chordal objective and reports the same
+  // geodesic. Asserting monotonicity of `residual` would be asserting something untrue.
+  //
+  // This is also the only non-circular way to pin "reports the best point found". Comparing
+  // against the midpoint cannot: even a rejected trial step late in the search beats the
+  // midpoint easily, so a solver returning its last evaluation rather than its best passes that
+  // check and fails this one.
+  const auto objective_at = [](const TSRChain& chain, const ChainCoords& c, const Transform& T) {
+    const detail::ChainResidual at = detail::chain_residual(chain.tsrs(), c, T, false);
+    double sq = 0.0;
+    for (double v : at.r) sq += v * v;
+    return sq;
+  };
+
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(43);
+    for (int k = 0; k < 10; ++k) {
+      const Transform T = chain.sample_with_witness(rng).pose;
+      double previous = std::numeric_limits<double>::infinity();
+      for (const int budget : {1, 2, 3, 5, 8, 13, 21, 50, 120, 400, 2200}) {
+        SolveOptions opt{};
+        opt.max_nfev = budget;
+        const ChainSolveResult result = chain.solve(T, opt);
+        const double objective = objective_at(chain, result.coordinates, T);
+        CHECK(objective <= previous + 1e-12);
+        previous = objective;
+      }
+    }
+  }
+}
+
+TEST(the_cholesky_helper_solves_what_it_accepts_and_refuses_what_it_cannot) {
+  // Isolated deliberately. The LM loop answers a non-positive-definite system by raising lambda
+  // and retrying, which is self-correcting -- so a helper that silently returned nonsense would
+  // be invisible end to end, the search merely rejecting the bad steps it produced. The failure
+  // mode is real (a rank-deficient J^T J at gimbal lock) and only reachable here economically.
+  {  // a positive-definite system, against a known solution
+    std::vector<double> M{4.0, 1.0, 1.0, 3.0};
+    std::vector<double> b{1.0, 2.0};
+    CHECK(detail::cholesky_solve(M, b, 2));
+    // 4x + y = 1, x + 3y = 2  =>  x = 1/11, y = 7/11. Checked against the original system
+    // rather than against a restatement of the algorithm.
+    CHECK_NEAR(4.0 * b[0] + 1.0 * b[1], 1.0, 1e-12);
+    CHECK_NEAR(1.0 * b[0] + 3.0 * b[1], 2.0, 1e-12);
+  }
+  {  // indefinite: eigenvalues 3 and -1, so there is no Cholesky factor
+    std::vector<double> M{1.0, 2.0, 2.0, 1.0};
+    std::vector<double> b{1.0, 1.0};
+    CHECK(!detail::cholesky_solve(M, b, 2));
+  }
+  {  // singular, the rank-deficient case the damping exists to rescue
+    std::vector<double> M{0.0, 0.0, 0.0, 0.0};
+    std::vector<double> b{1.0, 1.0};
+    CHECK(!detail::cholesky_solve(M, b, 2));
+  }
+  {  // and a larger well-conditioned system, so the loops are exercised beyond 2x2
+    const std::size_t m = 4;
+    std::vector<double> A{5, 1, 0, 1, 1, 4, 1, 0, 0, 1, 3, 1, 1, 0, 1, 6};
+    const std::vector<double> original = A;
+    std::vector<double> b{1, -2, 3, 0.5};
+    const std::vector<double> rhs = b;
+    CHECK(detail::cholesky_solve(A, b, m));
+    for (std::size_t i = 0; i < m; ++i) {
+      double row = 0.0;
+      for (std::size_t j = 0; j < m; ++j) row += original[i * m + j] * b[j];
+      CHECK_NEAR(row, rhs[i], 1e-10);
+    }
+  }
+}
+
+TEST(the_cold_inverse_is_deterministic_run_to_run) {
+  // Fixed-order loops and a locally seeded generator, so the same query gives bit-identical
+  // results. A future parallelisation should fail this test rather than surprise a planner.
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(5);
+    for (int k = 0; k < 5; ++k) {
+      const Transform T = chain.sample_with_witness(rng).pose;
+      const ChainSolveResult a = chain.solve(T);
+      const ChainSolveResult b = chain.solve(T);
+      CHECK(a.status == b.status);
+      CHECK(a.nfev == b.nfev && a.starts == b.starts);
+      CHECK(a.residual == b.residual);  // bit-identical, not merely close
+      CHECK(a.coordinates == b.coordinates);
+    }
+  }
+}
+
+TEST(a_single_start_begins_at_the_midpoint_or_the_canonicalised_guess) {
+  // The first entries of the start schedule are arithmetic on the chart, so they are the part
+  // that agrees with the Python. With max_starts == 1 and max_nfev == 1 exactly one evaluation
+  // happens, at the first scheduled start, and the returned coordinates are that point.
+  const TSRChain chain = door();
+  SolveOptions one{};
+  one.max_starts = 1;
+  one.max_nfev = 1;
+  const ChainSolveResult midpoint_start = chain.solve(frame(5, 5, 5), one);
+  CHECK(midpoint_start.starts == 1 && midpoint_start.nfev == 1);
+  for (std::size_t i = 0; i < chain.size(); ++i) {
+    const Bounds6& b = chain.tsrs()[i].continuous_bounds();
+    for (int j = 0; j < 6; ++j) {
+      CHECK_NEAR(midpoint_start.coordinates[i][static_cast<std::size_t>(j)], (b.lo(j) + b.hi(j)) / 2.0, 1e-12);
+    }
+  }
+
+  // A guess that does not validate becomes the first start instead, canonicalised through the
+  // chart rather than clipped -- so a wrapping coordinate survives (#90).
+  Rng rng(3);
+  ChainCoords guess = chain.sample_with_witness(rng).coordinates;
+  guess[0][5] += 2 * kPi;  // same angle, stated outside the chart
+  SolveOptions warm_start{};
+  warm_start.max_starts = 1;
+  warm_start.max_nfev = 1;
+  warm_start.initial_guess = guess;
+  const ChainSolveResult guided = chain.solve(frame(5, 5, 5), warm_start);
+  CHECK(guided.starts == 1 && guided.nfev == 1);
+  const ChainCoords canonical = chain.continuous_coordinates(guess);
+  CHECK_NEAR(guided.coordinates[0][5], canonical[0][5], 1e-12);
+}
+
+TEST(the_analytic_jacobian_matches_central_differences) {
+  // A mathematical invariant, and the one failure a behavioural test can only report as "fewer
+  // poses solved": rpy_to_rot is Z-Y-X, and the Jacobian's generator order depends on exactly
+  // that. A self-consistent refactor of rpy_to_rot would silently decorrelate the two, so this
+  // is the test that pins them together.
+  double worst = 0.0;
+  for (const TSRChain& chain : cold_fixtures()) {
+    Rng rng(17);
+    const std::size_t n = chain.size();
+    for (int trial = 0; trial < 5; ++trial) {
+      const ChainCoords c = chain.sample_xyzrpy(rng);
+      const Transform target = chain.sample(rng);
+      const detail::ChainResidual at = detail::chain_residual(chain.tsrs(), c, target, true);
+      CHECK(at.J.size() == 12 * 6 * n);
+
+      for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = 0; j < 6; ++j) {
+          const double h = 1e-6;
+          ChainCoords plus = c, minus = c;
+          plus[i][j] += h;
+          minus[i][j] -= h;
+          const detail::ChainResidual rp = detail::chain_residual(chain.tsrs(), plus, target, false);
+          const detail::ChainResidual rm = detail::chain_residual(chain.tsrs(), minus, target, false);
+          for (std::size_t row = 0; row < 12; ++row) {
+            const double numeric = (rp.r[row] - rm.r[row]) / (2 * h);
+            const double analytic = at.J[row * 6 * n + i * 6 + j];
+            worst = std::max(worst, std::fabs(numeric - analytic));
+          }
+        }
+      }
+    }
+  }
+  std::printf("        analytic Jacobian vs central differences: max |diff| = %.3e\n", worst);
+  CHECK(worst <= 1e-7);
+}
+
+TEST(the_pose_the_pythons_cold_solve_cannot_find_is_found_here) {
+  // The deterministic counterexample from issue #85, transcribed from
+  // tests/tsr/test_tsr_chain.py::_rotation_rich_fixture. The pose is built from known-valid
+  // coordinates, so it is provably a member -- and the Python's cold solve still settles in a
+  // nonzero basin and reports "not_found". Its test asserts exactly that failure, which is why
+  // that test is the one thing in the chain contract that cannot cross over: it pins a property
+  // of SciPy's trajectory, not of the rules.
+  //
+  // This solver finds it, which is the concrete evidence for that paragraph in docs/CPP.md.
+  // Being better is still not a licence to record cold results in the corpus: "not_found" is
+  // not a proof of non-membership in either implementation (#85).
+  const TSR first(
+      Transform::from_rows({{{-0.05323397734171213, 0.8948213760632387, 0.443239042274791, 0.22846326913496368},
+                             {-0.9701532216431458, -0.15150283374468387, 0.18933995326596015, -0.14982700307842703},
+                             {0.2365774084561063, -0.41993046603887, 0.8761789392016737, -0.009460041281242981},
+                             {0.0, 0.0, 0.0, 1.0}}}),
+      Transform::from_rows({{{0.6293426752234571, -0.1728436326485694, 0.7576627718156862, -0.14378930957175456},
+                             {-0.04665111723551994, -0.9815968691424982, -0.18517899381496544, -0.00873891803731176},
+                             {0.7757264146612902, 0.08119522856973581, -0.6258241481872112, 0.06216845799526165},
+                             {0.0, 0.0, 0.0, 1.0}}}),
+      bounds({{{0.0, 0.0},
+               {0.0, 0.0},
+               {0.0, 0.0},
+               {-0.08467294501938391, 3.050198946370484},
+               {0.0, 0.0},
+               {-2.7980033218941758, 1.030225743778528}}}));
+  const TSR second(
+      Transform::identity(),
+      Transform::from_rows({{{0.18723087829170545, -0.6170802787911787, 0.7643013330755861, 0.026865480304672573},
+                             {0.7086069079464304, 0.6236951990956814, 0.3299705269195986, -0.09004582889149249},
+                             {-0.6803093768460903, 0.4798085328044926, 0.5540423482219428, -0.10766560142469507},
+                             {0.0, 0.0, 0.0, 1.0}}}),
+      bounds({{{-0.000750418289075433, 0.4666823942550439},
+               {0.0, 0.0},
+               {0.0, 0.0},
+               {-2.5160093677919146, -0.6584844308933367},
+               {0.0, 0.0},
+               {-3.0738651972185425, 1.704964963361112}}}));
+  const TSRChain chain({first, second});
+  const ChainCoords witness{XyzRpy{0.0, 0.0, 0.0, -0.03763487464809723, 0.0, 0.3720955229542815},
+                            XyzRpy{0.07774021221016615, 0.0, 0.0, -1.094901874015342, 0.0, 0.05323198828225317}};
+
+  // The witness certifies membership with no optimiser, in both implementations.
+  const Transform pose = chain.to_transform(witness);
+  CHECK(chain.validate_witness(pose, witness));
+
+  const ChainSolveResult cold = chain.solve(pose);
+  std::printf("        issue #85 counterexample: %s, residual %.3e, %d evaluations over %d start(s)\n",
+              to_string(cold.status), cold.residual, cold.nfev, cold.starts);
+  CHECK(cold.status == ChainStatus::kSatisfied);
+  CHECK(cold.residual < kEpsilon);
+}
+
+TEST(the_cold_inverse_finds_a_witness_for_a_pose_that_provably_has_one) {
+  // Every target here came from sample_with_witness, so a witness exists by construction and
+  // "recall" means something. The floor is what catches a broken Jacobian or a dropped
+  // projection: measured against this suite, a finite-difference Jacobian scores 31/40 and
+  // 18/40 on two of these chains and dropping the gradient projection scores 18/40, while the
+  // implementation here scores 40/40, 40/40, 40/40 and 38/40.
+  //
+  // "not_found" is never a proof of non-membership (#85), so this is a floor on a bounded
+  // search, not a correctness oracle -- which is why it has real headroom rather than
+  // demanding perfection.
+  constexpr int kPerChain = 40;
+  const std::vector<const char*> names{"door_hinge_handle", "two_yaws_and_a_slide", "three_links", "rotation_rich"};
+  const std::vector<TSRChain> fixtures = cold_fixtures();
+
+  std::string report = "chain cold-inverse recall (issue #165)\n\n";
+  int total = 0, found = 0;
+  std::size_t index = 0;
+  for (const TSRChain& chain : fixtures) {
+    Rng rng(20261002);  // the same poses every run
+    int hits = 0;
+    long nfev_sum = 0;
+    for (int k = 0; k < kPerChain; ++k) {
+      const ChainSample s = chain.sample_with_witness(rng);
+      const ChainSolveResult result = chain.solve(s.pose);
+      if (result.status == ChainStatus::kSatisfied) ++hits;
+      nfev_sum += result.nfev;
+      // Whatever the cold search concluded, the witness itself still certifies membership.
+      CHECK(chain.validate_witness(s.pose, s.coordinates));
+    }
+    total += kPerChain;
+    found += hits;
+    char line[160];
+    std::snprintf(line, sizeof(line), "  %-24s %2d/%2d  mean nfev %6.1f\n", names[index], hits, kPerChain,
+                  static_cast<double>(nfev_sum) / kPerChain);
+    report += line;
+    std::printf("      %s", line);
+    // Per-chain floor, well below the measured values, so a real regression trips it before
+    // ordinary numerical drift does.
+    CHECK(hits * 100 >= kPerChain * 85);
+    ++index;
+  }
+  char summary[160];
+  std::snprintf(summary, sizeof(summary), "\n  aggregate %d/%d (%.1f%%)\n", found, total,
+                100.0 * found / total);
+  report += summary;
+  std::printf("    %s", summary);
+  CHECK(found * 100 >= total * 90);
+
+  // The inspectable artifact: deterministic, repeatable, and reproduced by
+  // `ctest --test-dir build -R tsr_chain`.
+  std::ofstream out("chain_properties_report.txt");
+  if (out) out << report;
 }
 
 TEST(geodesic_distance_is_zero_on_equal_poses_and_symmetric) {
