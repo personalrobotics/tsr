@@ -8,6 +8,7 @@ from functools import reduce
 
 import numpy
 
+from . import _chain_solver
 from .tsr import FRAME_ATOL, NANBW, TSR
 from .utils import EPSILON, geodesic_distance, wrap_to_interval
 
@@ -22,10 +23,6 @@ def _require_int(value, name, *, minimum):
     if value < minimum:
         raise ValueError(f"{name} must be >= {minimum}, got {value!r}")
     return value
-
-
-class _BudgetExhausted(Exception):
-    """Raised by the counted objective when the aggregate nfev budget is hit (#91)."""
 
 
 @dataclass(frozen=True)
@@ -394,13 +391,12 @@ class TSRChain:
 
         # Continuous bounds over all 6*n coordinates. _Bw_cont guarantees
         # lower <= upper even for wrapping rotation intervals; point-bound
-        # coordinates are held fixed (never handed to the finite-difference
-        # optimiser, whose zero-width step there yields a NaN gradient).
+        # coordinates are held fixed, never handed to the optimiser -- a zero-width
+        # interval has no descent direction and only adds a rank-deficient column.
         lower = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 0] for i in range(n)])
         upper = numpy.concatenate([self.TSRs[i]._Bw_cont[:, 1] for i in range(n)])
         x_full = (lower + upper) / 2.0
         free = upper > lower
-        R_target, t_target = trans[:3, :3], trans[:3, 3]
 
         def expand(x_free):
             x = x_full.copy()
@@ -416,27 +412,31 @@ class TSRChain:
             status = "satisfied" if res < tolerance else "not_found"
             return ChainSolveResult(status, x_full.reshape(n, 6), float(res), 0, 0)
 
-        # --- Bounded multi-start inverse solve (SciPy is imported ONLY here) ---
-        import scipy.optimize
-
-        # The geodesic's arccos rotation term is non-smooth at 0 and breeds local
-        # minima; the chordal term (3 - tr(Rᵀ R')) is smooth and zero iff the
-        # rotations match, so its global minimum coincides with membership.
-        def residual_sq(x_free):
-            T = self.to_transform(expand(x_free).reshape(n, 6))
-            dt = T[:3, 3] - t_target
-            return float(dt @ dt + (3.0 - numpy.trace(R_target.T @ T[:3, :3])))
-
+        # --- Bounded multi-start cold inverse (#174) ---
+        #
+        # Projected Levenberg-Marquardt with an analytic Jacobian, in
+        # core/_chain_solver.py. It minimises the same scalar the previous L-BFGS-B path
+        # did -- the geodesic's arccos rotation term is non-smooth at 0 and breeds local
+        # minima, while the chordal term (3 - tr(Rᵀ R')) is smooth and zero iff the
+        # rotations match -- but that scalar is exactly ||r||^2 for a 12-vector, so the
+        # problem is least squares and its Jacobian is closed-form. No SciPy here, and
+        # no finite differences: a gradient costs no extra chain composition where it
+        # used to cost 6n.
+        #
+        # `nfev` still counts smooth-residual evaluations, one per forward composition,
+        # and is still a strict TOTAL cap enforced by our own counter (#91). The forward
+        # compositions in the tolerance/geodesic checks are membership tests, not
+        # objective calls, and are not counted.
         lo_f, hi_f = lower[free], upper[free]
         span_f = hi_f - lo_f
         n_free = int(free.sum())
-        bounds = list(zip(lo_f, hi_f))
 
         # Deterministic start schedule in priority order, truncated to max_starts
         # total (#89): a supplied-but-invalid guess refines first (canonicalised
         # into the continuous chart via the SAME helper as to_transform, so a valid
         # wrapping coordinate is preserved, not clipped to a boundary, #90), then
         # midpoint, the two opposite corners, then a fixed low-discrepancy set.
+        # Unchanged by #174, so the schedule a given query starts from is the same.
         schedule = []
         if guess is not None:
             schedule.append(self._to_continuous(guess).reshape(-1)[free])
@@ -446,49 +446,24 @@ class TSRChain:
             schedule.append(lo_f + span_f * gen.random(n_free))
         schedule = schedule[:max_starts]
 
-        # Strict GLOBAL objective-call budget (#91). SciPy's maxfun is only a soft
-        # hint under approx_grad (numerical differentiation can overshoot it), so we
-        # enforce max_nfev ourselves: `counted` increments a shared counter on every
-        # objective call, records the best point actually evaluated, and raises
-        # _BudgetExhausted before the (max_nfev+1)-th call. `nfev` therefore counts
-        # exactly the smooth-residual evaluations; the forward compositions in the
-        # tolerance/geodesic checks are membership tests, not objective calls, and
-        # are not counted. The midpoint default makes max_starts=0 well-defined.
-        state = {"nfev": 0, "best_x": x_full[free], "best_res": float("inf")}
+        # An empty schedule (max_starts == 0) runs no optimiser and leaves the midpoint in
+        # the best-point slot, which is what makes max_starts=0 well-defined.
+        best_x, nfev, starts = _chain_solver.minimise(
+            self,
+            trans,
+            x_full=x_full,
+            lower=lower,
+            upper=upper,
+            free=free,
+            schedule=schedule,
+            max_nfev=max_nfev,
+            tolerance=tolerance,
+            geodesic_at=geodesic_at,
+        )
 
-        def counted(x_free):
-            if state["nfev"] >= max_nfev:
-                raise _BudgetExhausted
-            state["nfev"] += 1
-            r = residual_sq(x_free)
-            if r < state["best_res"]:
-                state["best_res"], state["best_x"] = r, numpy.array(x_free, dtype=float)
-            return r
-
-        starts = 0
-        for x0 in schedule:
-            if state["nfev"] >= max_nfev:
-                break
-            starts += 1
-            try:
-                scipy.optimize.fmin_l_bfgs_b(
-                    counted,
-                    x0,
-                    fprime=None,
-                    args=(),
-                    bounds=bounds,
-                    approx_grad=True,
-                    maxfun=max(1, max_nfev - state["nfev"]),  # secondary per-start hint only
-                )
-            except _BudgetExhausted:
-                pass
-            if geodesic_at(state["best_x"]) < tolerance:
-                break
-
-        best_x = state["best_x"]
         geo = geodesic_at(best_x)
         status = "satisfied" if geo < tolerance else "not_found"
-        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), state["nfev"], starts)
+        return ChainSolveResult(status, expand(best_x).reshape(n, 6), float(geo), nfev, starts)
 
     def distance(self, trans):
         """

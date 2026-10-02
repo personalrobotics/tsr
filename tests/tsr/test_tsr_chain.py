@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 from numpy import pi
 
-from tsr.core.utils import EPSILON
+from tsr.core.utils import EPSILON, geodesic_distance
 from tsr.tsr import TSR
 from tsr.tsr_chain import TSRChain
 
@@ -561,7 +561,19 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         return TSRChain(TSRs=parts), coordinates
 
     def test_deterministic_counterexample_witness_certifies_membership(self):
-        """#85 regression: cold solve misses this member; the witness certifies it."""
+        """#85: the witness certifies membership whatever the solver does.
+
+        This fixture was built because L-BFGS-B could not solve it: a provably valid pose
+        on which the cold multi-start settled in a nonzero basin. The point was never that
+        *this* pose is unsolvable -- it is that a bounded local search failing is not a
+        proof of non-membership, so membership must be decidable without one.
+
+        Since #174 the cold solve finds it, so the old assertion that it reports
+        "not_found" is gone. Asserting that would have pinned SciPy's trajectory rather
+        than any rule of the library, which is exactly why it could never cross over to the
+        C++ port (docs/CPP.md). What is asserted here is the property it was protecting:
+        the witness decides membership by itself, with no optimiser involved.
+        """
         chain, coordinates = self._rotation_rich_fixture()
         self.assertTrue(all(np.all(v) for v in chain.is_valid(coordinates)))
         pose = chain.to_transform(coordinates)
@@ -571,22 +583,22 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         np.testing.assert_allclose(chain.to_transform(coordinates), pose, atol=1e-12)
         self.assertTrue(chain.validate_witness(pose, coordinates))
 
-        # The cold solve does NOT find a witness within the default budget -- and
-        # that is honest "not_found", never certified nonmembership.
-        cold = chain.solve(pose)
-        self.assertEqual(cold.status, "not_found")
-        self.assertGreater(cold.residual, EPSILON)
-
         # A warm start from the witness takes the fast path: satisfied, no work.
         warm = chain.solve(pose, initial_guess=coordinates)
         self.assertEqual(warm.status, "satisfied")
         self.assertLess(warm.residual, EPSILON)
         self.assertEqual(warm.nfev, 0)
         self.assertEqual(warm.starts, 0)
-
-        # contains reflects the same distinction.
         self.assertTrue(chain.contains(pose, initial_guess=coordinates))
-        self.assertFalse(chain.contains(pose))
+
+        # And the cold solve now reaches it too, within its ordinary budget. Recorded
+        # because the improvement is the whole point of #174, not because a solver finding
+        # one particular pose is a rule -- "not_found" remains no proof of non-membership.
+        cold = chain.solve(pose)
+        self.assertEqual(cold.status, "satisfied")
+        self.assertLess(cold.residual, EPSILON)
+        self.assertLessEqual(cold.nfev, TSRChain._DEFAULT_MAX_NFEV)
+        self.assertTrue(chain.contains(pose))
 
     def test_deterministic_counterexample_is_reproducible(self):
         """The cold residual is deterministic for the fixed budget and start set."""
@@ -840,12 +852,15 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
     def test_wrapping_initial_guess_canonicalized_for_optimizer(self):
         """A wrapping neighboring-state guess reaches the optimizer canonicalized (#90).
 
-        Exercises the actual optimizer start x0, not just to_transform: -3.0 in the
-        wrapping interval [3pi/4, -3pi/4] must be passed as its continuous-chart
-        equivalent 3.283..., not clipped to the lower boundary 2.356....
-        """
-        from unittest.mock import patch
+        -3.0 in the wrapping interval [3pi/4, -3pi/4] must become its continuous-chart
+        equivalent 3.283..., not be clipped to the lower boundary 2.356....
 
+        Observed through the public result rather than by mocking the optimizer (#174
+        replaced it, and a test that patched the old one would have been testing SciPy).
+        With one start and a budget of one evaluation, exactly one point is evaluated --
+        the first scheduled start, which is the canonicalized guess -- so the returned
+        coordinates *are* that start.
+        """
         bounds = np.zeros((6, 2))
         bounds[5] = [3 * pi / 4, -3 * pi / 4]
         chain = TSRChain(TSRs=[TSR(Bw=bounds), TSR()])
@@ -856,16 +871,78 @@ class TestTSRChainWitnessAPI(unittest.TestCase):
         target_coordinates[0, 5] = -2.9  # nearby, so the guess does NOT already satisfy
         target = chain.to_transform(target_coordinates)
 
-        captured = {}
+        result = chain.solve(target, initial_guess=guess, max_starts=1, max_nfev=1)
 
-        def fake_minimize(func, x0, **kwargs):
-            captured["x0"] = np.array(x0, copy=True)
-            return np.array(x0, copy=True), func(x0), {"funcalls": 1}
+        self.assertEqual(result.nfev, 1)
+        self.assertEqual(result.starts, 1)
+        self.assertAlmostEqual(result.coordinates[0, 5], -3.0 + 2 * pi, places=12)
+        # and not the boundary a clip-without-wrap would have produced
+        self.assertNotAlmostEqual(result.coordinates[0, 5], 3 * pi / 4, places=6)
 
-        with patch("scipy.optimize.fmin_l_bfgs_b", side_effect=fake_minimize):
-            chain.solve(target, initial_guess=guess, max_starts=1, max_nfev=10)
+    # --- #174: the analytic Jacobian ---------------------------------------------
 
-        self.assertAlmostEqual(captured["x0"][0], -3.0 + 2 * pi, places=12)
+    def test_analytic_jacobian_matches_central_differences(self):
+        """A mathematical invariant, and the one failure a behavioural test can only report
+        as "fewer poses solved".
+
+        ``rpy_to_rot`` is Z-Y-X and the Jacobian's generator order depends on exactly that,
+        so a self-consistent refactor of ``rpy_to_rot`` would silently decorrelate the two.
+        This is what pins them together. The same check guards the C++ port
+        (``cpp/tests/test_tsr_chain.cpp``), because the two carry the same derivation.
+        """
+        from tsr.core import _chain_solver
+
+        rng = np.random.default_rng(17)
+        worst = 0.0
+        for parts in (
+            [TSR(Bw=np.array([[-0.1, 0.1], [0, 0], [0, 0], [0, 0], [0, 0], [-pi, pi]])), TSR()],
+            [
+                TSR(Bw=np.array([[-0.1, 0.1], [0, 0], [0, 0], [-0.3, 0.3], [0, 0], [-pi, pi]])),
+                TSR(Bw=np.array([[0, 0], [0, 0], [0, 0], [-pi, pi], [-pi, pi], [-pi, pi]])),
+            ],
+        ):
+            chain = TSRChain(TSRs=parts)
+            n = len(parts)
+            for _ in range(5):
+                coordinates = np.array(chain.sample_xyzrpy(rng=rng), dtype=float)
+                target = chain.sample(rng=rng)
+                _, J = _chain_solver.residual_and_jacobian(chain, coordinates, target, True)
+                self.assertEqual(J.shape, (12, 6 * n))
+                for i in range(n):
+                    for j in range(6):
+                        h = 1e-6
+                        plus, minus = coordinates.copy(), coordinates.copy()
+                        plus[i, j] += h
+                        minus[i, j] -= h
+                        r_plus, _ = _chain_solver.residual_and_jacobian(chain, plus, target, False)
+                        r_minus, _ = _chain_solver.residual_and_jacobian(chain, minus, target, False)
+                        numeric = (r_plus - r_minus) / (2 * h)
+                        worst = max(worst, float(np.abs(numeric - J[:, i * 6 + j]).max()))
+        self.assertLess(worst, 1e-7, f"analytic Jacobian disagrees by {worst:.3e}")
+
+    def test_cold_solve_reports_the_geodesic_at_the_coordinates_it_returns(self):
+        """The reported residual has to be measured at the coordinates handed back, or a
+        caller cannot act on either. This is what makes ``residual`` an upper bound rather
+        than an arbitrary number, and it must survive replacing the optimiser (#174)."""
+        chain = TSRChain(
+            TSRs=[
+                TSR(Bw=np.array([[-0.1, 0.1], [0, 0], [0, 0], [-0.3, 0.3], [0, 0], [-pi, pi]])),
+                TSR(Bw=np.array([[0, 0], [0, 0], [0, 0], [-pi, pi], [-pi, pi], [-pi, pi]])),
+            ]
+        )
+        rng = np.random.default_rng(5)
+        for _ in range(10):
+            target = chain.sample_with_witness(rng=rng).pose
+            result = chain.solve(target)
+            measured = geodesic_distance(chain.to_transform(result.coordinates), target)
+            self.assertAlmostEqual(result.residual, measured, places=12)
+            # the coordinates lie in the chart, because every step is projected into it
+            for i, tsr in enumerate(chain.TSRs):
+                for j in range(6):
+                    self.assertGreaterEqual(result.coordinates[i, j], tsr._Bw_cont[j, 0] - 1e-12)
+                    self.assertLessEqual(result.coordinates[i, j], tsr._Bw_cont[j, 1] + 1e-12)
+            if result.status == "satisfied":
+                self.assertLess(result.residual, EPSILON)
 
     # --- #91: strict aggregate max_nfev budget ----------------------------------
 
