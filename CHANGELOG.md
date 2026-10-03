@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.1] — 2026-10
+
+Metadata only; no code changes.
+
+The repository is renamed `personalrobotics/tsr` → `personalrobotics/sstsr`, matching the
+distribution name it has published under since 2.0. The import name is still `tsr` and the
+distribution is still `sstsr`; nothing a caller writes changes.
+
+This release exists because a project's PyPI page is rendered from its latest release's
+metadata, and PyPI does not allow editing a published release. So the links and the rendered
+README on <https://pypi.org/project/sstsr/> kept pointing at the old repository path until a
+new version shipped. GitHub redirects the old path, so nothing was broken — but the front
+door named the wrong place.
+
+### Changed
+- `Homepage`, `Repository` and `Issues` in the package metadata, the README's clone command,
+  and a release-tag link in this file now name `personalrobotics/sstsr` (#183).
+
 ## [3.4.0] — 2026-10
 
 Two changes to how a chain's inverse behaves and how the viewer reads a template, neither of
