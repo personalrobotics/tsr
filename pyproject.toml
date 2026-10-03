@@ -64,9 +64,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/personalrobotics/tsr"
-Repository = "https://github.com/personalrobotics/tsr"
-Issues = "https://github.com/personalrobotics/tsr/issues"
+Homepage = "https://github.com/personalrobotics/sstsr"
+Repository = "https://github.com/personalrobotics/sstsr"
+Issues = "https://github.com/personalrobotics/sstsr/issues"
 
 [tool.hatch.version]
 source = "vcs"

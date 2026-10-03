@@ -42,7 +42,7 @@ pip install "sstsr[viz]"     # interactive viewer (Viser); "sstsr[viser]" is the
 
 For development:
 ```bash
-git clone https://github.com/personalrobotics/tsr.git
+git clone https://github.com/personalrobotics/sstsr.git
 cd tsr
 uv sync --extra test
 ```
